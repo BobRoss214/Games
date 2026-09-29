@@ -66,7 +66,7 @@ export class BotBrain {
   think(match, dt) {
     const I = this.I, p = this.p, a = p.body;
     // clear edge flags each tick
-    I.attackPressed = false; I.attackReleased = false; I.altPressed = false; I.dodge = false; I.interact = false; I.spell = false; I.spellNext = false; I.potion = false; I.potionNext = false; I.swap = false; I.ability2 = false; I.turn = 0;
+    I.attackPressed = false; I.attackReleased = false; I.altPressed = false; I.dodge = false; I.interact = false; I.interactHeld = false; I.spell = false; I.spellNext = false; I.potion = false; I.potionNext = false; I.swap = false; I.ability2 = false; I.turn = 0;
     if (!a || a.removed) { I.fwd = I.strafe = 0; I.attack = false; return I; }
     if (a !== this.lastBody) { this.lastBody = a; this.nav = new Nav(); this.timer = 0; this.goal = null; this.atkPhase = 'idle'; I.attack = false; I.alt = false; }
     this.potionCd -= dt; this.dodgeCd -= dt; this.timer -= dt;
@@ -435,7 +435,7 @@ export class BotBrain {
       }
     }
     if (fire && this.rng.chance(this.sk.react > 0.3 ? 0.4 : 0.9)) { I.attack = true; I.attackPressed = true; this.trapT = 0; }
-    if ((this.trapT > 26 && d > 8) || hero.room !== trap.room && this.trapT > 6) { I.interact = true; proxy.holdInteract = 1; }
+    if ((this.trapT > 26 && d > 8) || hero.room !== trap.room && this.trapT > 6) { I.interactHeld = true; proxy.holdInteract = 1; }
   }
 
   // ---------------- UPGRADE ----------------

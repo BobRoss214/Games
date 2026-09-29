@@ -11,7 +11,7 @@ import { Boss } from './boss.js';
 import { BotBrain, monsterAI } from './ai.js';
 
 export const emptyIntent = () => ({
-  fwd: 0, strafe: 0, turn: 0, turnRate: 0, attack: false, attackPressed: false, attackReleased: false, alt: false, altPressed: false, dodge: false, interact: false,
+  fwd: 0, strafe: 0, turn: 0, turnRate: 0, interactHeld: false, attack: false, attackPressed: false, attackReleased: false, alt: false, altPressed: false, dodge: false, interact: false,
   spell: false, spellNext: false, potion: false, potionNext: false, swap: false, sprint: false, ability2: false, aimAngle: undefined, menu: 0,
 });
 

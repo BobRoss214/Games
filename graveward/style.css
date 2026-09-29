@@ -1,0 +1,4 @@
+html, body { margin: 0; height: 100%; background: #050304; overflow: hidden; }
+body { display: flex; align-items: center; justify-content: center; }
+#screen { image-rendering: pixelated; image-rendering: crisp-edges; background: #000; outline: none; cursor: default; display: block; box-shadow: 0 0 60px rgba(120, 20, 20, 0.25); }
+#fallback { display: none; color: #c8b090; font: 14px monospace; position: absolute; }

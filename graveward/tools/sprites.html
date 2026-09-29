@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>sprite sheet</title>
+<style>body{margin:0;background:#2a2a32;color:#ccc;font:10px monospace}canvas{image-rendering:pixelated}div{display:inline-block;margin:2px;text-align:center}</style></head>
+<body><div id="out"></div>
+<script type="module">
+import * as S from '../src/sprites.js';
+const out = document.getElementById('out');
+const q = new URLSearchParams(location.search);
+const scale = +(q.get('s') || 2);
+function add(label, f) {
+  const c = document.createElement('canvas'); c.width = f.w; c.height = f.h; c.style.width = f.w * scale + 'px'; c.style.height = f.h * scale + 'px';
+  const ctx = c.getContext('2d'); const id = ctx.createImageData(f.w, f.h); id.data.set(new Uint8ClampedArray(f.data.buffer, f.data.byteOffset, f.data.byteLength));
+  // alpha 254 → show as opaque
+  ctx.putImageData(id, 0, 0);
+  const d = document.createElement('div'); d.appendChild(c); const l = document.createElement('div'); l.textContent = label; d.appendChild(l); out.appendChild(d);
+}
+const set = q.get('set') || 'mon';
+if (set === 'mon') {
+  for (const s of ['skeleton', 'archer', 'brute', 'crawler', 'screamer', 'bloat', 'mummy', 'scarab', 'priest']) {
+    for (let t = 0; t < 3; t++) add(s + t, S.monsterFrame(s, t, 'idle', 0));
+    add(s + '.walk', S.monsterFrame(s, 2, 'walk', 1)); add(s + '.atk0', S.monsterFrame(s, 1, 'atk', 0)); add(s + '.atk1', S.monsterFrame(s, 1, 'atk', 1));
+    out.appendChild(document.createElement('br'));
+  }
+}
+if (set === 'misc') {
+  add('slime', S.monsterFrame('slime', 0, 'idle', 0));
+  for (const s of ['sentinel', 'gargoyle', 'golem']) { add(s, S.monsterFrame(s, 0, 'idle', 0)); add(s + '.d', S.statueFrame(s)); add(s + '.atk', S.monsterFrame(s, 0, 'atk', 0)); }
+  add('hero', S.heroFrame('#e0463c', 'idle', 0)); add('hero atk', S.heroFrame('#3c8ae0', 'atk', 1)); add('wisp', S.wispFrame(1));
+  add('dead skel', S.monsterFrame('skeleton', 0, 'dead', 1)); add('dead gore', S.monsterFrame('crawler', 0, 'dead', 2));
+  out.appendChild(document.createElement('br'));
+  for (const k of ['torch', 'sign']) add(k, S.propFrame(k, '', 0, 0));
+  for (const s of ['pot', 'jar', 'crate', 'urn', 'bones', 'skullpile', 'coffin', 'cobweb', 'pillar', 'sarcophagus', 'chains', 'fountain', 'chandelier', 'brazier']) add(s, S.propFrame('scenery', s, 0, 0));
+  add('coffin open', S.propFrame('scenery', 'coffin', 1)); add('chest', S.propFrame('chest', 0, 0)); add('chest open', S.propFrame('chest', 1, 1)); add('gold chest', S.propFrame('chest', 1, 0));
+  add('crystal', S.propFrame('crystal')); add('portal', S.propFrame('portal', '', 0, 0.2)); add('shop', S.propFrame('shop'));
+  for (const k of ['spikes', 'flame', 'darts', 'saw', 'crusher']) add('trap ' + k, S.propFrame('trap', k, 1));
+  out.appendChild(document.createElement('br'));
+  for (const k of ['arrow', 'knife', 'stone', 'shard', 'gore', 'wave', 'acid', 'darkbolt', 'curseorb', 'fireball', 'boulder', 'dart', 'spark']) add(k, S.projFrame(k, 0));
+  add('gold', S.pickupFrame({ kind: 'gold' }, 0)); add('heart', S.pickupFrame({ kind: 'heart' }, 0)); add('ecto', S.pickupFrame({ kind: 'ecto' }, 0));
+  add('potion', S.itemIcon({ type: 'potion', id: 'health' })); add('scroll', S.itemIcon({ type: 'spell', id: 'fire' })); add('artifact', S.itemIcon({ type: 'artifact', id: 'ankh' }));
+}
+if (set === 'boss') {
+  for (const b of ['colossus', 'jackal', 'mother']) { add(b, S.bossBodyFrame(b, false, 0)); add(b + ' exp', S.bossBodyFrame(b, true, 0)); }
+  for (const p of ['colossusFist', 'colossusFace', 'jackalHead', 'jackalHeadFire', 'jackalHeadHowl', 'motherArm', 'motherMouth']) { add(p, S.bossPartFrame(p, false)); add(p + ' atk', S.bossPartFrame(p, true)); }
+  add('arm unwrapped', S.bossPartFrame('motherArm', false, { unwrapped: true }));
+}
+if (set === 'weap') {
+  for (const w of ['sword', 'dagger', 'axe', 'spear', 'mace', 'khopesh', 'hammer', 'crossbow', 'knives', 'sling']) add(w, S.weaponFrame(w));
+  add('spell', S.spellHandFrame('#8a40ff'));
+}
+window.__ready = true;
+</script></body></html>

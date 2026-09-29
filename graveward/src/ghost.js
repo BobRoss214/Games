@@ -167,7 +167,7 @@ export function trapControl(w, proxy, intent, dt) {
   if (trap.wall) { proxy.angle = trap.dir + clamp(angleDiff(proxy.angle, trap.dir), -1.0, 1.0); }
   trap.aim = proxy.angle;
   if (intent.attack || intent.attackPressed) triggerTrap(w, trap, p);
-  if (intent.interact) { proxy.holdInteract += dt; if (proxy.holdInteract > 0.6) { releaseTrap(w, p, proxy); } } else proxy.holdInteract = 0;
+  if (intent.interactHeld) { proxy.holdInteract += dt; if (proxy.holdInteract > 0.6) { releaseTrap(w, p, proxy); } } else proxy.holdInteract = 0;
 }
 
 export function triggerTrap(w, trap, player) {
@@ -372,7 +372,7 @@ export function monsterControl(w, a, intent, dt) {
   a.room = (w.roomAt(a.x, a.y) || { id: -1 }).id;
   // release
   if (a.ctl === 'player' && a.player && a.type === 'monster') {
-    if (intent.interact) { a.holdInteract = (a.holdInteract || 0) + dt; if (a.holdInteract > 0.9) { w.match.releaseMonster(a); a.holdInteract = 0; } } else a.holdInteract = 0;
+    if (intent.interactHeld) { a.holdInteract = (a.holdInteract || 0) + dt; if (a.holdInteract > 0.9) { w.match.releaseMonster(a); a.holdInteract = 0; } } else a.holdInteract = 0;
   }
   w.unstick(a);
   // separation
