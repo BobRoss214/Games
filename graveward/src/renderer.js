@@ -1,0 +1,452 @@
+// Software raycaster: textured walls/floors/ceilings, baked + flickering light, billboard sprites,
+// ordered-dither palette quantization. Renders into a per-viewport low-res ImageData buffer.
+import { clamp } from './util.js';
+
+export const LS = 4; // lightmap subdivisions per cell
+
+// 4x4 Bayer matrix, quantization tables
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+export const QUANT = { levels: 14, dither: 1.0 };
+let QTAB = null;
+export function buildQuantTable(levels = QUANT.levels, dither = QUANT.dither) {
+  QUANT.levels = levels; QUANT.dither = dither;
+  const t = new Uint8Array(256 * 16);
+  const step = 255 / (levels - 1);
+  for (let c = 0; c < 256; c++) for (let b = 0; b < 16; b++) {
+    const off = ((BAYER[b] + 0.5) / 16 - 0.5) * step * dither;
+    const q = Math.round((c + off) / step);
+    t[(c << 4) | b] = clamp(Math.round(q * step), 0, 255);
+  }
+  QTAB = t;
+}
+buildQuantTable();
+
+export class View {
+  constructor(w, h) { this.resize(w, h); }
+  resize(w, h) {
+    this.w = w; this.h = h;
+    this.img = typeof ImageData !== 'undefined' ? new ImageData(w, h) : { data: new Uint8ClampedArray(w * h * 4), width: w, height: h };
+    this.buf = new Uint32Array(this.img.data.buffer);
+    this.zbuf = new Float32Array(w);
+    this.doorZ = new Float32Array(w);
+    this.doorBot = new Int16Array(w);
+    this.wTop = new Int16Array(w);
+    this.wBot = new Int16Array(w);
+    this.vigX = new Uint16Array(w);
+    this.vigY = new Uint16Array(h);
+    for (let x = 0; x < w; x++) { const u = (x / (w - 1)) * 2 - 1; this.vigX[x] = (256 * (1 - 0.34 * u * u * u * u - 0.18 * u * u)) | 0; }
+    for (let y = 0; y < h; y++) { const u = (y / (h - 1)) * 2 - 1; this.vigY[y] = (256 * (1 - 0.30 * u * u * u * u - 0.16 * u * u)) | 0; }
+    this.spriteList = [];
+  }
+}
+
+// ---------- lightmap ----------
+export function makeLightMap(w, h) { return new Float32Array(w * h * LS * LS * 3); }
+
+// LOS test on the wall grid (sampling), returns true when segment is clear of solid cells.
+function clearLine(map, x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.hypot(dx, dy) * 3) + 1;
+  for (let i = 1; i < n; i++) {
+    const x = x0 + (dx * i) / n, y = y0 + (dy * i) / n;
+    if (map.isSolidForLight(x | 0, y | 0)) return false;
+  }
+  return true;
+}
+
+// Build a torch kernel: sparse list of subcell indices + intensity, respecting line of sight.
+export function bakeTorchKernel(map, lx, ly, radius) {
+  const idx = [], val = [];
+  const x0 = Math.max(0, Math.floor(lx - radius)), x1 = Math.min(map.w - 1, Math.ceil(lx + radius));
+  const y0 = Math.max(0, Math.floor(ly - radius)), y1 = Math.min(map.h - 1, Math.ceil(ly + radius));
+  const lw = map.w * LS;
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+    if (map.isSolidForLight(cx, cy)) {
+      // lit walls: still receive light from the open side; handled by sampling neighbors, skip
+    }
+    for (let sy = 0; sy < LS; sy++) for (let sx = 0; sx < LS; sx++) {
+      const px = cx + (sx + 0.5) / LS, py = cy + (sy + 0.5) / LS;
+      const d = Math.hypot(px - lx, py - ly);
+      if (d > radius) continue;
+      if (map.isSolidForLight(cx, cy)) continue;
+      if (!clearLine(map, lx, ly, px, py)) continue;
+      const a = 1 - d / radius;
+      idx.push(((cy * LS + sy) * lw + (cx * LS + sx)) * 3);
+      val.push(a * a * (1 + 0.6 / (1 + d * d)));
+    }
+  }
+  return { idx: Int32Array.from(idx), val: Float32Array.from(val) };
+}
+
+export function applyKernel(light, kernel, r, g, b, scale) {
+  const { idx, val } = kernel;
+  for (let i = 0; i < idx.length; i++) {
+    const k = idx[i], v = val[i] * scale;
+    light[k] += r * v; light[k + 1] += g * v; light[k + 2] += b * v;
+  }
+}
+
+// Cheap radial dynamic light (no LOS); records deltas for undo.
+export function addDynLight(map, list, x, y, radius, r, g, b, intensity) {
+  const lw = map.w * LS, light = map.light;
+  const x0 = Math.max(0, Math.floor(x - radius)), x1 = Math.min(map.w - 1, Math.ceil(x + radius));
+  const y0 = Math.max(0, Math.floor(y - radius)), y1 = Math.min(map.h - 1, Math.ceil(y + radius));
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+    if (map.isSolidForLight(cx, cy)) continue;
+    for (let sy = 0; sy < LS; sy++) for (let sx = 0; sx < LS; sx++) {
+      const px = cx + (sx + 0.5) / LS, py = cy + (sy + 0.5) / LS;
+      const d = Math.hypot(px - x, py - y);
+      if (d > radius) continue;
+      const a = 1 - d / radius, v = a * a * intensity;
+      const k = ((cy * LS + sy) * lw + (cx * LS + sx)) * 3;
+      light[k] += r * v; light[k + 1] += g * v; light[k + 2] += b * v;
+      list.push(k, r * v, g * v, b * v);
+    }
+  }
+}
+export function undoDynLights(light, list) {
+  for (let i = 0; i < list.length; i += 4) { const k = list[i]; light[k] -= list[i + 1]; light[k + 1] -= list[i + 2]; light[k + 2] -= list[i + 3]; }
+  list.length = 0;
+}
+
+// ---------- shading tables ----------
+const SHADE_STEPS = 1024;
+const shadeTab = new Float32Array(SHADE_STEPS);
+function buildShadeTab(radius) { for (let i = 0; i < SHADE_STEPS; i++) { const d = (i / SHADE_STEPS) * 40; const t = d / radius; shadeTab[i] = 1 / (1 + t * t * 1.3); } }
+buildShadeTab(3.2);
+
+const tmpSprites = [];
+
+// ---------- main entry ----------
+// cam: {x,y,angle,z,pitch,vfov,lightR,lightG,lightB,lightRadius,lightPower,ghost,flashR,flashG,flashB}
+export function renderView(view, scene, cam, time) {
+  const { map, textures } = scene;
+  const W = view.w, H = view.h, buf = view.buf, zbuf = view.zbuf;
+  const theme = map.theme;
+  const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
+  const aspect = W / H;
+  const tanHalfV = Math.tan(cam.vfov / 2);
+  const projScale = H / (2 * tanHalfV);
+  const planeLen = tanHalfV * aspect;
+  const planeX = -dirY * planeLen, planeY = dirX * planeLen;
+  const horizon = (H / 2 + cam.pitch) | 0;
+  const camZ = cam.z;
+  const posX = cam.x, posY = cam.y;
+  const mw = map.w, mh = map.h, wallArr = map.wall, floorArr = map.floor, ceilArr = map.ceil, decalArr = map.decal;
+  const doorIdx = map.doorIdx, doors = map.doors;
+  const light = map.light, lw = mw * LS;
+  const amb = cam.ghost ? [theme.ambient[0] + 0.09, theme.ambient[1] + 0.12, theme.ambient[2] + 0.22] : theme.ambient;
+  const ambR = amb[0], ambG = amb[1], ambB = amb[2];
+  const fogR = theme.fog[0], fogG = theme.fog[1], fogB = theme.fog[2], fogD = theme.fogDensity;
+  const vlR = cam.lightR * cam.lightPower, vlG = cam.lightG * cam.lightPower, vlB = cam.lightB * cam.lightPower;
+  const vlRadius = cam.lightRadius;
+  const dyn = cam.dynamicGlow || 0;
+  const Q = QTAB;
+  const vigX = view.vigX, vigY = view.vigY;
+  const wTop = view.wTop, wBot = view.wBot, doorZ = view.doorZ, doorBot = view.doorBot;
+  const time8 = (time * 8) | 0;
+
+  buildShadeTabIfNeeded(vlRadius);
+
+  // clear to black
+  buf.fill(0xff000000);
+
+  // ---------- walls ----------
+  for (let x = 0; x < W; x++) {
+    const camX = (2 * x) / W - 1;
+    const rdx = dirX + planeX * camX, rdy = dirY + planeY * camX;
+    let mapX = posX | 0, mapY = posY | 0;
+    const ddx = rdx === 0 ? 1e30 : Math.abs(1 / rdx), ddy = rdy === 0 ? 1e30 : Math.abs(1 / rdy);
+    let stepX, stepY, sdx, sdy;
+    if (rdx < 0) { stepX = -1; sdx = (posX - mapX) * ddx; } else { stepX = 1; sdx = (mapX + 1 - posX) * ddx; }
+    if (rdy < 0) { stepY = -1; sdy = (posY - mapY) * ddy; } else { stepY = 1; sdy = (mapY + 1 - posY) * ddy; }
+    let side = 0, hit = 0, steps = 0;
+    let dHit = 0, dSide = 0, dOpen = 0, dDist = 0, dWX = 0, dTex = 0, dSX = 0, dSY = 0, doorHit = 0, hitCell = -1;
+    while (steps++ < 72) {
+      if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; } else { sdy += ddy; mapY += stepY; side = 1; }
+      if (mapX < 0 || mapY < 0 || mapX >= mw || mapY >= mh) { hit = 0; break; }
+      const mi = mapY * mw + mapX;
+      const wv = wallArr[mi];
+      if (wv !== 0) {
+        const di = doorIdx[mi];
+        if (di >= 0) {
+          const op = doors[di].open;
+          if (op >= 0.97) continue;
+          if (op > 0.03) {
+            if (!doorHit) {
+              doorHit = 1; dOpen = op; dSide = side; dTex = wv;
+              dDist = side === 0 ? sdx - ddx : sdy - ddy;
+              dSX = mapX; dSY = mapY;
+              const wxx = side === 0 ? posY + dDist * rdy : posX + dDist * rdx;
+              dWX = wxx - Math.floor(wxx);
+            }
+            continue;
+          }
+        }
+        hit = wv; hitCell = mi; break;
+      }
+    }
+    let perp = 0;
+    if (hit) {
+      perp = side === 0 ? sdx - ddx : sdy - ddy;
+      if (perp < 0.0005) perp = 0.0005;
+    } else perp = 60;
+    zbuf[x] = perp;
+    let lineH = projScale / perp;
+    let top = (horizon - (1 - camZ) * lineH) | 0;
+    let bot = (horizon + camZ * lineH) | 0;
+    wTop[x] = top < 0 ? 0 : top; wBot[x] = bot > H ? H : bot;
+    doorZ[x] = 1e9; doorBot[x] = 0;
+    if (hit) {
+      let wx = side === 0 ? posY + perp * rdy : posX + perp * rdx;
+      wx -= Math.floor(wx);
+      const tex = textures[hit];
+      let tx = (wx * 64) | 0;
+      if (side === 0 && rdx > 0) tx = 63 - tx;
+      if (side === 1 && rdy < 0) tx = 63 - tx;
+      const tdata = tex.data;
+      // light sample in front of face
+      const hx = posX + perp * rdx - (side === 0 ? stepX * 0.03 : 0), hy = posY + perp * rdy - (side === 1 ? stepY * 0.03 : 0);
+      let lsx = (hx * LS) | 0, lsy = (hy * LS) | 0;
+      if (lsx < 0) lsx = 0; else if (lsx >= lw) lsx = lw - 1;
+      if (lsy < 0) lsy = 0; else if (lsy >= mh * LS) lsy = mh * LS - 1;
+      const lk = (lsy * lw + lsx) * 3;
+      const vs = shadeAt(perp);
+      const sideDim = side === 1 ? 0.86 : 1.0;
+      const fog = Math.min(0.75, 1 - Math.exp(-perp * fogD));
+      const baseR = (ambR + light[lk] + vlR * vs) * sideDim, baseG = (ambG + light[lk + 1] + vlG * vs) * sideDim, baseB = (ambB + light[lk + 2] + vlB * vs) * sideDim;
+      const glow = wallGlow(map, hit);
+      const lr = ((baseR + glow) * (1 - fog) * 256) | 0, lg = ((baseG + glow * 0.6) * (1 - fog) * 256) | 0, lb = ((baseB + glow * 0.5) * (1 - fog) * 256) | 0;
+      const fr = (fogR * fog * 255) | 0, fgc = (fogG * fog * 255) | 0, fb = (fogB * fog * 255) | 0;
+      const vx = vigX[x];
+      const wallBloodMask = map.wallBlood ? map.wallBlood.get(hitCell * 4 + (side === 0 ? (stepX > 0 ? 0 : 1) : (stepY > 0 ? 2 : 3))) : null;
+      const y0 = top < 0 ? 0 : top, y1 = bot > H ? H : bot;
+      const invLine = 64 / (bot - top || 1);
+      let ty = (y0 - top) * invLine;
+      for (let y = y0; y < y1; y++) {
+        const c = tdata[(ty | 0) * 64 + tx];
+        let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+        if (wallBloodMask) {
+          const m = wallBloodMask[(((ty | 0) >> 2) << 4) + (tx >> 2)];
+          if (m) { const a = m / 255 * 0.85; r = r + (110 - r) * a; g = g + (10 - g) * a; b = b + (14 - b) * a; }
+        }
+        const vg = (vx * vigY[y]) >> 8;
+        // gentle vertical darkening (top/bottom of wall)
+        let R = ((r * lr) >> 8) + fr, G = ((g * lg) >> 8) + fgc, B = ((b * lb) >> 8) + fb;
+        R = (R * vg) >> 8; G = (G * vg) >> 8; B = (B * vg) >> 8;
+        if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
+        const bi = ((x & 3) | ((y & 3) << 2));
+        buf[y * W + x] = 0xff000000 | (Q[(B << 4) | bi] << 16) | (Q[(G << 4) | bi] << 8) | Q[(R << 4) | bi];
+        ty += invLine;
+      }
+    }
+    if (doorHit) {
+      // draw the partially-open door strip on top of what is behind it
+      const dl = projScale / Math.max(dDist, 0.001);
+      const dtop = (horizon - (1 - camZ) * dl) | 0;
+      const dbotFull = (horizon + camZ * dl) | 0;
+      const dbot = (dbotFull - dOpen * (dbotFull - dtop)) | 0;
+      const tex = textures[dTex];
+      let tx = (dWX * 64) | 0;
+      const tdata = tex.data;
+      const hx = posX + dDist * rdx, hy = posY + dDist * rdy;
+      let lsx = ((hx - (dSide === 0 ? stepX * 0.03 : 0)) * LS) | 0, lsy = ((hy - (dSide === 1 ? stepY * 0.03 : 0)) * LS) | 0;
+      lsx = clamp(lsx, 0, lw - 1); lsy = clamp(lsy, 0, mh * LS - 1);
+      const lk = (lsy * lw + lsx) * 3;
+      const vs = shadeAt(dDist), fog = Math.min(0.75, 1 - Math.exp(-dDist * fogD));
+      const lr = ((ambR + light[lk] + vlR * vs) * (1 - fog) * 256) | 0, lg = ((ambG + light[lk + 1] + vlG * vs) * (1 - fog) * 256) | 0, lb = ((ambB + light[lk + 2] + vlB * vs) * (1 - fog) * 256) | 0;
+      const y0 = Math.max(0, dtop), y1 = Math.min(H, dbot);
+      const invLine = 64 / (dbotFull - dtop || 1);
+      let ty = (y0 - dtop) * invLine;
+      for (let y = y0; y < y1; y++) {
+        const c = tdata[(Math.min(63, ty | 0)) * 64 + tx];
+        const bi = ((x & 3) | ((y & 3) << 2));
+        let R = ((c & 255) * lr) >> 8, G = (((c >> 8) & 255) * lg) >> 8, B = (((c >> 16) & 255) * lb) >> 8;
+        if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
+        buf[y * W + x] = 0xff000000 | (Q[(B << 4) | bi] << 16) | (Q[(G << 4) | bi] << 8) | Q[(R << 4) | bi];
+        ty += invLine;
+      }
+      doorZ[x] = dDist; doorBot[x] = dbot;
+      if (!hit) { wTop[x] = Math.max(0, dtop); }
+    }
+  }
+
+  // ---------- floor & ceiling (row casting, only where walls do not cover) ----------
+  const stepXf = (2 * planeX) / W, stepYf = (2 * planeY) / W;
+  const waterId = 33;
+  for (let y = 0; y < H; y++) {
+    const isFloor = y > horizon;
+    const pdist = isFloor ? y - horizon : horizon - y;
+    if (pdist === 0) continue;
+    const rowDist = ((isFloor ? camZ : 1 - camZ) * projScale) / pdist;
+    if (rowDist > 60) continue;
+    let fx = posX + rowDist * (dirX - planeX), fy = posY + rowDist * (dirY - planeY);
+    const dx = rowDist * stepXf, dy = rowDist * stepYf;
+    const vs = shadeAt(rowDist * (isFloor ? 1 : 1.15));
+    const fog = Math.min(0.75, 1 - Math.exp(-rowDist * fogD));
+    const vyv = vigY[y];
+    const fr = (fogR * fog * 255) | 0, fgc = (fogG * fog * 255) | 0, fb = (fogB * fog * 255) | 0;
+    const inv = (1 - fog) * 256;
+    const vlrr = vlR * vs, vlgg = vlG * vs, vlbb = vlB * vs;
+    const rowOff = y * W;
+    const by = y & 3;
+    for (let x = 0; x < W; x++, fx += dx, fy += dy) {
+      if (isFloor ? y < wBot[x] : y >= wTop[x]) continue;
+      const cx = fx | 0, cy = fy | 0;
+      if (fx < 0 || fy < 0 || cx >= mw || cy >= mh) continue;
+      const ci = cy * mw + cx;
+      const tid = isFloor ? floorArr[ci] : ceilArr[ci];
+      if (tid === 0) continue;
+      const tex = textures[tid];
+      let u = ((fx - cx) * 64) | 0, v = ((fy - cy) * 64) | 0;
+      if (tid === waterId && isFloor) { u = (u + ((Math.sin(fy * 5 + time * 2.2) * 2.5) | 0)) & 63; v = (v + ((Math.cos(fx * 5 + time * 1.7) * 2.5) | 0)) & 63; }
+      let c = tex.data[v * 64 + u];
+      let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+      let emissive = 0;
+      if (isFloor) {
+        const dc = decalArr[ci];
+        if (dc) {
+          const dt = textures[dc].data[v * 64 + u];
+          if (dt !== 0) {
+            const pulse = 0.65 + 0.35 * Math.sin(time * 3 + ci);
+            r = dt & 255; g = (dt >> 8) & 255; b = (dt >> 16) & 255;
+            emissive = (dc === 70 || dc === 72 ? 0.9 * pulse : dc >= 75 ? 0.5 : 0.1) * (cam.ghost && dc === 70 ? 1.6 : 1);
+          }
+        }
+        const bi2 = map.bloodIdx[ci];
+        if (bi2) {
+          const m = map.bloodMasks[bi2][((v >> 2) << 4) + (u >> 2)];
+          if (m) { const a = (m / 255) * 0.88; r = r + (120 - r) * a; g = g + (8 - g) * a; b = b + (14 - b) * a; }
+        }
+      }
+      let lsx = (fx * LS) | 0, lsy = (fy * LS) | 0;
+      const lk = (lsy * lw + lsx) * 3;
+      const ceilK = isFloor ? 1 : 0.75;
+      let lr = ((ambR + (light[lk] + vlrr) * ceilK + emissive) * inv) | 0;
+      let lg = ((ambG + (light[lk + 1] + vlgg) * ceilK + emissive * 0.4) * inv) | 0;
+      let lb = ((ambB + (light[lk + 2] + vlbb) * ceilK + emissive * 0.3) * inv) | 0;
+      const vg = (vigX[x] * vyv) >> 8;
+      let R = (((r * lr) >> 8) + fr), G = (((g * lg) >> 8) + fgc), B = (((b * lb) >> 8) + fb);
+      R = (R * vg) >> 8; G = (G * vg) >> 8; B = (B * vg) >> 8;
+      if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
+      const bi = ((x & 3) | (by << 2));
+      buf[rowOff + x] = 0xff000000 | (Q[(B << 4) | bi] << 16) | (Q[(G << 4) | bi] << 8) | Q[(R << 4) | bi];
+    }
+  }
+
+  // ---------- sprites ----------
+  const list = scene.sprites;
+  const invDet = 1 / (planeX * dirY - dirX * planeY);
+  const vis = tmpSprites; vis.length = 0;
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (s.hidden) continue;
+    const sx = s.x - posX, sy = s.y - posY;
+    const tX = invDet * (dirY * sx - dirX * sy);
+    const tY = invDet * (-planeY * sx + planeX * sy);
+    if (tY < 0.08 || tY > 40) continue;
+    s._tx = tX; s._ty = tY;
+    vis.push(s);
+  }
+  vis.sort((a, b) => b._ty - a._ty);
+  for (let i = 0; i < vis.length; i++) drawSprite(view, vis[i], scene, cam, projScale, horizon, camZ, light, lw, ambR, ambG, ambB, vlR, vlG, vlB, fogR, fogG, fogB, fogD, time);
+}
+
+let shadeRadius = 3.2;
+function buildShadeTabIfNeeded(r) { if (r !== shadeRadius) { shadeRadius = r; buildShadeTab(r); } }
+function shadeAt(d) { const i = (d * (SHADE_STEPS / 40)) | 0; return shadeTab[i >= SHADE_STEPS ? SHADE_STEPS - 1 : i]; }
+function wallGlow(map, tid) { return tid === 12 ? 0.35 : tid === 16 ? 0.18 : 0; } // sealed doors & portal runes glow
+
+function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, ambR, ambG, ambB, vlR, vlG, vlB, fogR, fogG, fogB, fogD, time) {
+  const W = view.w, H = view.h, buf = view.buf, zbuf = view.zbuf, doorZ = view.doorZ, doorBot = view.doorBot;
+  const ty = s._ty, tx = s._tx;
+  const sh = projScale * s.h / ty, sw = projScale * s.w / ty;
+  const cxs = (W / 2) * (1 + tx / ty);
+  const bottom = horizon + (camZ - s.z) * projScale / ty;
+  const top = bottom - sh;
+  const left = cxs - sw / 2;
+  let x0 = Math.max(0, Math.floor(left)), x1 = Math.min(W - 1, Math.ceil(left + sw) - 1);
+  let y0 = Math.max(0, Math.floor(top)), y1 = Math.min(H - 1, Math.ceil(bottom) - 1);
+  if (x0 > x1 || y0 > y1) return;
+  const Q = QTAB;
+  // lighting for this sprite
+  let lsx = clamp((s.x * LS) | 0, 0, lw - 1), lsy = clamp((s.y * LS) | 0, 0, scene.map.h * LS - 1);
+  const lk = (lsy * lw + lsx) * 3;
+  const vs = shadeAt(ty);
+  const fog = Math.min(0.75, 1 - Math.exp(-ty * fogD));
+  const em = s.emit || 0;
+  const inv = (1 - fog) * 256;
+  const tint = s.tint;
+  let lr = ((ambR + light[lk] * 0.9 + vlR * vs + em) * inv) | 0, lg = ((ambG + light[lk + 1] * 0.9 + vlG * vs + em) * inv) | 0, lb = ((ambB + light[lk + 2] * 0.9 + vlB * vs + em) * inv) | 0;
+  if (s.fullbright) { lr = lg = lb = 256; }
+  const fr = (fogR * fog * 255) | 0, fgc = (fogG * fog * 255) | 0, fb = (fogB * fog * 255) | 0;
+  const alpha = s.alpha === undefined ? 1 : s.alpha;
+  const add = s.add;
+  if (!s.frame) { // solid particle / quad
+    const col = s.color;
+    const cr = col & 255, cg = (col >> 8) & 255, cb = (col >>> 16) & 255;
+    const aa = (alpha * 256) | 0;
+    for (let x = x0; x <= x1; x++) {
+      if (ty >= zbuf[x] || (ty > doorZ[x])) continue;
+      for (let y = y0; y <= y1; y++) {
+        if (ty > doorZ[x] && y < doorBot[x]) continue;
+        const i = y * W + x, d = buf[i];
+        let R = d & 255, G = (d >> 8) & 255, B = (d >> 16) & 255;
+        if (add) { R = Math.min(255, R + ((cr * aa) >> 8)); G = Math.min(255, G + ((cg * aa) >> 8)); B = Math.min(255, B + ((cb * aa) >> 8)); }
+        else { R += ((cr - R) * aa) >> 8; G += ((cg - G) * aa) >> 8; B += ((cb - B) * aa) >> 8; }
+        buf[i] = 0xff000000 | (B << 16) | (G << 8) | R;
+      }
+    }
+    return;
+  }
+  const fw = s.frame.w, fh = s.frame.h, fdata = s.frame.data;
+  const flip = s.flip;
+  const aa = (alpha * 256) | 0;
+  const tr = tint ? (tint & 255) : 0, tg = tint ? (tint >> 8) & 255 : 0, tb = tint ? (tint >>> 16) & 255 : 0, ta = s.tintAmt || 0;
+  const invW = fw / sw, invH = fh / sh;
+  for (let x = x0; x <= x1; x++) {
+    if (ty >= zbuf[x] && !s.ignoreDepth) continue;
+    const dz = doorZ[x];
+    let u = ((x + 0.5 - left) * invW) | 0;
+    if (u < 0) u = 0; else if (u >= fw) u = fw - 1;
+    if (flip) u = fw - 1 - u;
+    for (let y = y0; y <= y1; y++) {
+      let v = ((y + 0.5 - top) * invH) | 0;
+      if (v < 0) v = 0; else if (v >= fh) v = fh - 1;
+      const c = fdata[v * fw + u];
+      const ca = c >>> 24;
+      if (ca === 0) continue;
+      if (ty > dz && y < doorBot[x]) continue;
+      let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+      let R, G, B;
+      if (ca === 254 || s.fullbright) { R = r; G = g; B = b; }
+      else { R = ((r * lr) >> 8) + fr; G = ((g * lg) >> 8) + fgc; B = ((b * lb) >> 8) + fb; }
+      if (ta) { R += ((tr - R) * ta) | 0; G += ((tg - G) * ta) | 0; B += ((tb - B) * ta) | 0; }
+      if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
+      if (R < 0) R = 0; if (G < 0) G = 0; if (B < 0) B = 0;
+      const bi = ((x & 3) | ((y & 3) << 2));
+      R = Q[(R << 4) | bi]; G = Q[(G << 4) | bi]; B = Q[(B << 4) | bi];
+      const i = y * W + x;
+      if (add) {
+        const d = buf[i];
+        R = Math.min(255, (d & 255) + ((R * aa) >> 8)); G = Math.min(255, ((d >> 8) & 255) + ((G * aa) >> 8)); B = Math.min(255, ((d >> 16) & 255) + ((B * aa) >> 8));
+      } else if (aa < 256) {
+        const d = buf[i];
+        R = (d & 255) + (((R - (d & 255)) * aa) >> 8); G = ((d >> 8) & 255) + (((G - ((d >> 8) & 255)) * aa) >> 8); B = ((d >> 16) & 255) + (((B - ((d >> 16) & 255)) * aa) >> 8);
+      }
+      buf[i] = 0xff000000 | (B << 16) | (G << 8) | R;
+    }
+  }
+}
+
+// Screen-space projection helper (for HUD markers): returns {x,y,depth} or null when behind camera.
+export function projectPoint(view, cam, px, py, pz) {
+  const H = view.h, W = view.w;
+  const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
+  const tanHalfV = Math.tan(cam.vfov / 2), projScale = H / (2 * tanHalfV), planeLen = tanHalfV * (W / H);
+  const planeX = -dirY * planeLen, planeY = dirX * planeLen;
+  const invDet = 1 / (planeX * dirY - dirX * planeY);
+  const sx = px - cam.x, sy = py - cam.y;
+  const tX = invDet * (dirY * sx - dirX * sy), tY = invDet * (-planeY * sx + planeX * sy);
+  if (tY < 0.05) return null;
+  return { x: (W / 2) * (1 + tX / tY), y: H / 2 + cam.pitch + (cam.z - pz) * projScale / tY, depth: tY };
+}

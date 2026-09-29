@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>render test</title>
+<style>body{margin:0;background:#000}canvas{image-rendering:pixelated;width:960px;height:540px}</style></head>
+<body><canvas id="c" width="480" height="270"></canvas>
+<script type="module">
+import { View, renderView, bakeTorchKernel, applyKernel, LS } from '../src/renderer.js';
+import { buildTextures, WALL, FLOOR, CEIL, DECAL } from '../src/textures.js';
+import { GameMap } from '../src/map.js';
+const textures = buildTextures();
+window.__ready = false;
+const theme = { ambient: [0.05, 0.05, 0.08], fog: [0.02, 0.02, 0.05], fogDensity: 0.05 };
+const map = new GameMap(24, 24, theme);
+const walls = [WALL.brick, WALL.moss, WALL.bone, WALL.sand, WALL.glyph, WALL.wet, WALL.gold, WALL.mural, WALL.flesh, WALL.pillar, WALL.altar, WALL.niche, WALL.store, WALL.portal, WALL.royalGlyph, WALL.ossuaryBrick];
+for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) {
+  const edge = x === 0 || y === 0 || x === 23 || y === 23;
+  if (edge) map.wall[y * 24 + x] = walls[(x * 3 + y) % walls.length];
+  else { map.floor[y * 24 + x] = [FLOOR.flag, FLOOR.flagCrack, FLOOR.sand, FLOOR.water, FLOOR.goldTile, FLOOR.bone][((x >> 2) + (y >> 2)) % 6]; map.ceil[y * 24 + x] = CEIL.stone; }
+}
+for (const [x, y] of [[6, 6], [12, 8], [16, 14], [9, 15]]) map.wall[y * 24 + x] = WALL.pillar;
+map.addDoor(12, 12, WALL.door);
+map.decal[10 * 24 + 8] = DECAL.pentagram; map.decal[14 * 24 + 14] = DECAL.portal; map.decal[10 * 24 + 12] = DECAL.spikePlate;
+map.splatFloor(9.5, 10.5, 1.0, 230); map.splatWall(3, 3, -1, -1, 5, 230);
+const torches = [[3.5, 3.5], [3.5, 12], [20, 5], [11, 20], [14, 6], [8, 8]];
+for (const [tx, ty] of torches) { const k = bakeTorchKernel(map, tx, ty, 7); applyKernel(map.light, k, 1.0, 0.62, 0.28, 1.0); }
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+const view = new View(480, 270);
+const q = new URLSearchParams(location.search);
+const cam = { x: +q.get('x') || 5, y: +q.get('y') || 5, angle: +(q.get('a') || 0.6), z: 0.5, pitch: 0, vfov: 0.95, lightR: 1, lightG: 0.8, lightB: 0.55, lightRadius: 3.2, lightPower: 0.35, ghost: q.get('ghost') === '1' };
+const scene = { map, textures, sprites: [{ x: 8, y: 6, z: 0, w: 0.8, h: 0.8, color: 0xff2020ff, alpha: 1 }] };
+renderView(view, scene, cam, 1.0);
+ctx.putImageData(view.img, 0, 0);
+window.__ready = true;
+window.__bench = () => { const t = performance.now(); for (let i = 0; i < 30; i++) renderView(view, scene, cam, i * 0.03); return (performance.now() - t) / 30; };
+</script></body></html>
