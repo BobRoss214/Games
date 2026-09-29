@@ -1,9 +1,9 @@
 // Headless bot-vs-bot simulation: node tools/sim.mjs [--matches N] [--seed S] [--minutes M] [--floors F] [--verbose]
-import { Match } from '../src/match.js';
+import { Match, emptyIntent } from '../src/match.js';
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? (args[i + 1] === undefined || args[i + 1].startsWith('--') ? true : args[i + 1]) : d; };
 const N = +opt('matches', 3), seed0 = +opt('seed', 1), maxMin = +opt('minutes', 60), floors = +opt('floors', 5), verbose = opt('verbose', false), dtv = 1 / +opt('hz', 30);
-const skill = opt('skill', 'normal'), nplayers = +opt('players', 4);
+const skill = opt('skill', 'normal'), nplayers = +opt('players', 4), afk = +opt('afk', 0);
 let bad = 0; const results = [];
 for (let m = 0; m < N; m++) {
   const seed = seed0 + m;
@@ -11,6 +11,8 @@ for (let m = 0; m < N; m++) {
   let match, err = null, ticks = 0;
   try {
     match = new Match({ seed, floors, botSkill: skill, headless: true, players: Array.from({ length: nplayers }, () => ({ human: false })) });
+    // --afk N: the first N players are humans who never touch the controls (checks the game can never stall on an idle human)
+    for (let i = 0; i < afk; i++) { const p = match.players[i]; p.human = true; p.ai = null; p.pollIntent = () => emptyIntent(); p.consumeIntent = () => {}; }
     match.startOpening();
     let lastProgress = 0, lastXp = 0, lastKey = '';
     while (match.phase !== 'end' && match.time < maxMin * 60) {

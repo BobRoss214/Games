@@ -172,7 +172,7 @@ export class BotBrain {
       if (e.dead || e.removed || !hostile(w, a, a.player, e)) continue;
       if (e.core && !(w.boss && w.boss.fighting)) continue;
       const d = dist(a.x, a.y, e.x, e.y);
-      if (match.phase === 'opening' || (d < 14 && (w.hasLOS(a.x, a.y, e.x, e.y, false) || d < 5))) enemies.push({ e, d });
+      if (match.phase === 'opening' || (d < 14 && (e.room === a.room || w.hasLOS(a.x, a.y, e.x, e.y, false)))) enemies.push({ e, d });
     }
     enemies.sort((p, q) => p.d - q.d);
     const def = WEAPONS[currentWeapon(a).id];
