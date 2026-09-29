@@ -128,7 +128,7 @@ export class Game {
   // ---------------- main loop ----------------
   start() { this.last = now(); const loop = (tm) => { try { this.frameStep(); } catch (e) { console.error(e); this.lastError = e; } requestAnimationFrame(loop); }; requestAnimationFrame(loop); }
   frameStep() {
-    const tNow = now(); let dt = (tNow - this.last) / 1000; this.last = tNow; dt = Math.min(dt, 0.1); this.t += dt;
+    const tNow = now(); let dt = (tNow - this.last) / 1000; this.last = tNow; dt = Math.min(dt, 0.1); this.t += dt; this.lastDt = dt;
     this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0; }
     this.input.beginFrame();
     if (this.input.padPending) { /* reserved */ }
@@ -169,6 +169,20 @@ export class Game {
     if (steps === 5) this.acc = 0;
     this.updateMusic(m);
     this.updateListeners(m);
+    this.horror(m, dt);
+  }
+  // creeping dread: heartbeat when hurt, whispers when a ghost hovers close to a hero viewer
+  horror(m, dt) {
+    this.hbT = (this.hbT || 0) - dt; this.whT = (this.whT || 0) - dt;
+    for (const p of this.viewers) {
+      const b = p.body; if (!b || b.type !== 'hero' || b.dead) continue;
+      const f = b.hp / b.maxHp;
+      if (f < 0.32 && this.hbT <= 0) { this.hbT = 0.55 + f * 1.4; this.sound.play('heartbeat', undefined, undefined, 0.6 + (0.32 - f) * 1.5); }
+      if (this.whT <= 0) {
+        let g = null, gd = 5; for (const a of m.world.actors) if (a.type === 'ghost') { const d = Math.hypot(a.x - b.x, a.y - b.y); if (d < gd) { gd = d; g = a; } }
+        if (g) { this.whT = 4 + Math.random() * 5; this.sound.play('whisper', g.x, g.y, 0.9); }
+      }
+    }
   }
   hitstopFor() { for (const v of this.fx.views.values()) if (v.hitstop > 0) return true; return false; }
   fastForward(seconds) { const m = this.match; let n = Math.floor(seconds / DT); while (n-- > 0) { m.update(DT); const w = m.world; if (w) { const ev = w.drainEvents(); this.fx.handle(ev, m, w); this.fx.update(DT, w); } } }
@@ -308,6 +322,7 @@ export class Game {
       cams.push(cam); cam._p = p;
     }
     updateLights(m, w, cams, t, this.fx);
+    this.fx.updateMotes(this.lastDt || 0.016, cams, w.map);
     for (let i = 0; i < this.viewers.length; i++) {
       const p = this.viewers[i], r = this.layout[i], view = this.views[i], cam = cams[i];
       const sprites = collectSprites(m, w, p, t, this.fx, this.spriteBuf);

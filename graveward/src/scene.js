@@ -19,7 +19,15 @@ export function makeCamera(match, player, t, fxv, opts = {}) {
     case 'hero': {
       const bob = b.moving ? Math.sin(b.walkT * 5.2) * 0.022 : Math.sin(t * 1.5) * 0.004;
       cam.z = 0.5 + bob - (b.dodgeT > 0 ? 0.18 : 0) + (fxv && fxv.hurt > 0.3 ? -0.03 : 0);
-      cam.lightRadius = b.lightRadius || 3.2; cam.lightPower = 0.36 + (b.lightRadius > 4 ? 0.1 : 0);
+      cam.lightRadius = (b.lightRadius || 3.2) * 1.0; cam.lightPower = 0.4 + (b.lightRadius > 4 ? 0.1 : 0);
+      { // lantern breathes, flickers, stutters when ghosts are near and throbs when hurt
+        let flick = 1 + 0.03 * Math.sin(t * 1.7) + 0.035 * Math.sin(t * 13.1) * Math.sin(t * 3.3);
+        let gd = 99; if (w) for (const g of w.actors) if (g.type === 'ghost' && !g.removed) { const d = Math.hypot(g.x - b.x, g.y - b.y); if (d < gd) gd = d; }
+        if (gd < 6) { const ch = 1 - gd / 6; flick *= 1 - ch * (0.15 + 0.4 * Math.max(0, Math.sin(t * 37))) - (ch > 0.6 && Math.sin(t * 5.1) > 0.93 ? 0.35 : 0); cam.haunt = ch; }
+        if (b.hp < b.maxHp * 0.3) flick *= 1 + 0.12 * Math.sin(t * 8) ;
+        cam.lightPower *= Math.max(0.3, flick);
+        cam.lightG *= 1 - 0.1 * (cam.haunt || 0);
+      }
       if (b.st && b.st.stun > 0) cam.angle += Math.sin(t * 40) * 0.01;
       if (b.startle > 0) cam.z += Math.sin(t * 60) * 0.01;
       break;
@@ -52,12 +60,24 @@ export function updateLights(match, w, cams, t, fx) {
   if (lastMapForDyn !== map) { dynUndo.length = 0; lastMapForDyn = map; }
   undoDynLights(map.light, dynUndo);
   const tors = map.torches; if (!tors) return;
+  const ghosts = []; for (const g of w.actors) if (g.type === 'ghost' && !g.removed) ghosts.push(g);
   for (const tr of tors) {
     let near = false;
-    for (const c of cams) if (dist2(c.x, c.y, tr.x, tr.y) < 200) { near = true; break; }
+    for (const c of cams) if (dist2(c.x, c.y, tr.x, tr.y) < 260) { near = true; break; }
     if (!near) continue;
     const n = Math.sin(t * 9 + tr.phase) * 0.06 + Math.sin(t * 23 + tr.phase * 3) * 0.05 + Math.sin(t * 3.1 + tr.phase) * 0.04;
-    const target = tr.out > 0 ? 0.0 : 0.86 + n + (tr.flare || 0);
+    let target;
+    switch (tr.kind) {
+      case 'curse': target = 0.7 + 0.28 * Math.sin(t * 1.7 + tr.phase) + 0.1 * Math.sin(t * 7.3) + (Math.sin(t * 2.9 + tr.phase) > 0.96 ? -0.5 : 0); break;
+      case 'portal': target = 0.85 + 0.15 * Math.sin(t * 2.4 + tr.phase); break;
+      case 'pent': target = tr.pent && tr.pent.prop && tr.pent.prop.usedUp ? 0 : 0.6 + 0.4 * Math.sin(t * 3 + tr.phase); break;
+      case 'steady': target = 0.95 + n * 0.5; break;
+      default: target = tr.out > 0 ? 0.0 : 0.84 + n + (tr.flare || 0);
+    }
+    if (tr.kind === 'torch' && tr.out <= 0 || !tr.kind) {
+      for (const g of ghosts) { const d = Math.hypot(g.x - tr.x, g.y - tr.y); if (d < 6) { const ch = 1 - d / 6; target *= 1 - ch * (0.45 + 0.45 * Math.max(0, Math.sin(t * 29 + tr.phase * 7))); if (ch > 0.55 && Math.sin(t * 2.3 + tr.phase) > 0.92) target *= 0.08; } }
+    }
+    tr.flick = target;
     const delta = target - tr.cur;
     if (Math.abs(delta) > 0.004) { applyKernel(map.light, tr.kernel, tr.color[0], tr.color[1], tr.color[2], delta); tr.cur = target; }
   }
@@ -174,6 +194,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
         const on = !(p.out > 0);
         const f = on ? S.propFrame('torch', '', 0, t) : S.propFrame('torch', '', 0, 0);
         out.push({ x: p.x, y: p.y, z: 0.35, w: 0.3, h: 0.5, frame: f, emit: on ? 0.9 : 0 , tint: on ? 0 : rgb(20, 20, 30), tintAmt: on ? 0 : 0.5 });
+        if (on) { const cur = p.light ? Math.max(0, p.light.cur) : 1; out.push({ x: p.x, y: p.y, z: 0.28, w: 1.1, h: 1.1, frame: S.glowFrame('#ff8a30'), add: true, fullbright: true, alpha: 0.42 * cur, ignoreDepth: false }); }
         break;
       }
       case 'sign': out.push({ x: p.x, y: p.y, z: 0.55, w: 0.42, h: 0.32, frame: S.propFrame('sign'), emit: 0.3 }); break;
@@ -185,6 +206,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
         let z = def.z || 0;
         if (p.sub === 'chandelier') { z = p.falling > 0 ? 0.62 * (p.falling / 0.5) : 0.62; }
         out.push({ x: p.x, y: p.y, z, w: h * ASPECT(f), h, frame: f, emit: p.sub === 'brazier' ? 0.7 : 0.05, tint: p.hitT > 0 ? RGB_WHITE : 0, tintAmt: p.hitT > 0 ? 0.5 : 0 });
+        if (p.sub === 'brazier') out.push({ x: p.x, y: p.y, z: 0.25, w: 1.2, h: 1.2, frame: S.glowFrame('#ff7a20'), add: true, fullbright: true, alpha: 0.4 + Math.sin(t * 11 + p.id) * 0.06 });
         if (p.hitT > 0) p.hitT -= 1 / 60;
         break;
       }
@@ -194,7 +216,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
         if (p.trapped && !p.opened && viewerIsGhostSide) out.push({ x: p.x, y: p.y, z: 0.5, w: 0.14, h: 0.14, color: RGB_RED, alpha: 0.7, add: true, fullbright: true });
         break;
       }
-      case 'crystal': out.push({ x: p.x, y: p.y, z: 0, w: 0.45, h: 0.72, frame: S.propFrame('crystal', '', 0, t), emit: 0.7, tint: p.hitT > 0 ? RGB_WHITE : 0, tintAmt: p.hitT > 0 ? 0.6 : 0 }); if (p.hitT > 0) p.hitT -= 1 / 60; break;
+      case 'crystal': out.push({ x: p.x, y: p.y, z: 0.1, w: 1.0, h: 1.0, frame: S.glowFrame('#ff2030'), add: true, fullbright: true, alpha: 0.35 + Math.sin(t * 4 + p.id) * 0.1 }); out.push({ x: p.x, y: p.y, z: 0, w: 0.45, h: 0.72, frame: S.propFrame('crystal', '', 0, t), emit: 0.7, tint: p.hitT > 0 ? RGB_WHITE : 0, tintAmt: p.hitT > 0 ? 0.6 : 0 }); if (p.hitT > 0) p.hitT -= 1 / 60; break;
       case 'statue': { const f = S.statueFrame(p.sub); const h = Math.min(1.0, MONSTERS[p.sub].h * 0.5); out.push({ x: p.x, y: p.y, z: 0, w: h * ASPECT(f), h, frame: f, emit: 0.03 }); if (viewerIsGhostSide) out.push({ x: p.x, y: p.y, z: h * 0.85, w: 0.16, h: 0.08, color: RGB_ORANGE, alpha: 0.55 + Math.sin(t * 4) * 0.3, add: true, fullbright: true }); break; }
       case 'shop': {
         if (p.sold) break;
@@ -207,6 +229,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
         const lvl10 = match.heroPlayer && match.heroPlayer.hero.level >= 10;
         const f = S.propFrame('portal', '', 0, t);
         out.push({ x: p.x, y: p.y, z: 0, w: 0.75, h: 0.98, frame: f, alpha: lvl10 ? 0.95 : 0.4, add: true, fullbright: true });
+        out.push({ x: p.x, y: p.y, z: 0, w: 2.0, h: 2.0, frame: S.glowFrame('#2a8aff'), add: true, fullbright: true, alpha: lvl10 ? 0.5 : 0.2 });
         break;
       }
       case 'fountainHeal': out.push({ x: p.x, y: p.y, z: 0, w: 0.8, h: 0.9, frame: S.propFrame('fountainHeal', '', 0, t), emit: 0.6 }); break;
@@ -241,6 +264,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
     const f = S.projFrame(p.def.sprite, t);
     const sz = p.def.size;
     out.push({ x: p.x, y: p.y, z: Math.max(0.05, p.z - sz / 2), w: sz * ASPECT(f), h: sz, frame: f, add: !!p.def.glow && p.kind !== 'boulder', fullbright: !!p.def.glow, emit: 0.4, alpha: 1 });
+    if (p.def.glow) { const g = p.def.glow; out.push({ x: p.x, y: p.y, z: Math.max(0, p.z - sz), w: sz * 3, h: sz * 3, frame: S.glowFrame(rgbHex(g)), add: true, fullbright: true, alpha: 0.55 }); }
   }
   // --- corpses & gibs & hazards
   for (const c of w.corpses) {
@@ -262,6 +286,11 @@ export function collectSprites(match, w, viewer, t, fx, out) {
     if (dist2(p.x, p.y, vx, vy) > 900) continue;
     out.push({ x: p.x, y: p.y, z: Math.max(0, p.z), w: p.size, h: p.size, color: p.color, alpha: p.alpha * Math.min(1, p.life * 2), add: p.add, fullbright: !!p.add });
   }
+  // --- dust motes drifting in the air (lit, so they only show inside light pools)
+  for (const m of fx.motes || []) {
+    if (dist2(m.x, m.y, vx, vy) > 90) continue;
+    out.push({ x: m.x, y: m.y, z: m.z, w: 0.012, h: 0.012, color: rgb(220, 200, 170), alpha: 0.55, emit: 0.1 });
+  }
   // --- beams
   for (const b of fx.beams) {
     const step = 0.16;
@@ -276,3 +305,5 @@ export function collectSprites(match, w, viewer, t, fx, out) {
 }
 
 function hexToRgb(s) { const n = parseInt(s.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+
+function rgbHex(g) { const h = (v) => Math.round(v * 255).toString(16).padStart(2, '0'); return '#' + h(g[0]) + h(g[1]) + h(g[2]); }

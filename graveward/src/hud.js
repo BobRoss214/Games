@@ -317,6 +317,6 @@ export function drawGlobalHUD(ctx, W, Hh, match, t) {
     ctx.globalAlpha = 1;
   }
   // kill feed (top-right on the whole screen)
-  let y = 17;
+  let y = 30;
   for (const f of match.feed.slice(0, 3)) { if (f.t < 6) { const a = clamp(1 - (f.t - 5) / 1, 0, 1); ctx.globalAlpha = a * 0.95; drawText(ctx, f.text, W / 2, y, f.color, 1, { align: 'center', outline: '#000' }); ctx.globalAlpha = 1; y += 9; } }
 }

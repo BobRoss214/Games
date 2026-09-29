@@ -236,6 +236,8 @@ const SFX = {
   slime: (a, g, p) => { a.tone({ f: 300, f2: 80, dur: 0.25, type: 'sine', vol: 0.14 * g, pan: p }); a.noise({ dur: 0.2, vol: 0.1 * g, ftype: 'lowpass', f: 700, pan: p }); },
   dodge: (a, g, p) => a.noise({ dur: 0.2, vol: 0.12 * g, ftype: 'highpass', f: 1500, pan: p }),
   windup: (a, g, p) => a.tone({ f: 200, f2: 320, dur: 0.15, type: 'triangle', vol: 0.04 * g, pan: p }),
+  heartbeat: (a, g) => { a.tone({ f: 62, f2: 40, dur: 0.16, type: 'sine', vol: 0.5 * g, wet: 0.3 }); a.tone({ f: 58, f2: 38, dur: 0.18, type: 'sine', vol: 0.36 * g, delay: 0.19, wet: 0.3 }); },
+  whisper: (a, g, p) => { const f0 = 900 + Math.random() * 500; for (let i = 0; i < 4; i++) a.noise({ dur: 0.35 + Math.random() * 0.3, vol: 0.09 * g, ftype: 'bandpass', f: f0 + i * 260, f2: f0 * 0.7 + i * 200, q: 7, delay: i * 0.22, pan: p, wet: 1, a: 0.12 }); a.tone({ f: 190, f2: 150, dur: 1.2, type: 'sine', vol: 0.03 * g, pan: p, wet: 1, a: 0.3 }); },
   // monster voices
   v_skeleton: (a, g, p) => { for (let i = 0; i < 3; i++) a.noise({ dur: 0.05, vol: 0.13 * g, ftype: 'bandpass', f: 2600, q: 5, delay: i * 0.05, pan: p }); a.tone({ f: 180, f2: 120, dur: 0.3, type: 'sawtooth', vol: 0.06 * g, lp: 500, pan: p }); },
   v_archer: (a, g, p) => SFX.v_skeleton(a, g, p),

@@ -48,9 +48,9 @@ class Nav {
   }
 }
 
-function moveToward(I, a, d) { // world dir -> local fwd/strafe
+function moveToward(I, a, d) { // world dir -> local fwd/strafe (also remembered in world space so it is re-projected as the body turns)
   const c = Math.cos(a.angle), s = Math.sin(a.angle);
-  I.fwd = d.x * c + d.y * s; I.strafe = -d.x * s + d.y * c;
+  I.fwd = d.x * c + d.y * s; I.strafe = -d.x * s + d.y * c; I._mv = { x: d.x, y: d.y };
 }
 function moveDir(I, a, dx, dy) { const n = Math.hypot(dx, dy) || 1; moveToward(I, a, { x: dx / n, y: dy / n }); }
 
@@ -112,8 +112,10 @@ export class BotBrain {
       if ((Math.abs(I.fwd) + Math.abs(I.strafe)) > 0.5 && moved < 0.12 && !a.atk) this.stuckT += 0.6; else this.stuckT = 0;
       if (this.stuckT >= 1.8) { this.stuckT = 0; if (this.curGoalId != null) this.black.set(this.curGoalId, w.time + 40); this.nav.path = null; this.wiggle = 0.7; this.wiggleDir = this.rng.chance(0.5) ? 1 : -1; }
     }
+    // (wiggle is applied after the decision/reprojection below)
+    if (due) { this.noise = this.rng.float(-sk.aimErr, sk.aimErr); I._mv = null; this.decideHero(match, w, a, dt); }
+    if (I._mv) { const c = Math.cos(a.angle), sn = Math.sin(a.angle); I.fwd = I._mv.x * c + I._mv.y * sn; I.strafe = -I._mv.x * sn + I._mv.y * c; }
     if (this.wiggle > 0) { this.wiggle -= dt; I.strafe = this.wiggleDir; I.fwd = -0.3; }
-    if (due) { this.noise = this.rng.float(-sk.aimErr, sk.aimErr); this.decideHero(match, w, a, dt); }
     // fight execution each tick
     const t = this.plan.target;
     if (t && !t.dead && !t.removed) {

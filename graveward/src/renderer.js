@@ -114,6 +114,13 @@ const shadeTab = new Float32Array(SHADE_STEPS);
 function buildShadeTab(radius) { for (let i = 0; i < SHADE_STEPS; i++) { const d = (i / SHADE_STEPS) * 40; const t = d / radius; shadeTab[i] = 1 / (1 + t * t * 1.3); } }
 buildShadeTab(3.2);
 
+// contrast curve: deepens shadows so light pools feel real
+const GAM = new Float32Array(2048);
+for (let i = 0; i < 2048; i++) GAM[i] = Math.pow(i / 512, 1.32);
+const gam = (v) => { const i = (v * 512) | 0; return i >= 2047 ? GAM[2047] : i < 0 ? 0 : GAM[i]; };
+// vertical ambient occlusion along a wall texture (darker at the floor/ceiling joins)
+const AOV = new Uint16Array(64);
+for (let i = 0; i < 64; i++) { const k = Math.sin(((i + 0.5) / 64) * Math.PI); AOV[i] = (256 * (0.62 + 0.38 * Math.pow(k, 0.55))) | 0; }
 const tmpSprites = [];
 
 // ---------- main entry ----------
@@ -134,7 +141,7 @@ export function renderView(view, scene, cam, time) {
   const mw = map.w, mh = map.h, wallArr = map.wall, floorArr = map.floor, ceilArr = map.ceil, decalArr = map.decal;
   const doorIdx = map.doorIdx, doors = map.doors;
   const light = map.light, lw = mw * LS;
-  const amb = cam.ghost ? [theme.ambient[0] + 0.09, theme.ambient[1] + 0.12, theme.ambient[2] + 0.22] : theme.ambient;
+  const amb = cam.ghost ? [theme.ambient[0] + 0.14, theme.ambient[1] + 0.2, theme.ambient[2] + 0.34] : theme.ambient;
   const ambR = amb[0], ambG = amb[1], ambB = amb[2];
   const fogR = theme.fog[0], fogG = theme.fog[1], fogB = theme.fog[2], fogD = theme.fogDensity;
   const vlR = cam.lightR * cam.lightPower, vlG = cam.lightG * cam.lightPower, vlB = cam.lightB * cam.lightPower;
@@ -144,6 +151,8 @@ export function renderView(view, scene, cam, time) {
   const vigX = view.vigX, vigY = view.vigY;
   const wTop = view.wTop, wBot = view.wBot, doorZ = view.doorZ, doorBot = view.doorBot;
   const time8 = (time * 8) | 0;
+  if (!map.aoBits) map.computeAO();
+  const aoBits = map.aoBits;
 
   buildShadeTabIfNeeded(vlRadius);
 
@@ -215,7 +224,7 @@ export function renderView(view, scene, cam, time) {
       const fog = Math.min(0.75, 1 - Math.exp(-perp * fogD));
       const baseR = (ambR + light[lk] + vlR * vs) * sideDim, baseG = (ambG + light[lk + 1] + vlG * vs) * sideDim, baseB = (ambB + light[lk + 2] + vlB * vs) * sideDim;
       const glow = wallGlow(map, hit);
-      const lr = ((baseR + glow) * (1 - fog) * 256) | 0, lg = ((baseG + glow * 0.6) * (1 - fog) * 256) | 0, lb = ((baseB + glow * 0.5) * (1 - fog) * 256) | 0;
+      const lr = (gam(baseR + glow) * (1 - fog) * 256) | 0, lg = (gam(baseG + glow * 0.6) * (1 - fog) * 256) | 0, lb = (gam(baseB + glow * 0.5) * (1 - fog) * 256) | 0;
       const fr = (fogR * fog * 255) | 0, fgc = (fogG * fog * 255) | 0, fb = (fogB * fog * 255) | 0;
       const vx = vigX[x];
       const wallBloodMask = map.wallBlood ? map.wallBlood.get(hitCell * 4 + (side === 0 ? (stepX > 0 ? 0 : 1) : (stepY > 0 ? 2 : 3))) : null;
@@ -229,8 +238,8 @@ export function renderView(view, scene, cam, time) {
           const m = wallBloodMask[(((ty | 0) >> 2) << 4) + (tx >> 2)];
           if (m) { const a = m / 255 * 0.85; r = r + (110 - r) * a; g = g + (10 - g) * a; b = b + (14 - b) * a; }
         }
-        const vg = (vx * vigY[y]) >> 8;
-        // gentle vertical darkening (top/bottom of wall)
+        const tq = ty | 0; const vg = (((vx * vigY[y]) >> 8) * AOV[tq > 63 ? 63 : tq]) >> 8;
+        // ambient occlusion: darker toward ceiling & floor joins
         let R = ((r * lr) >> 8) + fr, G = ((g * lg) >> 8) + fgc, B = ((b * lb) >> 8) + fb;
         R = (R * vg) >> 8; G = (G * vg) >> 8; B = (B * vg) >> 8;
         if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
@@ -253,7 +262,7 @@ export function renderView(view, scene, cam, time) {
       lsx = clamp(lsx, 0, lw - 1); lsy = clamp(lsy, 0, mh * LS - 1);
       const lk = (lsy * lw + lsx) * 3;
       const vs = shadeAt(dDist), fog = Math.min(0.75, 1 - Math.exp(-dDist * fogD));
-      const lr = ((ambR + light[lk] + vlR * vs) * (1 - fog) * 256) | 0, lg = ((ambG + light[lk + 1] + vlG * vs) * (1 - fog) * 256) | 0, lb = ((ambB + light[lk + 2] + vlB * vs) * (1 - fog) * 256) | 0;
+      const lr = (gam(ambR + light[lk] + vlR * vs) * (1 - fog) * 256) | 0, lg = (gam(ambG + light[lk + 1] + vlG * vs) * (1 - fog) * 256) | 0, lb = (gam(ambB + light[lk + 2] + vlB * vs) * (1 - fog) * 256) | 0;
       const y0 = Math.max(0, dtop), y1 = Math.min(H, dbot);
       const invLine = 64 / (dbotFull - dtop || 1);
       let ty = (y0 - dtop) * invLine;
@@ -320,11 +329,18 @@ export function renderView(view, scene, cam, time) {
       }
       let lsx = (fx * LS) | 0, lsy = (fy * LS) | 0;
       const lk = (lsy * lw + lsx) * 3;
-      const ceilK = isFloor ? 1 : 0.75;
-      let lr = ((ambR + (light[lk] + vlrr) * ceilK + emissive) * inv) | 0;
-      let lg = ((ambG + (light[lk + 1] + vlgg) * ceilK + emissive * 0.4) * inv) | 0;
-      let lb = ((ambB + (light[lk + 2] + vlbb) * ceilK + emissive * 0.3) * inv) | 0;
-      const vg = (vigX[x] * vyv) >> 8;
+      const ceilK = isFloor ? 1 : 0.55;
+      let lr = (gam(ambR + (light[lk] + vlrr) * ceilK + emissive) * inv) | 0;
+      let lg = (gam(ambG + (light[lk + 1] + vlgg) * ceilK + emissive * 0.4) * inv) | 0;
+      let lb = (gam(ambB + (light[lk + 2] + vlbb) * ceilK + emissive * 0.3) * inv) | 0;
+      let vg = (vigX[x] * vyv) >> 8;
+      const bits = aoBits[ci];
+      if (bits) {
+        const fu = fx - cx, fv = fy - cy; let a = 1;
+        if ((bits & 1) && fu < 0.4) a *= 0.5 + 1.25 * fu; if ((bits & 2) && fu > 0.6) a *= 0.5 + 1.25 * (1 - fu);
+        if ((bits & 4) && fv < 0.4) a *= 0.5 + 1.25 * fv; if ((bits & 8) && fv > 0.6) a *= 0.5 + 1.25 * (1 - fv);
+        vg = (vg * a) | 0;
+      }
       let R = (((r * lr) >> 8) + fr), G = (((g * lg) >> 8) + fgc), B = (((b * lb) >> 8) + fb);
       R = (R * vg) >> 8; G = (G * vg) >> 8; B = (B * vg) >> 8;
       if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
@@ -376,14 +392,15 @@ function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, am
   const em = s.emit || 0;
   const inv = (1 - fog) * 256;
   const tint = s.tint;
-  let lr = ((ambR + light[lk] * 0.9 + vlR * vs + em) * inv) | 0, lg = ((ambG + light[lk + 1] * 0.9 + vlG * vs + em) * inv) | 0, lb = ((ambB + light[lk + 2] * 0.9 + vlB * vs + em) * inv) | 0;
+  let lr = (gam(ambR + light[lk] * 0.9 + vlR * vs + em) * inv) | 0, lg = (gam(ambG + light[lk + 1] * 0.9 + vlG * vs + em) * inv) | 0, lb = (gam(ambB + light[lk + 2] * 0.9 + vlB * vs + em) * inv) | 0;
   if (s.fullbright) { lr = lg = lb = 256; }
   const fr = (fogR * fog * 255) | 0, fgc = (fogG * fog * 255) | 0, fb = (fogB * fog * 255) | 0;
   const alpha = s.alpha === undefined ? 1 : s.alpha;
   const add = s.add;
   if (!s.frame) { // solid particle / quad
     const col = s.color;
-    const cr = col & 255, cg = (col >> 8) & 255, cb = (col >>> 16) & 255;
+    let cr = col & 255, cg = (col >> 8) & 255, cb = (col >>> 16) & 255;
+    if (!s.fullbright) { cr = (cr * lr) >> 8; cg = (cg * lg) >> 8; cb = (cb * lb) >> 8; if (cr > 255) cr = 255; if (cg > 255) cg = 255; if (cb > 255) cb = 255; }
     const aa = (alpha * 256) | 0;
     for (let x = x0; x <= x1; x++) {
       if (ty >= zbuf[x] || (ty > doorZ[x])) continue;

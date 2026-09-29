@@ -111,6 +111,17 @@ export class GameMap {
       }
     }
   }
+  // bit0 west wall, bit1 east, bit2 north, bit3 south: used for contact shadows on floors/ceilings
+  computeAO() {
+    const W = this.w, H = this.h; this.aoBits = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (this.wall[y * W + x] !== 0) continue;
+      let b = 0;
+      if (x > 0 && this.wall[y * W + x - 1] !== 0) b |= 1; if (x < W - 1 && this.wall[y * W + x + 1] !== 0) b |= 2;
+      if (y > 0 && this.wall[(y - 1) * W + x] !== 0) b |= 4; if (y < H - 1 && this.wall[(y + 1) * W + x] !== 0) b |= 8;
+      this.aoBits[y * W + x] = b;
+    }
+  }
   clearBlood() { this.bloodIdx.fill(0); this.bloodMasks = [null]; this.wallBlood.clear(); }
 }
 

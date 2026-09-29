@@ -115,3 +115,5 @@ export function warm() {
     for (let t = 0; t < 3; t++) { monsterFrame(s, t, 'idle', 0); monsterFrame(s, t, 'walk', 0); monsterFrame(s, t, 'atk', 0); monsterFrame(s, t, 'atk', 1); }
   }
 }
+
+export function glowFrame(colorHex) { return memo('glow|' + colorHex, () => X.paintGlow(colorHex)); }

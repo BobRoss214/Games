@@ -298,3 +298,15 @@ export function paintWeapon(kind, fx = {}) {
 }
 
 export function paintFaceIcon() { return new PC(1, 1); }
+
+// soft radial glow used for additive halos (intensity is baked into the colour)
+export function paintGlow(colorHex, size = 32) {
+  const pc = new PC(size, size), n = parseInt(colorHex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const c = (size - 1) / 2;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const d = Math.hypot(x - c, y - c) / c; if (d >= 1) continue;
+    const v = Math.pow(1 - d, 2.2);
+    pc.set(x, y, ((255 << 24) | (Math.round(b * v) << 16) | (Math.round(g * v) << 8) | Math.round(r * v)) >>> 0);
+  }
+  return pc;
+}

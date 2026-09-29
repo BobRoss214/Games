@@ -219,9 +219,9 @@ export function updateAbility(w, a, dt) {
   at.t += dt;
   const windup = ab.windup * (a.st.warcry ? 0.85 : 1), strike = ab.strike, recover = ab.recover;
   if (at.t < windup) { at.phase = 0; return; }
+  if (!at.executed) { at.executed = true; executeAbility(w, a, ab, at); } // fires on the first tick past windup, whatever the tick size
   if (at.t < windup + strike) {
     at.phase = 1;
-    if (!at.executed) { at.executed = true; executeAbility(w, a, ab, at); }
     tickStrike(w, a, ab, at, dt);
     return;
   }

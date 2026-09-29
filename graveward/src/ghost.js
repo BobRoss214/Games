@@ -31,8 +31,9 @@ export function ghostControl(w, g, intent, dt) {
   const hero = w.match.heroActor();
   if (hero && w.kind !== 'boss') {
     const d = dist(g.x, g.y, hero.x, hero.y);
-    if (d > 30) { const pull = (d - 30) * 0.8 * dt; g.x += ((hero.x - g.x) / d) * pull * 4; g.y += ((hero.y - g.y) / d) * pull * 4; }
+    if (d > 30) { const pull = (d - 30) * 0.8 * dt * 4; w.moveActor(g, ((hero.x - g.x) / d) * pull, ((hero.y - g.y) / d) * pull); }
   }
+  w.unstick(g);
   g.room = (w.roomAt(g.x, g.y) || { id: -1 }).id;
   // collect ectoplasm
   for (const pk of w.pickups) {

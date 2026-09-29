@@ -23,7 +23,23 @@ export class FX {
   constructor(settings) {
     this.parts = []; this.ground = []; this.beams = []; this.settings = settings || { gore: 2 };
     this.views = new Map(); // player -> {shake, flash:[r,g,b], flashT, flashMax, chroma, hurt}
-    this.splatBudget = 0;
+    this.splatBudget = 0; this.motes = [];
+  }
+  updateMotes(dt, cams, map) {
+    const want = Math.min(140, cams.length * 55);
+    while (this.motes.length < want) this.motes.push({ x: 1e9, y: 0, z: 0.5, ph: Math.random() * 6.28, sp: 0.02 + Math.random() * 0.05 });
+    if (this.motes.length > want) this.motes.length = want;
+    for (const m of this.motes) {
+      m.ph += dt * 0.7;
+      m.x += Math.sin(m.ph * 1.3) * m.sp * dt * 4; m.y += Math.cos(m.ph) * m.sp * dt * 4; m.z += Math.sin(m.ph * 0.6) * m.sp * dt * 2;
+      let bad = m.x > 1e8 || m.z < 0.05 || m.z > 0.98;
+      if (!bad) { let near = false; for (const c of cams) if ((c.x - m.x) ** 2 + (c.y - m.y) ** 2 < 60) { near = true; break; } if (!near || map.isWall(m.x | 0, m.y | 0)) bad = true; }
+      if (bad && cams.length) {
+        const c = cams[(Math.random() * cams.length) | 0], a = Math.random() * 6.283, r = 1 + Math.random() * 6.5;
+        const nx = c.x + Math.cos(a) * r, ny = c.y + Math.sin(a) * r;
+        if (!map.isWall(nx | 0, ny | 0)) { m.x = nx; m.y = ny; m.z = 0.1 + Math.random() * 0.8; }
+      }
+    }
   }
   goreMul() { return [0, 0.5, 1, 2.2][clamp(this.settings.gore | 0, 0, 3)]; }
   viewOf(p) { let v = this.views.get(p); if (!v) { v = { shake: 0, flashC: [255, 255, 255], flashT: 0, flashMax: 1, chroma: 0, hurt: 0, kick: 0 }; this.views.set(p, v); } return v; }

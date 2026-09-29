@@ -22,7 +22,7 @@ export class World {
     this.build();
   }
 
-  emit(type, data = {}) { data.type = type; if (this.events.length < 400) this.events.push(data); }
+  emit(type, data = {}) { const c = this.match.counts; if (c) c[type] = (c[type] || 0) + 1; data.type = type; if (this.events.length < 400) this.events.push(data); }
   drainEvents() { const e = this.events; this.events = []; return e; }
 
   // ---------- building ----------

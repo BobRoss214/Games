@@ -31,6 +31,7 @@ export class Match {
     this.heroPlayer = null;
     this.floorIndex = 0; this.bossAttempts = 0; this.bossId = null;
     this.toasts = []; this.feed = [];
+    this.counts = {};
     this.stats = { swaps: 0, chests: 0, roomsCleared: 0, floors: 0, bossFights: 0, heroDeaths: 0 };
     this.themeOrder = themesForFloors(this.opts.floors);
     this.endInfo = null;
@@ -238,6 +239,7 @@ export class Match {
       const st = this.roomState(w, r);
       const cond = st.pents > 0 || st.crystals > 0 || st.mons > 0;
       if (!r.locked && inside && cond && hero.room === r.id) { this.lockRoom(w, r); r.visited = true; }
+      if (r.locked && hero.room !== r.id) { r.awayT = (r.awayT || 0) + dt; if (r.awayT > 1.2) { r.awayT = 0; this.unlockRoom(w, r); } } else r.awayT = 0;
       if (r.locked) {
         r.lockT += dt;
         if (!cond) {
@@ -254,7 +256,8 @@ export class Match {
     if (ex && ex.trapdoor) {
       const t = ex.trapdoor;
       if (Math.abs(hero.x - t.x) < 0.7 && Math.abs(hero.y - t.y) < 0.7) {
-        if (!ex.locked && (ex.cleared || !ex.needsClear)) this.useExit(hero);
+        const est = this.roomState(w, ex);
+        if (!ex.locked && est.pents === 0 && est.crystals === 0 && est.mons === 0) this.useExit(hero);
         else if (!hero.exitMsg || hero.exitMsg < w.time) { hero.exitMsg = w.time + 3; this.toastFor(hero.player, 'The trapdoor is sealed. Clear the room.'); w.emit('sealed', { target: hero }); }
       }
     }
@@ -520,6 +523,9 @@ export class Match {
       }
       // let ghost parts be dormant with intro
     }
+    if (this.bossStage === 'fight' && !w.boss.dead && hero.y > sp.arena.y + sp.arena.h + 0.2) { // slipped out through the closing door: put them back inside
+      hero.x = 23.5; hero.y = sp.arena.y + sp.arena.h - 1.6; hero.invuln = Math.max(hero.invuln, 1.5); w.emit('ghostjump', { x: hero.x, y: hero.y });
+    }
     if (this.bossStage === 'won') {
       this.bossWinT = (this.bossWinT || 0) + dt;
       if (this.bossWinT > 4.5) this.endGame('victory', this.heroPlayer);
@@ -546,7 +552,7 @@ export class Match {
     this.world = this.floorWorld; this.floorWorld = null;
     const w = this.world; this.phase = 'floor';
     const room = w.spec.portal;
-    const h = spawnHero(w, p, room.cx + 0.5, room.cy + 2.2, Math.PI / 2, 0.3, { invuln: 3 });
+    const h = spawnHero(w, p, room.cx + 1.5, room.cy + 1.5, -Math.PI / 2, 0.3, { invuln: 3 });
     h.hp = Math.max(1, h.maxHp * 0.25); p.body = h;
     this.placeGhosts(w, h);
     this.setBanner('BACK FROM THE BRINK', (3 - this.bossAttempts) + ' attempt' + (3 - this.bossAttempts === 1 ? '' : 's') + ' remain', '#5ad0ff', 2.6);

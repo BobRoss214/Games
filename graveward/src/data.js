@@ -2,7 +2,7 @@
 import { WALL, FLOOR, CEIL } from './textures.js';
 
 // ---------------- Hero progression ----------------
-export const XP_TABLE = [0, 0, 60, 150, 270, 430, 640, 900, 1220, 1600, 2050]; // cumulative xp to REACH level i
+export const XP_TABLE = [0, 0, 75, 190, 340, 540, 800, 1130, 1530, 2000, 2550]; // cumulative xp to REACH level i
 export const MAX_LEVEL = 10;
 export const heroMaxHp = (lv) => 70 + lv * 13;
 export const heroMaxMana = (lv) => 40 + lv * 6;
@@ -246,12 +246,12 @@ export const PROPS = {
 
 // ---------------- Themes (floors) ----------------
 export const THEMES = [
-  { name: 'Crypt Gate', wall: [WALL.brick, WALL.moss], accent: WALL.niche, floor: [FLOOR.flag, FLOOR.mossFlag], ceil: CEIL.stone, ambient: [0.05, 0.05, 0.075], fog: [0.02, 0.025, 0.04], fogDensity: 0.055, torch: [1.0, 0.62, 0.28], music: 0, props: ['pot', 'crate', 'bones', 'cobweb', 'jar'], blood: 1 },
-  { name: 'The Ossuary', wall: [WALL.bone, WALL.ossuaryBrick], accent: WALL.bone, floor: [FLOOR.bone, FLOOR.flagCrack], ceil: CEIL.bone, ambient: [0.06, 0.05, 0.05], fog: [0.03, 0.02, 0.02], fogDensity: 0.06, torch: [1.0, 0.7, 0.35], music: 1, props: ['bones', 'skullpile', 'coffin', 'urn', 'cobweb'], blood: 1 },
-  { name: 'Sandbound Halls', wall: [WALL.sand, WALL.glyph], accent: WALL.mural, floor: [FLOOR.sand, FLOOR.flag], ceil: CEIL.sand, ambient: [0.075, 0.06, 0.04], fog: [0.06, 0.04, 0.02], fogDensity: 0.05, torch: [1.0, 0.65, 0.22], music: 2, props: ['urn', 'jar', 'pot', 'crate', 'bones'], blood: 1 },
-  { name: 'Flooded Crypts', wall: [WALL.wet, WALL.moss], accent: WALL.niche, floor: [FLOOR.wetFlag, FLOOR.water], ceil: CEIL.drip, ambient: [0.03, 0.06, 0.08], fog: [0.01, 0.04, 0.05], fogDensity: 0.065, torch: [0.5, 0.9, 0.85], music: 3, props: ['pot', 'jar', 'coffin', 'bones', 'cobweb'], blood: 1 },
-  { name: 'The Royal Tomb', wall: [WALL.gold, WALL.royalGlyph], accent: WALL.mural, floor: [FLOOR.royalFlag, FLOOR.goldTile], ceil: CEIL.royal, ambient: [0.075, 0.04, 0.05], fog: [0.05, 0.015, 0.02], fogDensity: 0.05, torch: [1.0, 0.45, 0.25], music: 4, props: ['urn', 'jar', 'coffin', 'skullpile', 'crate'], blood: 1 },
-  { name: 'The Deep Reliquary', wall: [WALL.flesh, WALL.deepFlesh], accent: WALL.flesh, floor: [FLOOR.flesh, FLOOR.altar], ceil: CEIL.flesh, ambient: [0.09, 0.03, 0.04], fog: [0.06, 0.005, 0.01], fogDensity: 0.06, torch: [1.0, 0.25, 0.2], music: 5, props: ['skullpile', 'urn', 'bones', 'coffin'], blood: 1 },
+  { name: 'Crypt Gate', wall: [WALL.brick, WALL.moss], accent: WALL.niche, floor: [FLOOR.flag, FLOOR.mossFlag], ceil: CEIL.stone, ambient: [0.035, 0.049, 0.155], fog: [0.02, 0.025, 0.04], fogDensity: 0.055, torch: [1.0, 0.62, 0.28], music: 0, props: ['pot', 'crate', 'bones', 'cobweb', 'jar'], blood: 1 },
+  { name: 'The Ossuary', wall: [WALL.bone, WALL.ossuaryBrick], accent: WALL.bone, floor: [FLOOR.bone, FLOOR.flagCrack], ceil: CEIL.bone, ambient: [0.050, 0.039, 0.132], fog: [0.03, 0.02, 0.02], fogDensity: 0.06, torch: [1.0, 0.7, 0.35], music: 1, props: ['bones', 'skullpile', 'coffin', 'urn', 'cobweb'], blood: 1 },
+  { name: 'Sandbound Halls', wall: [WALL.sand, WALL.glyph], accent: WALL.mural, floor: [FLOOR.sand, FLOOR.flag], ceil: CEIL.sand, ambient: [0.062, 0.052, 0.132], fog: [0.06, 0.04, 0.02], fogDensity: 0.05, torch: [1.0, 0.65, 0.22], music: 2, props: ['urn', 'jar', 'pot', 'crate', 'bones'], blood: 1 },
+  { name: 'Flooded Crypts', wall: [WALL.wet, WALL.moss], accent: WALL.niche, floor: [FLOOR.wetFlag, FLOOR.water], ceil: CEIL.drip, ambient: [0.022, 0.065, 0.139], fog: [0.01, 0.04, 0.05], fogDensity: 0.065, torch: [0.5, 0.9, 0.85], music: 3, props: ['pot', 'jar', 'coffin', 'bones', 'cobweb'], blood: 1 },
+  { name: 'The Royal Tomb', wall: [WALL.gold, WALL.royalGlyph], accent: WALL.mural, floor: [FLOOR.royalFlag, FLOOR.goldTile], ceil: CEIL.royal, ambient: [0.075, 0.036, 0.116], fog: [0.05, 0.015, 0.02], fogDensity: 0.05, torch: [1.0, 0.45, 0.25], music: 4, props: ['urn', 'jar', 'coffin', 'skullpile', 'crate'], blood: 1 },
+  { name: 'The Deep Reliquary', wall: [WALL.flesh, WALL.deepFlesh], accent: WALL.flesh, floor: [FLOOR.flesh, FLOOR.altar], ceil: CEIL.flesh, ambient: [0.088, 0.026, 0.078], fog: [0.06, 0.005, 0.01], fogDensity: 0.06, torch: [1.0, 0.25, 0.2], music: 5, props: ['skullpile', 'urn', 'bones', 'coffin'], blood: 1 },
 ];
 export function themesForFloors(n) {
   if (n >= 6) return [0, 1, 2, 3, 4, 5];

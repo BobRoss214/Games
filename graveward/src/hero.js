@@ -26,6 +26,7 @@ export function refreshHeroStats(a, keepFrac = true) {
 
 export function spawnHero(w, player, x, y, angle, hpFrac = 1, opts = {}) {
   const ffa = !!opts.ffa;
+  { const f = w.freeSpot(x, y, 0.32); x = f[0]; y = f[1]; }
   const a = w.spawnActor({
     type: 'hero', player, hero: player.hero, x, y, angle, r: 0.3, h: 1, team: 'hero', ctl: 'player', ffa, mana: 0, stamina: 100, charge: 0, blocking: false, blockT: 0, dodgeCd: 0, dodgeT: 0,
     swingSide: 1, sprite: 'hero', eyeZ: 0.5, room: -1, ankhUsed: false, name: player.name,
@@ -313,7 +314,7 @@ export function heroControl(w, a, intent, dt) {
   a.angle = a.angle > Math.PI ? a.angle - TAU : a.angle < -Math.PI ? a.angle + TAU : a.angle;
 
   updateAbility(w, a, dt);
-  if (a.atk && a.atk.phase === 1 && !a.atk.execHero) {
+  if (a.atk && a.atk.executed && !a.atk.execHero) {
     a.atk.execHero = true;
     if (a.atk.ab.kind === 'proj' && a.atk.ab.id === 'weapon') { /* projectile already spawned by executeAbility */ }
     if (a.atk.onExec) a.atk.onExec();
@@ -327,6 +328,8 @@ export function heroControl(w, a, intent, dt) {
   a.blocking = canBlock && intent.alt;
   if (a.blocking) a.blockT = wasBlocking ? a.blockT + dt : 0; else a.blockT = 99;
 
+  // spell input takes priority over swings that would otherwise claim the ability slot
+  if (intent.spell && !stunned) castSpell(w, a);
   // attack input
   const def = weaponDef(currentWeapon(a));
   if (!stunned && !a.atk && a.dodgeT <= 0) {
@@ -344,7 +347,6 @@ export function heroControl(w, a, intent, dt) {
       if (!intent.attack && !intent.attackReleased) a.charge = 0;
     }
   } else if (!intent.attack) a.charge = 0;
-  if (intent.spell && !stunned) castSpell(w, a);
   if (intent.spellNext) { h.spellIdx = (h.spellIdx + 1) % 2; if (!h.spells[h.spellIdx] && h.spells[1 - h.spellIdx]) h.spellIdx = 1 - h.spellIdx; }
   if (intent.potion && !stunned) usePotion(w, a);
   if (intent.potionNext) cyclePotion(a);
@@ -376,6 +378,7 @@ export function heroControl(w, a, intent, dt) {
   a.moving = mag > 0.1 || a.dodgeT > 0;
   a.vx = vx; a.vy = vy;
   applyMotion(w, a, dt);
+  w.unstick(a);
   if (a.moving) a.walkT += dt * (sprinting ? 1.4 : 1) * (spd / 3.5);
   collectPickups(w, a);
 }

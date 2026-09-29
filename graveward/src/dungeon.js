@@ -277,7 +277,7 @@ function populate(r, floor, rng, fi, theme) {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) takeAt(c[0] + dx, c[1] + dy);
   }
   // wall-mounted torches
-  const nTorch = r.type === 'store' ? 3 : rng.int(2, 4);
+  const nTorch = r.type === 'store' ? 3 : r.type === 'curse' ? 1 : rng.int(1, 3);
   const torchSlots = wallSlots(r, rng, r.doors);
   for (let i = 0; i < Math.min(nTorch, torchSlots.length); i++) {
     const s = torchSlots[i];
@@ -386,22 +386,22 @@ function wallSlots(r, rng, doors, forTrap = false) {
 function bakeLights(floor, rng) {
   const { map, rooms, theme } = floor;
   map.torches = [];
-  const col = theme.torch;
+  const col = theme.torch.map((c) => c * 1.3);
+  const addAnim = (x, y, radius, color, kind, extra = {}) => {
+    const k = bakeTorchKernel(map, x, y, radius);
+    applyKernel(map.light, k, color[0], color[1], color[2], 1.0);
+    const tor = Object.assign({ x, y, kernel: k, color, phase: rng.float(0, 6.28), cur: 1, kind, room: -1 }, extra);
+    map.torches.push(tor); return tor;
+  };
   for (const r of rooms) {
     for (const t of r.torches) {
       // light source pushed slightly into the room
       const lx = t.x + Math.cos(t.dir) * 0.35, ly = t.y + Math.sin(t.dir) * 0.35;
-      const k = bakeTorchKernel(map, lx, ly, 7.5);
-      const tor = { x: lx, y: ly, kernel: k, color: col, phase: rng.float(0, 6.28), cur: 1, room: r.id };
-      applyKernel(map.light, k, col[0], col[1], col[2], 1.0);
-      map.torches.push(tor); t.light = tor;
+      t.light = addAnim(lx, ly, 6.4, col, 'torch', { room: r.id });
     }
-    for (const l of r.lights) {
-      const k = bakeTorchKernel(map, l.x, l.y, l.radius);
-      applyKernel(map.light, k, l.color[0], l.color[1], l.color[2], l.power);
-    }
-    for (const p of r.pentagrams) { const k = bakeTorchKernel(map, p.x, p.y, 2.6); applyKernel(map.light, k, 0.7, 0.08, 0.05, 0.6); }
-    if (r.trapdoor) { const k = bakeTorchKernel(map, r.trapdoor.x, r.trapdoor.y, 3.2); applyKernel(map.light, k, 0.9, 0.6, 0.2, 0.35); }
+    for (const l of r.lights) addAnim(l.x, l.y, l.radius, l.color.map((c) => c * l.power), r.type === 'curse' ? 'curse' : r.type === 'portal' ? 'portal' : 'steady', { room: r.id });
+    for (const p of r.pentagrams) addAnim(p.x, p.y, 2.8, [0.75, 0.08, 0.05], 'pent', { pent: p, room: r.id });
+    if (r.trapdoor) addAnim(r.trapdoor.x, r.trapdoor.y, 3.4, [0.35, 0.22, 0.07], 'steady', { room: r.id });
   }
   // corridor torches (dim, sparse)
   const seen = new Set();

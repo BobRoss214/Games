@@ -1,6 +1,6 @@
 import { Match } from '../src/match.js';
 const T = +(process.argv[2] || 300), seed = +(process.argv[3] || 1), every = +(process.argv[4] || 15);
-const m = new Match({ seed, floors: 5, botSkill: process.argv[5] || 'normal', headless: true, players: [{}, {}, {}, {}] });
+const m = new Match({ seed, floors: 5, botSkill: process.env.SK || 'normal', headless: true, players: Array.from({ length: +(process.env.PL || 4) }, () => ({})) });
 m.startOpening();
 let next = 0;
 while (m.time < T && m.phase !== 'end') {

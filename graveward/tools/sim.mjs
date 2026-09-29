@@ -26,8 +26,9 @@ for (let m = 0; m < N; m++) {
   } catch (e) { err = e.stack; }
   const ms = Date.now() - t0;
   const r = { seed, phase: match.phase, min: +(match.time / 60).toFixed(1), floor: match.floorIndex, swaps: match.stats.swaps, rooms: match.stats.roomsCleared, boss: match.bossAttempts, result: match.endInfo && match.endInfo.result, levels: match.players.map((p) => p.hero.level).join('/'), ms, err };
+  r.counts = ['pentagram','traptrigger','statuewake','slimesummon','potion','buy','chestopen','spellcast','dodge','parry','block','levelup','propbreak','roomclear','heroswap','ankh','deathless','torchout','chandeliercrash','chain','frostnova'].map((k) => k + ':' + (match.counts[k] || 0)).join(' ');
   results.push(r); if (err || match.phase !== 'end') bad++;
-  console.log(JSON.stringify(r));
+  console.log(JSON.stringify(r)); if (verbose || N === 1) console.log('  ' + r.counts);
 }
 console.log(`done: ${N} matches, ${bad} problems`);
 process.exit(bad ? 1 : 0);
