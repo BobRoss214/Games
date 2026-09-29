@@ -60,3 +60,7 @@ export function scaleColor(c, f) {
 
 export const IS_BROWSER = typeof window !== 'undefined' && typeof document !== 'undefined';
 export const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+// Shared gameplay RNG (re-seeded per match) so simulations are reproducible.
+export const grng = new RNG(1);
+export const seedGlobal = (seed) => { grng.s = (seed >>> 0) || 1; };
