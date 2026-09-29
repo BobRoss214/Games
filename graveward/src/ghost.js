@@ -142,6 +142,7 @@ export function usePentagram(w, p, g, pent, forceDef) {
 }
 
 export function becomeMonster(w, p, m) {
+  w.match.hint(p, 'monster1', `${w.match.key(p, 'attack')}: ATTACK   ${w.match.key(p, 'alt')}: ABILITY 2   ${w.match.key(p, 'spell')}: ABILITY 3   HOLD ${w.match.key(p, 'interact')}: LEAVE BODY`, 10);
   if (p.ghostForm) { p.ghostForm.removed = true; p.ghostForm = null; }
   m.player = p; m.ctl = 'player'; p.body = m;
   m.aiIntent = null;
@@ -149,6 +150,7 @@ export function becomeMonster(w, p, m) {
 
 export function possessTrap(w, p, g, trap) {
   trap.owner = p;
+  w.match.hint(p, 'trap1', `${w.match.key(p, 'attack')} TRIGGERS THE TRAP. AIM WITH THE MOUSE. HOLD ${w.match.key(p, 'interact')} TO RELEASE.`, 8);
   const proxy = { type: 'trapctl', ctl: 'player', ethereal: true, player: p, trap, x: trap.x, y: trap.y, z: trap.trap === 'spikes' || trap.trap === 'crusher' ? 1.25 : 0.55, angle: trap.trap === 'saw' || trap.trap === 'spikes' || trap.trap === 'crusher' ? g.angle : trap.dir, r: 0.1, h: 0.5, dead: false, cds: {}, st: {}, team: 'ghost', dmgMul: 1, knockX: 0, knockY: 0, holdInteract: 0, eyeZ: 0.5, id: trap.id + 100000, room: trap.room };
   trap.proxy = proxy;
   if (p.ghostForm) { p.ghostForm.removed = true; p.ghostForm = null; }

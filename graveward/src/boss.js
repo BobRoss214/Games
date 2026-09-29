@@ -106,7 +106,7 @@ export class Boss {
       if (this.id === 'mother') {
         if (part.bossPart.id === 'mouth') mul = this.armsUnwrapped() ? 1.4 : 1.0;
         else { // arms: chew through wrapping first
-          if (part.armor > 0) { part.armor -= dmg; part.flash = 0.2; this.w.emit('hit', { x: part.x, y: part.y, target: part, amount: dmg, kind: 'proj', boss: true }); if (part.armor <= 0) { this.w.emit('unwrap', { x: part.x, y: part.y }); this.match.toast('An arm unwraps!', '#e0c080'); } return dmg; }
+          if (part.armor > 0) { part.armor -= dmg; part.flash = 0.2; this.w.emit('hit', { x: part.x, y: part.y, target: part, amount: dmg, kind: 'proj', boss: true }); if (part.armor <= 0) { this.w.emit('unwrap', { x: part.x, y: part.y }); this.match.toast('An arm unwraps!', '#e0c080'); const over = -part.armor * 1.5; part.armor = 0; this.hp -= over; if (this.hp <= 0) this.defeat(); } return dmg; }
           mul = 1.5;
         }
       }

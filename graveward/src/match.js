@@ -60,7 +60,9 @@ export class Match {
   heroLevel() { return this.heroPlayer ? this.heroPlayer.hero.level : 1; }
   avgTier(p) { return (p.ghost.tiers[0] + p.ghost.tiers[1] + p.ghost.tiers[2]) / 3; }
   toast(text, color = '#e8dcc0') { this.feed.unshift({ text, color, t: 0 }); if (this.feed.length > 6) this.feed.pop(); }
-  toastFor(p, text, color) { p.toasts.unshift({ text, color: color || '#e8dcc0', t: 0 }); if (p.toasts.length > 3) p.toasts.pop(); }
+  toastFor(p, text, color, dur) { p.toasts.unshift({ text, color: color || '#e8dcc0', t: 0, dur: dur || 4.5 }); if (p.toasts.length > 3) p.toasts.pop(); }
+  key(p, act) { return this.labelFor ? this.labelFor(p, act) : act.toUpperCase(); }
+  hint(p, id, text, dur = 8) { if (!p.human || (p.hints && p.hints[id])) return; (p.hints || (p.hints = {}))[id] = 1; this.toastFor(p, text, '#a8d8ff', dur); }
   setBanner(text, sub, color, dur = 2.4) { this.banner = { text, sub, color: color || '#e0463c', t: 0, dur }; }
   addBlood(p, amt) {
     const crown = this.heroPlayer && this.heroPlayer.hero.artifacts.includes('crown') ? 1.6 : 1;
@@ -100,6 +102,10 @@ export class Match {
     this.placeGhosts(w, hero);
     for (const p of this.players) { p.upgradeReady = false; }
     this.stats.floors++;
+    for (const q of this.players) {
+      if (q === hp) { this.hint(q, 'move', `${this.key(q, 'move')} MOVE  -  ${this.key(q, 'attack')} SWING  -  ${this.key(q, 'interact')} INTERACT`); this.hint(q, 'rooms', 'KILL EVERYTHING IN A ROOM TO OPEN ITS DOORS. SMASH POTS FOR GOLD.'); }
+      else this.hint(q, 'ghost1', `YOU ARE A GHOST. FLOAT TO A RED PENTAGRAM, PRESS ${this.key(q, 'interact')} TO BECOME A MONSTER.`, 10);
+    }
     this.setBanner('FLOOR ' + (index + 1), spec.theme.name, '#d8b060', 3);
     this.toast('Floor ' + (index + 1) + ': ' + spec.theme.name);
     hero.ankhUsed = false;
@@ -214,6 +220,7 @@ export class Match {
 
   lockRoom(w, room) {
     room.locked = true; room.lockT = 0;
+    { const hh = this.heroPlayer; if (hh) this.hint(hh, 'lock', 'DOORS SEALED! DEFEAT EVERY MONSTER AND SMASH RED CRYSTALS TO ESCAPE.'); }
     for (const d of room.doors) { d.locked = true; w.map.setDoorTex(d, 12); }
     w.emit('roomlock', { room });
   }
@@ -423,6 +430,7 @@ export class Match {
     for (let i = 0; i < 3; i++) spawnPickup(w, 'gold', x, y, { amount: 6 + oldP.hero.level * 3 });
     oldP.role = 'ghost'; oldP.hero.deaths = (oldP.hero.deaths || 0) + 1;
     const g = spawnGhost(w, oldP, x, y, angle); oldP.body = g;
+    this.hint(oldP, 'ghost1', `YOU ARE A GHOST NOW. POSSESS A PENTAGRAM (${this.key(oldP, 'interact')}) OR TRAP TO GET REVENGE.`, 8);
     // new hero
     if (newP.body && newP.body !== g && !newP.body.removed) { newP.body.removed = true; if (newP.body.type === 'trapctl') { newP.body.trap.owner = null; newP.body.trap.proxy = null; } }
     if (newP.ghostForm) { newP.ghostForm.removed = true; newP.ghostForm = null; }
@@ -451,6 +459,7 @@ export class Match {
     if (a && a.type === 'hero') applyLevelUp(w, a);
     this.toast(player.name + ' reached level ' + lv + '!', '#ffd060');
     this.setBanner('LEVEL ' + lv, player.name, '#ffd060', 1.6);
+    { const U = { 3: `LEVEL 3: HOLD ${this.key(player, 'attack')} TO CHARGE A HEAVY ATTACK`, 4: `LEVEL 4: SPELL SLOT UNLOCKED. ${this.key(player, 'spell')} CASTS`, 5: `LEVEL 5: ${this.key(player, 'dodge')} DODGE ROLLS (INVULNERABLE)`, 6: `LEVEL 6: HOLD ${this.key(player, 'alt')} TO BLOCK. TAP AT IMPACT TO PARRY`, 7: 'LEVEL 7: SECOND SPELL SLOT', 10: 'LEVEL 10: FIND THE PORTAL ROOM (ARROW ON HUD)' }; if (U[lv]) this.toastFor(player, U[lv], '#ffe080', 7); }
     for (const p of this.players) if (p !== player) { p.ghost.wrath += lv * 8; this.toastFor(p, 'The Hero grows stronger... +' + lv * 8 + ' Wrath', '#c08040'); }
     if (this.phase === 'floor' || this.phase === 'boss') for (const p of this.players) if (p.role === 'ghost') { /* nothing extra */ }
   }

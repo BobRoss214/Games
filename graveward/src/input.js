@@ -165,7 +165,7 @@ export class Input {
     return n;
   }
   pauseRequested() {
-    if (this.down.has('Escape') || this.down.has('KeyP') && false) return true;
+    if (this.down.has('Escape') || this.down.has('Tab')) return true;
     for (let i = 0; i < 4; i++) if (this.padEdges[i].has(9)) return true;
     return false;
   }

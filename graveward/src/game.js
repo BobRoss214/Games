@@ -8,7 +8,7 @@ import { makeCamera, collectSprites, updateLights } from './scene.js';
 import { FX } from './fx.js';
 import { drawViewportHUD, drawGlobalHUD } from './hud.js';
 import { drawText, panel, setCanvasFactory } from './font.js';
-import { Input, DEFAULT_BINDINGS } from './input.js';
+import { Input, DEFAULT_BINDINGS, keyLabel } from './input.js';
 import { Sound } from './audio.js';
 import { UI, DEFAULT_SETTINGS } from './ui.js';
 import { generateFloor } from './dungeon.js';
@@ -95,6 +95,7 @@ export class Game {
     const seed = s.seed || ((Math.random() * 1e9) | 0) + 1;
     this.fx.clear(); this.fx.views.clear();
     const m = this.match = new Match({ seed, floors: s.floors, botSkill: s.botSkill, players: cfg, gore: s.gore });
+    m.labelFor = (p, act) => { const dev = p.device || 'kbm1'; if (act === 'move') { if (dev.startsWith('pad')) return 'LEFT STICK'; const b0 = this.input.bindingsFor(dev); const ks = ['fwd', 'strafeL', 'back', 'strafeR'].map((a) => (b0[a] || [])[0] || ''); return ks.every((k) => /^Key/.test(k)) ? ks.map((k) => k.replace('Key', '')).join('') : 'ARROWS'; } const b = this.input.bindingsFor(p.device || 'kbm1'); const c = (b[act] || [])[0]; return c === undefined ? act.toUpperCase() : keyLabel(c); };
     // input sources for humans
     const viewbot = this.params.get('viewbot') === '1';
     m.players.forEach((p) => {
@@ -167,6 +168,7 @@ export class Game {
       if (this.viewers.length && m.world) this.footsteps(m, DT);
     }
     if (steps === 5) this.acc = 0;
+    if (this.prof) this.prof.sim += 0;
     this.updateMusic(m);
     this.updateListeners(m);
     this.horror(m, dt);
@@ -321,16 +323,24 @@ export class Game {
       const cam = makeCamera(m, p, t, shakeV, { vfov });
       cams.push(cam); cam._p = p;
     }
+    const T = this.prof || (this.prof = { light: 0, sprites: 0, render: 0, hud: 0, put: 0, sim: 0, n: 0 });
+    let t0 = now();
     updateLights(m, w, cams, t, this.fx);
     this.fx.updateMotes(this.lastDt || 0.016, cams, w.map);
+    T.light += now() - t0;
     for (let i = 0; i < this.viewers.length; i++) {
       const p = this.viewers[i], r = this.layout[i], view = this.views[i], cam = cams[i];
+      t0 = now();
       const sprites = collectSprites(m, w, p, t, this.fx, this.spriteBuf);
+      T.sprites += now() - t0; t0 = now(); T.nspr = (T.nspr || 0) + sprites.length;
       renderView(view, { map: w.map, textures: this.textures, sprites }, cam, t);
+      T.render += now() - t0; t0 = now();
       ctx.putImageData(view.img, r.x, r.y);
+      T.put += now() - t0; t0 = now();
       ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); ctx.translate(r.x, r.y);
       drawViewportHUD(ctx, r.w, r.h, m, p, cam, t, fxv[i]);
       ctx.restore();
+      T.hud += now() - t0;
     }
     if (this.overviewRect) this.drawOverview(ctx, this.overviewRect, m, t);
     // separators

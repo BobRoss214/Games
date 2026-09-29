@@ -45,7 +45,7 @@ class Menu {
       if (it.type === 'header') { drawText(ctx, it.label, cx, y + 2, C.dim, 1, { align: 'center' }); this.rects.push(null); y += lh; return; }
       const label = typeof it.label === 'function' ? it.label() : it.label;
       let text = label, valText = '';
-      if (it.type === 'slider') valText = Math.round(((it.get() - it.min) / (it.max - it.min)) * 100) + '%';
+      if (it.type === 'slider') valText = it.fmt ? it.fmt(it.get()) : Math.round(((it.get() - it.min) / (it.max - it.min)) * 100) + '%';
       else if (it.type === 'choice') valText = String(it.fmt ? it.fmt(it.get()) : it.get());
       else if (it.type === 'toggle') valText = it.get() ? 'ON' : 'OFF';
       const w = opts.width || 220;
@@ -134,12 +134,12 @@ export class UI {
       toggle('MUTE ALL', 'mute', () => g.sound.applyVolumes()),
       { type: 'header', label: 'VIDEO' },
       choice('PIXEL SIZE', 'pixel', ['chunky', 'fine'], (v) => (v === 'chunky' ? 'CHUNKY 480X270' : 'FINE 640X360'), () => g.applyResolution()),
-      slider('FIELD OF VIEW', 'fov', 0.7, 1.25, 0.05),
+      { ...slider('FIELD OF VIEW', 'fov', 0.7, 1.25, 0.05), fmt: (v) => Math.round(((2 * Math.atan(Math.tan(v / 2) * (16 / 9))) * 180) / Math.PI) + ' DEG' },
       slider('COLOR DITHER', 'dither', 0, 1, 0.25, () => g.applyQuant()),
       slider('SCREEN SHAKE', 'shake', 0, 1, 0.25), toggle('SHOW FPS', 'showFps'),
       choice('GORE', 'gore', [0, 1, 2, 3], (v) => ['OFF', 'LOW', 'HIGH', 'EXCESSIVE'][v], () => g.fx.settings.gore = st.gore),
       { type: 'header', label: 'CONTROLS' },
-      slider('MOUSE SENSITIVITY', 'sensitivity', 0.2, 3, 0.1), slider('STICK SENSITIVITY', 'stickSens', 0.3, 2.5, 0.1), slider('STICK DEAD ZONE', 'deadzone', 0.05, 0.5, 0.05),
+      { ...slider('MOUSE SENSITIVITY', 'sensitivity', 0.2, 3, 0.1), fmt: (v) => v.toFixed(1) + 'X' }, { ...slider('STICK SENSITIVITY', 'stickSens', 0.3, 2.5, 0.1), fmt: (v) => v.toFixed(1) + 'X' }, { ...slider('STICK DEAD ZONE', 'deadzone', 0.05, 0.5, 0.05), fmt: (v) => Math.round(v * 100) + '%' },
       { type: 'button', label: 'REBIND CONTROLS', onOk: () => { this.ctrlSel = 0; this.push('controls'); } },
       { type: 'button', label: 'BACK', onOk: () => this.pop() },
     ]);
@@ -328,10 +328,10 @@ export class UI {
       const god = GODS[s.god];
       drawText(ctx, DEVICE_NAMES[s.dev], x + cw / 2, y + 22, C.dim, 1, { align: 'center' });
       drawText(ctx, (s.ready ? '' : '< ') + god.name.toUpperCase() + (s.ready ? '' : ' >'), x + cw / 2, y + 36, god.color, 1, { align: 'center' });
-      drawText(ctx, god.title.toUpperCase().slice(0, 22), x + cw / 2, y + 45, C.dim, 1, { align: 'center' });
-      god.roster.forEach((id, k) => { const f = S.monsterFrame(MONSTERS[id].sprite, 0, 'idle', Math.floor(t * 1.5) % 2); const bx = x + 6 + k * Math.floor((cw - 8) / 3), bw = Math.floor((cw - 8) / 3) - 2; ctx.fillStyle = '#12101c'; ctx.fillRect(bx, y + 56, bw, 44); const sc = Math.min((bw - 2) / f.w, 42 / f.h); const dw = f.w * sc, dh = f.h * sc; ctx.drawImage(frameCanvas(f), bx + (bw - dw) / 2, y + 56 + 43 - dh, dw, dh); drawText(ctx, MONSTERS[id].names[0].split(' ').pop().toUpperCase().slice(0, 7), bx + bw / 2, y + 102, C.text, 1, { align: 'center' }); });
+      wrapText(god.title.toUpperCase(), Math.floor((cw - 6) / 6)).slice(0, 2).forEach((ln, k) => drawText(ctx, ln, x + cw / 2, y + 45 + k * 8, C.dim, 1, { align: 'center' }));
+      god.roster.forEach((id, k) => { const f = S.monsterFrame(MONSTERS[id].sprite, 0, 'idle', Math.floor(t * 1.5) % 2); const bx = x + 6 + k * Math.floor((cw - 8) / 3), bw = Math.floor((cw - 8) / 3) - 2; ctx.fillStyle = '#12101c'; ctx.fillRect(bx, y + 60, bw, 40); const sc = Math.min((bw - 2) / f.w, 38 / f.h); const dw = f.w * sc, dh = f.h * sc; ctx.drawImage(frameCanvas(f), bx + (bw - dw) / 2, y + 60 + 39 - dh, dw, dh); drawText(ctx, MONSTERS[id].names[0].split(' ').pop().toUpperCase().slice(0, Math.max(4, Math.floor(bw / 6))), bx + bw / 2, y + 102, C.text, 1, { align: 'center' }); });
       const lines = wrapText(god.passive.toUpperCase(), Math.floor((cw - 8) / 6));
-      lines.slice(0, 5).forEach((ln, k) => drawText(ctx, ln, x + 5, y + 116 + k * 8, '#b0a090', 1));
+      lines.slice(0, 5).forEach((ln, k) => drawText(ctx, ln, x + 5, y + 114 + k * 8, '#b0a090', 1));
       drawText(ctx, s.ready ? 'READY!' : 'PRESS OK TO READY', x + cw / 2, y + h - 12, s.ready ? '#60e060' : Math.sin(t * 5) > 0 ? '#ffe8a8' : '#a09070', 1, { align: 'center' });
     }
     const joined = L.slots.filter(Boolean).length;
@@ -356,20 +356,20 @@ export class UI {
     this.optionsMenu.draw(ctx, W / 2, 30, t, { lineH: 11, width: 270 });
   }
   drawControls(ctx, W, H, t) {
-    panel(ctx, W / 2 - 170, 8, 340, H - 16, C.bg);
-    drawText(ctx, 'CONTROLS', W / 2, 14, C.gold, 2, { align: 'center' });
+    panel(ctx, W / 2 - 170, 4, 340, H - 8, C.bg);
+    drawText(ctx, 'CONTROLS', W / 2, 8, C.gold, 2, { align: 'center' });
     const b = this.g.settings.bindings[this.controlsDev === 'pad0' ? 'pad' : this.controlsDev];
     ACTIONS.forEach(([id, label], i) => {
-      const y = 32 + i * 12, sel = this.ctrlSel === i;
-      if (sel) { ctx.fillStyle = 'rgba(120,20,20,0.55)'; ctx.fillRect(W / 2 - 160, y - 2, 320, 11); }
+      const y = 27 + i * 10, sel = this.ctrlSel === i;
+      if (sel) { ctx.fillStyle = 'rgba(120,20,20,0.55)'; ctx.fillRect(W / 2 - 160, y - 2, 320, 10); }
       drawText(ctx, label.toUpperCase(), W / 2 - 154, y, sel ? C.hi : C.text, 1);
       const v = (b[id] || []).map(keyLabel).join(' / ') || (this.controlsDev === 'pad0' && (id === 'fwd' || id === 'back' || id === 'strafeL' || id === 'strafeR') ? 'LEFT STICK' : this.controlsDev === 'pad0' && (id === 'turnL' || id === 'turnR') ? 'RIGHT STICK' : '-');
       drawText(ctx, sel && this.rebinding ? 'PRESS A KEY...' : v, W / 2 + 154, y, sel ? C.hi : C.gold, 1, { align: 'right' });
     });
-    const y0 = 32 + ACTIONS.length * 12;
+    const y0 = 27 + ACTIONS.length * 10;
     const items = [['DEVICE: ' + DEVICE_NAMES[this.controlsDev] + '  (LEFT/RIGHT)', ACTIONS.length], ['RESET ALL TO DEFAULTS', ACTIONS.length + 1], ['DONE', ACTIONS.length + 2]];
-    items.forEach(([l, idx], k) => { const y = y0 + 4 + k * 12, sel = this.ctrlSel === idx; if (sel) { ctx.fillStyle = 'rgba(120,20,20,0.55)'; ctx.fillRect(W / 2 - 160, y - 2, 320, 11); } drawText(ctx, l, W / 2, y, sel ? C.hi : C.text, 1, { align: 'center' }); });
-    drawText(ctx, 'PLAYER 2 KEYBOARD USES THE RIGHT-HAND KEYS. GAMEPAD STICKS: MOVE / LOOK.', W / 2, H - 20, C.dim, 1, { align: 'center' });
+    items.forEach(([l, idx], k) => { const y = y0 + 5 + k * 11, sel = this.ctrlSel === idx; if (sel) { ctx.fillStyle = 'rgba(120,20,20,0.55)'; ctx.fillRect(W / 2 - 160, y - 2, 320, 10); } drawText(ctx, l, W / 2, y, sel ? C.hi : C.text, 1, { align: 'center' }); });
+    drawText(ctx, 'PLAYER 2 USES THE RIGHT-HAND KEYS. PAD: STICKS MOVE/LOOK.', W / 2, H - 13, C.dim, 1, { align: 'center' });
   }
   drawCredits(ctx, W, H, t) {
     const lines = ['GRAVEWARD', '', 'A DARK, GRITTY, PIXELATED DUNGEON CRAWLER', 'INSPIRED BY THE HERO-AND-GHOST STRUCTURE OF CRAWL', '', 'ALL ART, SOUND AND MUSIC ARE GENERATED IN CODE', 'NO EXTERNAL ASSETS. ZERO DEPENDENCIES.', '', 'ENGINE: CUSTOM SOFTWARE RAYCASTER', 'AUDIO: WEB AUDIO API SYNTHESIS', '', 'BUILT WITH CLAUDE CODE', '', 'THANK YOU FOR PLAYING'];
@@ -397,7 +397,7 @@ export class UI {
 
   drawUpgrade(ctx, W, H, t) {
     const m = this.g.match;
-    ctx.fillStyle = 'rgba(4,2,8,0.93)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(4,2,8,0.97)'; ctx.fillRect(0, 0, W, H);
     drawText(ctx, 'THE DESCENT', W / 2, 8, C.gold, 2, { align: 'center' });
     drawText(ctx, 'EVOLVE YOUR MONSTERS WITH WRATH. THE HERO GROWS; SO DO THE HAUNTED.', W / 2, 26, C.dim, 1, { align: 'center' });
     bar(ctx, W / 2 - 60, 36, 120, 3, m.upgradeT / 50, '#c08030', '#201008');
@@ -407,22 +407,24 @@ export class UI {
       panel(ctx, x, y, cw, h, 'rgba(12,8,14,0.9)', p.upgradeReady ? '#3a7a3a' : p.color);
       drawText(ctx, p.name.toUpperCase(), x + 4, y + 4, p.color, 1);
       drawText(ctx, p === m.heroPlayer ? 'HERO' : 'GHOST', x + cw - 4, y + 4, p === m.heroPlayer ? '#ffd060' : '#a0a0c0', 1, { align: 'right' });
-      drawText(ctx, `LV${p.hero.level}  XP${p.hero.xp}  $${p.hero.gold}`, x + 4, y + 14, C.text, 1);
-      drawText(ctx, `BLOOD ${Math.round(p.ghost.blood)}   WRATH ${Math.round(p.ghost.wrath)}`, x + 4, y + 23, '#d09050', 1);
+      drawText(ctx, `LV${p.hero.level} XP${p.hero.xp}`, x + 4, y + 14, C.text, 1); drawText(ctx, '$' + p.hero.gold, x + cw - 4, y + 14, '#ffd860', 1, { align: 'right' });
+      drawText(ctx, 'BLOOD ' + Math.round(p.ghost.blood), x + 4, y + 23, '#d05060', 1); drawText(ctx, 'WRATH ' + Math.round(p.ghost.wrath), x + 4, y + 32, '#e09040', 1);
       const god = GODS[p.godId];
-      drawText(ctx, god.name.toUpperCase(), x + 4, y + 34, god.color, 1);
+      drawText(ctx, god.name.toUpperCase(), x + 4, y + 43, god.color, 1);
       const st = this.upSel.get(p) || { sel: 0 };
+      const chars = Math.max(6, Math.floor((cw - 40) / 6));
       god.roster.forEach((id, k) => {
-        const tier = p.ghost.tiers[k], by = y + 46 + k * 38;
+        const tier = p.ghost.tiers[k], by = y + 54 + k * 40;
         const sel = p.human && !p.upgradeReady && p !== m.heroPlayer && st.sel === k;
-        ctx.fillStyle = sel ? 'rgba(120,20,20,0.5)' : 'rgba(20,16,26,0.8)'; ctx.fillRect(x + 3, by, cw - 6, 35);
-        const f = S.monsterFrame(MONSTERS[id].sprite, tier, 'idle', Math.floor(t * 1.5) % 2); const sc = Math.min(30 / f.w, 32 / f.h); ctx.drawImage(frameCanvas(f), x + 6, by + 33 - f.h * sc, f.w * sc, f.h * sc);
-        drawText(ctx, MONSTERS[id].names[tier].toUpperCase().slice(0, 16), x + 38, by + 3, C.text, 1);
-        for (let q = 0; q < 3; q++) { ctx.fillStyle = q <= tier ? '#e0c040' : '#3a3220'; ctx.fillRect(x + 38 + q * 8, by + 13, 6, 4); }
-        if (tier < 2) { const c = EVOLVE_COST[tier + 1]; const ok = m.canEvolve(p, k); drawText(ctx, `NEXT: ${c.wrath}W ${c.blood ? c.blood + 'B' : ''}`, x + 38, by + 21, ok ? '#80e080' : '#806060', 1); if (sel) drawText(ctx, ok ? 'OK: EVOLVE' : 'NOT ENOUGH', x + 38, by + 28, ok ? '#ffe080' : '#a05050', 1); }
-        else drawText(ctx, 'MAX EVOLUTION', x + 38, by + 21, '#e0c040', 1);
+        ctx.fillStyle = sel ? 'rgba(120,20,20,0.5)' : 'rgba(20,16,26,0.8)'; ctx.fillRect(x + 3, by, cw - 6, 38);
+        const f = S.monsterFrame(MONSTERS[id].sprite, tier, 'idle', Math.floor(t * 1.5) % 2); const sc = Math.min(28 / f.w, 34 / f.h); ctx.drawImage(frameCanvas(f), x + 5, by + 36 - f.h * sc, f.w * sc, f.h * sc);
+        const nm = wrapText(MONSTERS[id].names[tier].toUpperCase(), chars).slice(0, 2);
+        nm.forEach((ln, q) => drawText(ctx, ln, x + 36, by + 3 + q * 8, C.text, 1));
+        for (let q = 0; q < 3; q++) { ctx.fillStyle = q <= tier ? '#e0c040' : '#3a3220'; ctx.fillRect(x + 36 + q * 8, by + 20, 6, 4); }
+        if (tier < 2) { const c = EVOLVE_COST[tier + 1]; const ok = m.canEvolve(p, k); drawText(ctx, `${c.wrath}W${c.blood ? ' ' + c.blood + 'B' : ''}`, x + 36 + 28, by + 19, ok ? '#80e080' : '#806060', 1); if (sel) drawText(ctx, ok ? 'OK: EVOLVE' : 'NEED MORE', x + 36, by + 28, ok ? '#ffe080' : '#a05050', 1); }
+        else drawText(ctx, 'MAX', x + 36 + 28, by + 19, '#e0c040', 1);
       });
-      if (p === m.heroPlayer) { drawText(ctx, 'WEAPON: ' + p.hero.weapons[p.hero.weaponIdx].name.toUpperCase().slice(0, 20), x + 4, y + h - 38, C.text, 1); drawText(ctx, 'ARTIFACTS: ' + p.hero.artifacts.length, x + 4, y + h - 29, C.text, 1); }
+      if (p === m.heroPlayer) { drawText(ctx, p.hero.weapons[p.hero.weaponIdx].name.toUpperCase().slice(0, Math.floor((cw - 8) / 6)), x + 4, y + h - 38, C.text, 1); drawText(ctx, 'ARTIFACTS: ' + p.hero.artifacts.length, x + 4, y + h - 29, C.text, 1); }
       const rdy = p.upgradeReady;
       const isSel = p.human && !rdy && (p === m.heroPlayer || st.sel === 3);
       ctx.fillStyle = isSel ? 'rgba(120,20,20,0.6)' : 'rgba(30,30,30,0.6)'; ctx.fillRect(x + 3, y + h - 18, cw - 6, 14);
@@ -433,7 +435,7 @@ export class UI {
   drawEnd(ctx, W, H, t) {
     const m = this.g.match, info = m.endInfo; if (!info) return;
     const a = clamp(m.phaseT / 2, 0, 1);
-    ctx.fillStyle = `rgba(4,2,4,${0.9 * a})`; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(4,2,4,${0.97 * a})`; ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = a;
     const win = info.result === 'victory';
     drawText(ctx, win ? 'VICTORY' : 'DEVOURED', W / 2, 10, win ? '#ffd060' : '#c02020', 4, { align: 'center', outline: '#000' });

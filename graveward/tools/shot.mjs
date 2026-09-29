@@ -22,9 +22,14 @@ export function serve(port = 0) {
     }).listen(port, '127.0.0.1', () => res(srv));
   });
 }
+function loadPlaywright() {
+  for (const spec of ['playwright', 'playwright-core', '/opt/node22/lib/node_modules/playwright']) { try { return require(spec); } catch (e) { /* try next */ } }
+  throw new Error('Playwright not found. Install it once (npm i -g playwright) to run the browser tests; the game itself needs nothing.');
+}
 export async function launch() {
-  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-  return chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }).catch(() => chromium.launch({ args: ['--no-sandbox'] }));
+  const { chromium } = loadPlaywright();
+  const exe = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+  return chromium.launch({ executablePath: exe, args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }).catch(() => chromium.launch({ args: ['--no-sandbox'] }));
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [, , target, out = 'shot.png', wait = '800', W = '960', H = '540'] = process.argv;

@@ -103,8 +103,8 @@ export class FX {
             if (Math.random() < 0.7) map.splatFloor(t.x + (nx || 0) * 0.5 + rnd(-0.3, 0.3), t.y + (ny || 0) * 0.5 + rnd(-0.3, 0.3), 0.28 + Math.min(0.5, amt * 0.012), 140, R);
             if (dir !== undefined && amt > 6) map.splatWall(t.x, t.y, nx, ny, 3.5, 200, R);
           }
-          if (isHero && t.player) { const v = this.viewOf(t.player); v.hurt = Math.min(1, v.hurt + amt / 45); this.shake(t.player, Math.min(1, amt / 30)); this.flash(t.player, [180, 0, 0], 0.25); v.kick = 0.25; v.dirX = nx; v.dirY = ny; }
-          else if (e.srcActor && e.srcActor.type === 'hero' && e.srcActor.player) { this.shake(e.srcActor.player, Math.min(0.5, amt / 60)); this.viewOf(e.srcActor.player).hitstop = 0.05; }
+          if (isHero && t.player) { const v = this.viewOf(t.player); v.hurt = Math.min(1, v.hurt + amt / 45); v.chroma = Math.min(1, Math.max(v.chroma || 0, amt / 35)); this.shake(t.player, Math.min(1, amt / 30)); this.flash(t.player, [180, 0, 0], 0.25); v.kick = 0.25; v.dirX = nx; v.dirY = ny; }
+          else if (e.srcActor && e.srcActor.type === 'hero' && e.srcActor.player) { const sv = this.viewOf(e.srcActor.player); this.shake(e.srcActor.player, Math.min(0.5, amt / 60)); sv.hitstop = amt > 22 ? 0.07 : 0.04; sv.blade = Math.min(1, (sv.blade || 0) + amt / 45); if (amt > 26) sv.chroma = Math.max(sv.chroma || 0, 0.5); }
           if (e.boss) this.shakeAll(match, 0.1, t.x, t.y, 10);
           break;
         }
@@ -152,7 +152,7 @@ export class FX {
         case 'roomlock': this.shakeAll(match, 0.7); break;
         case 'roomclear': this.shakeAll(match, 0.15); break;
         case 'torchout': this.spray(e.x, e.y, 0.4, 10, C.dust, { g: -1, vzmax: 1, alpha: 0.5, smax: 0.5, lmax: 1.2 }); break;
-        case 'beamtick': this.beams.push({ x: e.x, y: e.y, angle: e.angle, len: e.len, t: 0.14, kind: e.target && e.target.defId === 'golem' ? 'soul' : 'sun' }); this.shakeAll(match, 0.05, e.x, e.y, 12); break;
+        case 'beamtick': this.beams.push({ x: e.x, y: e.y, angle: e.angle, len: e.len, t: 0.14, kind: e.target && e.target.defId === 'golem' ? 'soul' : 'sun', owner: e.target }); this.shakeAll(match, 0.05, e.x, e.y, 12); break;
         case 'flame': this.beams.push({ x: e.x, y: e.y, angle: e.angle, len: e.len, t: 0.14, kind: 'fire' }); break;
         case 'chain': case 'drain': this.beams.push({ x: e.x1, y: e.y1, angle: Math.atan2(e.y2 - e.y1, e.x2 - e.x1), len: Math.hypot(e.x2 - e.x1, e.y2 - e.y1), t: 0.22, kind: e.type === 'chain' ? 'lightning' : 'drainbeam' }); break;
         case 'frostnova': this.ring(e.x, e.y, e.radius, C.frost, 40, { add: true }); break;
@@ -199,7 +199,7 @@ export class FX {
     for (const b of this.beams) b.t -= dt;
     if (this.beams.some((b) => b.t <= 0)) this.beams = this.beams.filter((b) => b.t > 0);
     for (const v of this.views.values()) {
-      v.shake = Math.max(0, v.shake - dt * 2.2); v.flashT = Math.max(0, v.flashT - dt); v.hurt = Math.max(0, v.hurt - dt * 0.6); v.kick = Math.max(0, v.kick - dt); v.dodge = Math.max(0, (v.dodge || 0) - dt);
+      v.shake = Math.max(0, v.shake - dt * 2.2); v.chroma = Math.max(0, (v.chroma || 0) - dt * 3.5); v.blade = Math.max(0, (v.blade || 0) - dt * 0.03); v.flashT = Math.max(0, v.flashT - dt); v.hurt = Math.max(0, v.hurt - dt * 0.6); v.kick = Math.max(0, v.kick - dt); v.dodge = Math.max(0, (v.dodge || 0) - dt);
       if (v.hitstop) v.hitstop = Math.max(0, v.hitstop - dt);
     }
   }

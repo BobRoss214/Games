@@ -285,8 +285,8 @@ function populate(r, floor, rng, fi, theme) {
   }
   // type-specific
   const big = r.w >= 8 && r.h >= 8;
-  if (r.type === 'monster' || r.type === 'mixed' || r.type === 'curse' || r.type === 'exit') {
-    let n = r.type === 'curse' ? rng.int(3, 4) : r.type === 'exit' ? rng.int(2, 3) : rng.int(1, 3 + (fi >= 3 ? 1 : 0));
+  if (r.type === 'monster' || r.type === 'mixed' || r.type === 'curse' || r.type === 'exit' || (r.type === 'treasure' && rng.chance(0.75))) {
+    let n = r.type === 'treasure' ? rng.int(1, 2) : r.type === 'curse' ? rng.int(3, 4) : r.type === 'exit' ? rng.int(2, 3) : rng.int(1, 3 + (fi >= 3 ? 1 : 0));
     if (r.w * r.h < 50) n = Math.min(n, 2);
     for (let i = 0; i < n; i++) { const c = pickFree((x, y) => !edgeFree(x, y) && !nearD(x, y, 0)); if (c) push(r.pentagrams, { x: c[0] + 0.5, y: c[1] + 0.5, cx: c[0], cy: c[1], used: false }); }
   }

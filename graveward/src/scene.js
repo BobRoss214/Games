@@ -296,7 +296,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
     const step = 0.16;
     const col = b.kind === 'fire' ? RGB_ORANGE : b.kind === 'soul' ? RGB_CYAN : b.kind === 'lightning' ? rgb(160, 220, 255) : b.kind === 'drainbeam' ? RGB_RED : rgb(255, 220, 90);
     const zBase = b.kind === 'sun' ? 0.7 : 0.32;
-    for (let d = 0.6; d < b.len; d += step) {
+    for (let d = b.owner && b.owner === vb ? 1.6 : 0.6; d < b.len; d += step) {
       const wob = (b.kind === 'lightning' ? Math.sin(d * 9 + t * 60) * 0.12 : 0);
       const jit = Math.sin(d * 17 + t * 55); out.push({ x: b.x + Math.cos(b.angle) * d - Math.sin(b.angle) * wob, y: b.y + Math.sin(b.angle) * d + Math.cos(b.angle) * wob, z: zBase - 0.06 + Math.sin(d * 3 + t * 20) * 0.03 + jit * 0.02, w: b.kind === 'fire' ? 0.14 + d * 0.03 : 0.09 + Math.abs(jit) * 0.05, h: b.kind === 'fire' ? 0.14 + d * 0.03 : 0.09 + Math.abs(jit) * 0.05, color: col, alpha: 0.55, add: true, fullbright: true });
     }

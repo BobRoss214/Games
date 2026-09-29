@@ -81,6 +81,11 @@ function drawWeapon(ctx, vw, vh, a, t, fxv, player) {
   ctx.translate(Math.round(px + dx), Math.round(py + dy));
   ctx.rotate(rot); ctx.scale(sc * scaleK, sc * scaleK);
   if (a.invuln > 0 && (Math.floor(t * 20) & 1) && a.spawnFlash) ctx.globalAlpha = 0.7;
+  if (at && at.ab.id === 'weapon' && at.t >= at.ab.windup * 0.7 && at.t < at.ab.windup + at.ab.strike + 0.12 && kind === 'slash') {
+    const side = swing ? swing.side : 1; ctx.save(); ctx.globalAlpha *= 0.28;
+    for (let k = 1; k <= 3; k++) { ctx.save(); ctx.translate(-side * k * 26, k * 6); ctx.rotate(-side * k * 0.17); ctx.drawImage(frameCanvas(f), -32, -104); ctx.restore(); }
+    ctx.restore();
+  }
   ctx.drawImage(frameCanvas(f), -32, -104);
   // blood on blade
   const bl = fxv ? fxv.blade || 0 : 0;
@@ -95,6 +100,10 @@ const ease = (p) => p * p * (3 - 2 * p);
 
 // ---------- overlays ----------
 function drawOverlays(ctx, vw, vh, fxv, cam, body) {
+  if (fxv && fxv.chroma > 0.05) { // chromatic pixel-shift on big hits
+    const o = Math.max(1, Math.round(fxv.chroma * 3)); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(0.5, fxv.chroma * 0.5);
+    ctx.drawImage(ctx.canvas, ctx.getTransform().e, ctx.getTransform().f, vw, vh, o, 0, vw, vh); ctx.globalAlpha = Math.min(0.4, fxv.chroma * 0.4); ctx.drawImage(ctx.canvas, ctx.getTransform().e, ctx.getTransform().f, vw, vh, -o, 0, vw, vh); ctx.restore();
+  }
   if (fxv) {
     if (fxv.hurt > 0.02) { const g = ctx.createRadialGradient(vw / 2, vh / 2, vh * 0.25, vw / 2, vh / 2, vh * 0.85); g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(150,0,8,${Math.min(0.75, fxv.hurt * 0.8)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, vw, vh); }
     if (fxv.flashT > 0) { const c = fxv.flashC; ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${Math.min(0.9, (fxv.flashT / fxv.flashMax) * 0.8)})`; ctx.fillRect(0, 0, vw, vh); }
@@ -166,11 +175,11 @@ function heroHUD(ctx, vw, vh, m, p, a, t, fxv, compact) {
   }
   h.artifacts.forEach((id, i) => { ctx.fillStyle = '#d8ac3c'; ctx.fillRect(4 + i * 7, barY - 8, 5, 5); ctx.fillStyle = '#ff5060'; ctx.fillRect(5 + i * 7, barY - 7, 3, 2); });
   // top: role & compass
-  drawText(ctx, 'YOU ARE THE HERO', pad + 2, 3, '#ffd060', 1, { outline: '#300' });
+  drawText(ctx, m.phase === 'opening' ? (compact ? 'FFA' : 'FREE-FOR-ALL') : compact ? 'HERO' : 'YOU ARE THE HERO', pad + 2, 3, m.phase === 'opening' ? '#ff8060' : '#ffd060', 1, { outline: '#300' });
   const w = m.world;
   if (w.kind === 'floor') drawText(ctx, 'FLOOR ' + (m.floorIndex + 1) + '  ' + (w.spec.theme.name || '').toUpperCase(), pad + 2, 12, '#b0a088', 1);
   else if (w.kind === 'boss') drawText(ctx, 'ATTEMPT ' + (m.bossAttempts + 1) + '/3', pad + 2, 12, '#e06050', 1);
-  compass(ctx, vw, a.angle);
+  compass(ctx, vw, a.angle, compact);
   // portal arrow at level 10
   if (h.level >= MAX_LEVEL && w.kind === 'floor' && w.spec.portal) {
     const pr = w.spec.portal; const ang = Math.atan2(pr.cy + 0.5 - a.y, pr.cx + 0.5 - a.x); const rel = angleDiff(ang, a.angle);
@@ -202,8 +211,8 @@ function weaponLabel(wp) { return wp.name; }
 function shortItem(it) { switch (it.type) { case 'weapon': return it.name; case 'potion': return POTIONS[it.id].name; case 'spell': return SPELLS[it.id].name + ' SCROLL'; case 'artifact': return ARTIFACTS[it.id].name; default: return it.type; } }
 function itemDesc(it) { switch (it.type) { case 'weapon': return WEAPONS[it.id].desc + ' (DMG ' + Math.round(it.dmg) + ')'; case 'potion': return POTIONS[it.id].desc; case 'spell': return SPELLS[it.id].desc; case 'artifact': return ARTIFACTS[it.id].desc; default: return ''; } }
 
-function compass(ctx, vw, angle) {
-  const cx = vw / 2, y = 3, w = 90;
+function compass(ctx, vw, angle, compact) {
+  const w = compact ? 56 : 90, cx = compact ? Math.round(vw * 0.62) : vw / 2, y = 3;
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(cx - w / 2, y, w, 9);
   const dirs = [['N', -Math.PI / 2], ['E', 0], ['S', Math.PI / 2], ['W', Math.PI]];
   for (const [n, a] of dirs) { const rel = angleDiff(a, angle); if (Math.abs(rel) < 1.0) drawText(ctx, n, cx + rel * (w / 2), y + 1, n === 'N' ? '#ff6050' : '#c8bca0', 1, { align: 'center' }); }
@@ -246,7 +255,7 @@ function ghostHUD(ctx, vw, vh, m, p, b, t, fxv, compact, w) {
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(rel + Math.PI / 2); ctx.fillStyle = hero.color; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(4, 4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
     drawText(ctx, Math.round(d) + 'M', cx, cy + 14, '#c0c0e0', 1, { align: 'center' });
   }
-  compass(ctx, vw, b ? b.angle : 0);
+  compass(ctx, vw, b ? b.angle : 0, compact);
   if (b && b.type === 'ghost') {
     const tg = b.target;
     let msg = '';
@@ -269,11 +278,12 @@ function ghostHUD(ctx, vw, vh, m, p, b, t, fxv, compact, w) {
     drawText(ctx, b.name.toUpperCase(), 4, barY - 18, '#e8dcc0', 1);
     const abs = b.abilities;
     const labels = ['ATK', 'ALT', 'R'];
+    const bwid = Math.min(46, Math.floor((vw - 12) / 3) - 2), n3 = Math.min(3, abs.length), x0 = Math.round(vw / 2 - (n3 * (bwid + 2)) / 2);
     abs.slice(0, 3).forEach((ab, i) => {
-      const x = vw / 2 - 40 + i * 30, y = barY - 12;
+      const x = x0 + i * (bwid + 2), y = barY - 12;
       const cd = b.cds[ab.id] > 0 ? b.cds[ab.id] / ab.cd : 0;
-      ctx.fillStyle = '#12101c'; ctx.fillRect(x, y, 27, 9); ctx.fillStyle = cd > 0 ? '#302848' : '#5a4a90'; ctx.fillRect(x, y, Math.round(27 * (1 - cd)), 9);
-      drawText(ctx, ab.name.slice(0, 5), x + 2, y + 1, '#e8e0f0', 1, { shadow: '#000' });
+      ctx.fillStyle = '#12101c'; ctx.fillRect(x, y, bwid, 9); ctx.fillStyle = cd > 0 ? '#302848' : '#5a4a90'; ctx.fillRect(x, y, Math.round(bwid * (1 - cd)), 9);
+      drawText(ctx, ab.name.toUpperCase().slice(0, Math.floor((bwid - 2) / 6)), x + 2, y + 1, '#e8e0f0', 1, { shadow: '#000' });
     });
     if (b.type === 'monster' && b.age < 9) drawText(ctx, 'HOLD E: LEAVE BODY', vw / 2, barY - 22, '#8a8aaa', 1, { align: 'center' });
     if (b.type === 'bosspart') drawText(ctx, w.boss && w.boss.dormant ? 'WAITING...' : 'CONTROL A PART OF THE BOSS', vw / 2, vh * 0.12, '#e8a080', 1, { align: 'center', outline: '#000' });
@@ -291,16 +301,17 @@ export function drawViewportHUD(ctx, vw, vh, match, player, cam, t, fxv, opts = 
   if (!b) return;
   if (b.type === 'hero') heroHUD(ctx, vw, vh, match, player, b, t, fxv, compact);
   else ghostHUD(ctx, vw, vh, match, player, b, t, fxv, compact, w);
-  // boss bar
+  // boss bar (bottom centre, above the HUD strip, so it never fights the top-left text)
   if (w.boss && w.boss.fighting && !w.boss.dead) {
-    const bw = Math.min(vw - 40, 180), bx = Math.round(vw / 2 - bw / 2);
-    drawText(ctx, w.boss.def.name.toUpperCase(), vw / 2, compact ? 13 : 16, '#e8b0a0', 1, { align: 'center', outline: '#300' });
-    bar(ctx, bx, compact ? 22 : 26, bw, 4, w.boss.hp / w.boss.maxHp, w.boss.phase === 3 ? '#ff3020' : '#c02020', '#200808');
-    if (w.boss.exposedT > 0) drawText(ctx, 'EXPOSED!', vw / 2, compact ? 29 : 33, '#ffd040', 1, { align: 'center' });
+    const BHt = b && b.type === 'hero' ? (compact ? 25 : 34) : (compact ? 24 : 30);
+    const bw = Math.min(Math.round(vw * 0.6), 190), bx = Math.round(vw / 2 - bw / 2), by = vh - BHt - (b && b.type !== 'hero' ? 27 : 12);
+    drawText(ctx, w.boss.def.name.toUpperCase(), vw / 2, by - 9, '#e8b0a0', 1, { align: 'center', outline: '#300' });
+    bar(ctx, bx, by, bw, 4, w.boss.hp / w.boss.maxHp, w.boss.phase === 3 ? '#ff3020' : '#c02020', '#200808');
+    if (w.boss.exposedT > 0) drawText(ctx, 'EXPOSED!', vw / 2, by - 18, '#ffd040', 1, { align: 'center', outline: '#000' });
   }
   // toasts (per player)
   let ty = compact ? 32 : 40;
-  for (const tt of player.toasts.slice(0, compact ? 1 : 2)) { const a = clamp(1 - (tt.t - 3.5) / 1, 0, 1); if (tt.t < 4.5) { ctx.globalAlpha = a; drawText(ctx, tt.text, vw / 2, ty, tt.color, 1, { align: 'center', outline: '#000' }); ctx.globalAlpha = 1; ty += 9; } }
+  for (const tt of player.toasts.slice(0, compact ? 1 : 2)) { const dur = tt.dur || 4.5; const a = clamp(1 - (tt.t - (dur - 1)) / 1, 0, 1); if (tt.t < dur) { ctx.globalAlpha = a; drawText(ctx, tt.text, vw / 2, ty, tt.color, 1, { align: 'center', outline: '#000' }); ctx.globalAlpha = 1; ty += 9; } }
 }
 
 // Global overlays drawn over the whole canvas: feed, banner
