@@ -116,7 +116,7 @@ buildShadeTab(3.2);
 
 // contrast curve: deepens shadows so light pools feel real
 const GAM = new Float32Array(2048);
-for (let i = 0; i < 2048; i++) GAM[i] = Math.pow(i / 512, 1.32);
+for (let i = 0; i < 2048; i++) GAM[i] = Math.pow(i / 512, 1.22);
 const gam = (v) => { const i = (v * 512) | 0; return i >= 2047 ? GAM[2047] : i < 0 ? 0 : GAM[i]; };
 // vertical ambient occlusion along a wall texture (darker at the floor/ceiling joins)
 const AOV = new Uint16Array(64);
@@ -375,7 +375,8 @@ function wallGlow(map, tid) { return tid === 12 ? 0.35 : tid === 16 ? 0.18 : 0; 
 function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, ambR, ambG, ambB, vlR, vlG, vlB, fogR, fogG, fogB, fogD, time) {
   const W = view.w, H = view.h, buf = view.buf, zbuf = view.zbuf, doorZ = view.doorZ, doorBot = view.doorBot;
   const ty = s._ty, tx = s._tx;
-  const sh = projScale * s.h / ty, sw = projScale * s.w / ty;
+  let sh = projScale * s.h / ty, sw = projScale * s.w / ty;
+  if (!s.frame && s.w <= 0.3 && s.h <= 0.3) { const cap = W * 0.045; if (sw > cap) sw = cap; if (sh > cap) sh = cap; }
   const cxs = (W / 2) * (1 + tx / ty);
   const bottom = horizon + (camZ - s.z) * projScale / ty;
   const top = bottom - sh;
@@ -398,6 +399,7 @@ function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, am
   const alpha = s.alpha === undefined ? 1 : s.alpha;
   const add = s.add;
   if (!s.frame) { // solid particle / quad
+    if (ty < 0.45) return; // near-clip: particles brushing the lens would fill the screen
     const col = s.color;
     let cr = col & 255, cg = (col >> 8) & 255, cb = (col >>> 16) & 255;
     if (!s.fullbright) { cr = (cr * lr) >> 8; cg = (cg * lg) >> 8; cb = (cb * lb) >> 8; if (cr > 255) cr = 255; if (cg > 255) cg = 255; if (cb > 255) cb = 255; }

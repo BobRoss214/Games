@@ -19,11 +19,11 @@ export function makeCamera(match, player, t, fxv, opts = {}) {
     case 'hero': {
       const bob = b.moving ? Math.sin(b.walkT * 5.2) * 0.022 : Math.sin(t * 1.5) * 0.004;
       cam.z = 0.5 + bob - (b.dodgeT > 0 ? 0.18 : 0) + (fxv && fxv.hurt > 0.3 ? -0.03 : 0);
-      cam.lightRadius = (b.lightRadius || 3.2) * 1.0; cam.lightPower = 0.4 + (b.lightRadius > 4 ? 0.1 : 0);
+      cam.lightRadius = (b.lightRadius || 3.2) * 1.1; cam.lightPower = 0.46 + (b.lightRadius > 4 ? 0.1 : 0);
       { // lantern breathes, flickers, stutters when ghosts are near and throbs when hurt
         let flick = 1 + 0.03 * Math.sin(t * 1.7) + 0.035 * Math.sin(t * 13.1) * Math.sin(t * 3.3);
         let gd = 99; if (w) for (const g of w.actors) if (g.type === 'ghost' && !g.removed) { const d = Math.hypot(g.x - b.x, g.y - b.y); if (d < gd) gd = d; }
-        if (gd < 6) { const ch = 1 - gd / 6; flick *= 1 - ch * (0.15 + 0.4 * Math.max(0, Math.sin(t * 37))) - (ch > 0.6 && Math.sin(t * 5.1) > 0.93 ? 0.35 : 0); cam.haunt = ch; }
+        if (gd < 4.2) { const ch = Math.pow(1 - gd / 4.2, 1.6); flick *= 1 - ch * (0.15 + 0.4 * Math.max(0, Math.sin(t * 37))) - (ch > 0.6 && Math.sin(t * 5.1) > 0.93 ? 0.35 : 0); cam.haunt = ch; }
         if (b.hp < b.maxHp * 0.3) flick *= 1 + 0.12 * Math.sin(t * 8) ;
         cam.lightPower *= Math.max(0.3, flick);
         cam.lightG *= 1 - 0.1 * (cam.haunt || 0);
@@ -75,7 +75,7 @@ export function updateLights(match, w, cams, t, fx) {
       default: target = tr.out > 0 ? 0.0 : 0.84 + n + (tr.flare || 0);
     }
     if (tr.kind === 'torch' && tr.out <= 0 || !tr.kind) {
-      for (const g of ghosts) { const d = Math.hypot(g.x - tr.x, g.y - tr.y); if (d < 6) { const ch = 1 - d / 6; target *= 1 - ch * (0.45 + 0.45 * Math.max(0, Math.sin(t * 29 + tr.phase * 7))); if (ch > 0.55 && Math.sin(t * 2.3 + tr.phase) > 0.92) target *= 0.08; } }
+      for (const g of ghosts) { const d = Math.hypot(g.x - tr.x, g.y - tr.y); if (d < 5) { const ch = Math.pow(1 - d / 5, 1.5); target *= 1 - ch * (0.45 + 0.45 * Math.max(0, Math.sin(t * 29 + tr.phase * 7))); if (ch > 0.55 && Math.sin(t * 2.3 + tr.phase) > 0.92) target *= 0.08; } }
     }
     tr.flick = target;
     const delta = target - tr.cur;

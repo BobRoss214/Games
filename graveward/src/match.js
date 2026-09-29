@@ -119,7 +119,7 @@ export class Match {
       if (p === this.heroPlayer) continue;
       if (p.body && !p.body.removed && p.body.type !== 'ghost') p.body.removed = true;
       const ang = (k++ / 3) * TAU;
-      const g = spawnGhost(w, p, hero.x + Math.cos(ang) * 1.5, hero.y + Math.sin(ang) * 1.5, ang + Math.PI);
+      const g = spawnGhost(w, p, hero.x + Math.cos(ang) * 3.2, hero.y + Math.sin(ang) * 3.2, ang + Math.PI); if (!w.canStand(g.x, g.y, g.r, true)) { g.x = hero.x + Math.cos(ang) * 1.5; g.y = hero.y + Math.sin(ang) * 1.5; }
       p.role = 'ghost';
       if (!w.canStand(g.x, g.y, g.r, true)) w.unstick(g);
     }
