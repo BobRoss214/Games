@@ -9,8 +9,8 @@ Read this at the start of every session. Update it when reality changes.
 - Stack: plain HTML/CSS/JS ES modules. No framework, no bundler, **no npm dependencies**. All art and audio are generated in code.
 - Run: `cd graveward && python3 -m http.server 8000` then open `http://localhost:8000` (or `npm run dev` there). The root `index.html` is a menu linking to each game.
 - Build: `cd graveward && npm run build` copies the game to `graveward/dist/` (it is just a copy).
-- Test (Node 22, no deps): `cd graveward && npm test` (252 content checks + 6 headless bot matches).
-- Browser tests need Playwright: `npm run test:browser` (menus, two keyboards, fake gamepad, audio).
+- Test (Node 22, no deps): `cd graveward && npm test` (252 content checks + tutorial autopilot + 6 headless bot matches).
+- Browser tests need Playwright: `npm run test:browser` (menus, two keyboards, fake gamepad, tutorial, audio). Always read their output for console errors, not just PASS/FAIL.
 
 ## 2. How to work with me
 
@@ -34,7 +34,7 @@ Read this at the start of every session. Update it when reality changes.
 
 ### Layout
 - `index.html` (root): menu page. `graveward/`: the game (`index.html`, `style.css`, `game.js` bootstrap, `src/`, `tools/`).
-- `graveward/src/`: `data.js` = all content as data (tune numbers here). `match.js` = game director. `world.js/combat.js/hero.js/ghost.js/boss.js/ai.js` = simulation (no DOM, runs in Node). `renderer.js/scene.js/hud.js/ui.js/fx.js/audio.js/input.js/game.js` = presentation.
+- `graveward/src/`: `data.js` = all content as data (tune numbers here). `match.js` = game director. `tutorial.js` = scripted tutorial (map + steps). `world.js/combat.js/hero.js/ghost.js/boss.js/ai.js` = simulation (no DOM, runs in Node). `renderer.js/scene.js/hud.js/ui.js/fx.js/audio.js/input.js/game.js` = presentation.
 - `graveward/README.md` (player + dev guide) and `DECISIONS.md` (why things are the way they are).
 
 ### Style

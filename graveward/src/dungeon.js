@@ -416,20 +416,20 @@ function bakeLights(floor, rng) {
 }
 
 // ---------------- special maps ----------------
-function baseSpecialMap(w, h, themeIdx, extraTheme = {}) {
+export function baseSpecialMap(w, h, themeIdx, extraTheme = {}) {
   const th = THEMES[themeIdx];
   const map = new GameMap(w, h, Object.assign({ ambient: th.ambient, fog: th.fog, fogDensity: th.fogDensity, name: th.name }, extraTheme));
   map.wall.fill(th.wall[0]);
   return { map, th };
 }
-function carveRoom(map, r, floorTex, ceilTex, wallTex, id) {
+export function carveRoom(map, r, floorTex, ceilTex, wallTex, id) {
   for (let y = r.y - 1; y <= r.y + r.h; y++) for (let x = r.x - 1; x <= r.x + r.w; x++) {
     const ci = y * map.w + x;
     if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) { map.wall[ci] = 0; map.floor[ci] = floorTex; map.ceil[ci] = ceilTex; map.roomId[ci] = id; }
     else map.wall[ci] = wallTex;
   }
 }
-function torchLightList(map, torches, color) {
+export function torchLightList(map, torches, color) {
   map.torches = [];
   for (const t of torches) {
     const lx = t.x + Math.cos(t.dir) * 0.35, ly = t.y + Math.sin(t.dir) * 0.35;

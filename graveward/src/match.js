@@ -9,6 +9,7 @@ import { spawnGhost, ghostControl, trapControl, monsterControl, updateTraps, upd
 import { updateStatus, updateProjs, updateHazards, updatePickups, spawnPickup, spawnMonster, dealDamage, hostile, spawnHazard } from './combat.js';
 import { Boss } from './boss.js';
 import { BotBrain, monsterAI } from './ai.js';
+import { Tutorial, buildTutorialMap } from './tutorial.js';
 
 export const emptyIntent = () => ({
   fwd: 0, strafe: 0, turn: 0, turnRate: 0, interactHeld: false, attack: false, attackPressed: false, attackReleased: false, alt: false, altPressed: false, dodge: false, interact: false,
@@ -62,7 +63,7 @@ export class Match {
   toast(text, color = '#e8dcc0') { this.feed.unshift({ text, color, t: 0 }); if (this.feed.length > 6) this.feed.pop(); }
   toastFor(p, text, color, dur) { p.toasts.unshift({ text, color: color || '#e8dcc0', t: 0, dur: dur || 4.5 }); if (p.toasts.length > 3) p.toasts.pop(); }
   key(p, act) { return this.labelFor ? this.labelFor(p, act) : act.toUpperCase(); }
-  hint(p, id, text, dur = 8) { if (!p.human || (p.hints && p.hints[id])) return; (p.hints || (p.hints = {}))[id] = 1; this.toastFor(p, text, '#a8d8ff', dur); }
+  hint(p, id, text, dur = 8) { if (this.tut || !p.human || (p.hints && p.hints[id])) return; (p.hints || (p.hints = {}))[id] = 1; this.toastFor(p, text, '#a8d8ff', dur); }
   setBanner(text, sub, color, dur = 2.4) { this.banner = { text, sub, color: color || '#e0463c', t: 0, dur }; }
   addBlood(p, amt) {
     const crown = this.heroPlayer && this.heroPlayer.hero.artifacts.includes('crown') ? 1.6 : 1;
@@ -85,6 +86,24 @@ export class Match {
     this.setBanner('THE ANTECHAMBER', 'Last one standing becomes the Hero', '#c02020', 3.5);
     this.toast('Free-for-all! Kill everyone else.');
   }
+
+  // Solo scripted tutorial: player 0 is the learner, player 1 is a silent practice hero used in the ghost lesson.
+  startTutorial() {
+    const spec = buildTutorialMap();
+    this.phase = 'tutorial'; this.phaseT = 0;
+    const w = this.world = new World(this, spec, 'floor', this.seed + 9);
+    w.depth = 0;
+    const p = this.players[0], d = this.players[1];
+    d.ai = { think: () => emptyIntent() }; d.name = 'Practice Hero';
+    p.role = 'hero'; p.hero = newHeroRecord(this.rng); this.heroPlayer = p;
+    d.role = 'ghost';
+    const r0 = spec.rooms[0];
+    p.body = spawnHero(w, p, r0.x + 2.5, r0.y + 4.5, 0, 1, { invuln: 1 });
+    this.tut = new Tutorial(this, w, spec);
+    this.tut.begin();
+    this.setBanner('THE TUTORIAL', 'Do what the panel says to move on', '#a8d8ff', 3);
+  }
+  spawnDummyHero(w, p, x, y, angle) { const h = spawnHero(w, p, x, y, angle, 1, {}); p.body = h; return h; }
 
   startFloor(index) {
     this.phase = 'floor'; this.phaseT = 0; this.floorIndex = index;
@@ -132,7 +151,7 @@ export class Match {
     for (const p of this.players) for (const t of p.toasts) t.t += dt;
     if (this.banner) { this.banner.t += dt; if (this.banner.t > this.banner.dur) this.banner = null; }
     switch (this.phase) {
-      case 'opening': case 'floor': case 'boss': this.stepWorld(dt); break;
+      case 'opening': case 'floor': case 'boss': case 'tutorial': this.stepWorld(dt); break;
       case 'upgrade': this.stepUpgrade(dt); break;
       case 'end': if (this.world) this.world.time += dt; break;
       default: break;
@@ -140,6 +159,7 @@ export class Match {
   }
 
   gatherIntent(p, dt) {
+    if (this.tut && this.tut.done) return emptyIntent();
     if (p.human) return p.pollIntent ? p.pollIntent(dt) : p.intent;
     return p.ai.think(this, dt);
   }
@@ -182,6 +202,7 @@ export class Match {
     if (this.phase === 'opening') this.stepOpening(w, dt);
     else if (this.phase === 'floor') this.stepFloor(w, dt);
     else if (this.phase === 'boss') { if (w.boss) w.boss.update(dt); this.stepBossWorld(w, dt); }
+    else if (this.phase === 'tutorial') this.tut.update(dt);
     w.cleanup();
     if (this.headless) w.events.length = 0;
   }
@@ -403,6 +424,7 @@ export class Match {
   }
 
   onHeroDeath(w, hero, src) {
+    if (this.tut) return this.tut.onHeroDeath(w, hero);
     const p = hero.player;
     this.stats.heroDeaths++;
     if (this.phase === 'opening') {

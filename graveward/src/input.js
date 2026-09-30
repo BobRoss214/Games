@@ -34,14 +34,14 @@ export class Input {
     on(window, 'keydown', (e) => {
       if (e.repeat) { if (this.captureKeys(e)) e.preventDefault(); return; }
       if (this.rebind) { this.rebind(e.code); this.rebind = null; e.preventDefault(); return; }
-      this.keys.add(e.code); this.down.add(e.code); this.lastAnyKey = e.code;
+      this.keys.add(e.code); this.down.add(e.code); this.lastAnyKey = e.code; this.lastDevice = 'kbm1';
       if (this.captureKeys(e)) e.preventDefault();
     });
     on(window, 'keyup', (e) => { this.keys.delete(e.code); this.up.add(e.code); });
     on(window, 'blur', () => { this.keys.clear(); });
     on(canvas, 'mousedown', (e) => {
       if (this.rebind) { this.rebind('Mouse' + e.button); this.rebind = null; e.preventDefault(); return; }
-      this.keys.add('Mouse' + e.button); this.down.add('Mouse' + e.button); this.lastAnyKey = 'Mouse' + e.button; this.canvas.focus && this.canvas.focus(); e.preventDefault();
+      this.lastDevice = 'kbm1'; this.keys.add('Mouse' + e.button); this.down.add('Mouse' + e.button); this.lastAnyKey = 'Mouse' + e.button; this.canvas.focus && this.canvas.focus(); e.preventDefault();
     });
     on(window, 'mouseup', (e) => { this.keys.delete('Mouse' + e.button); this.up.add('Mouse' + e.button); });
     on(canvas, 'contextmenu', (e) => e.preventDefault());
@@ -66,6 +66,7 @@ export class Input {
         if (prev) cur.buttons.forEach((b, k) => { if (b && !prev.buttons[k]) this.padEdges[i].add(k); });
         else cur.buttons.forEach((b, k) => { if (b) this.padEdges[i].add(k); });
         this.pads[i] = cur;
+        if (prev && this.padEdges[i].size) this.lastDevice = 'pad' + i;
       } else this.pads[i] = null;
     }
   }

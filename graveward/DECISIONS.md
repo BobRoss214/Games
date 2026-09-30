@@ -54,3 +54,9 @@ Where I had to choose (brief was silent or ambiguous):
 At the final settings (4 bots, normal), 10 consecutive seeds: 0 crashes or stalls, about 60% ended in a boss victory and 40% in the "devoured" ending, 19-37 min of game time (median about 26), 19-59 Hero swaps. Humans think slower than bots, so real matches run longer.
 
 Not done: online multiplayer, damage numbers.
+
+## Tutorial
+* Scripted solo run in its own hand-built map (7 rooms in a row, sealed doors) instead of a flag on the normal floors: easier to gate, and the real combat/ghost code still runs.
+* Steps complete by watching the same event counters the game already emits (propbreak, dodge, block, potion, spellcast, chestopen, buy, pentagram), so no duplicate detection logic.
+* Levels are granted at the step that needs them (3 heavy, 5 dodge, 6 block, 7 spell). The learner cannot die (HP topped up, deaths revived); the practice hero in the ghost lesson takes damage but is healed and never falls, so no role swap happens.
+* The ghost lesson resets the pentagram if the player leaves or loses the monster body, so it cannot dead-end.

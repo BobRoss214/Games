@@ -85,6 +85,7 @@ src/
   hero.js            Hero controls, progression, inventory, interactions
   ghost.js           Ghost form, possession, traps, props, monster control
   boss.js            5 bosses, weak-spot rules, phases
+  tutorial.js        scripted tutorial map + steps (sim-side)
   match.js           the director: phases, role swap, locks, upgrade, portal
   ai.js              Hero bot, Ghost bot, trap bot, monster AI
   scene.js           cameras, sprite lists, torch flicker & dynamic lights
@@ -104,5 +105,7 @@ See `DECISIONS.md` for the reasoning behind the main choices and what was resear
 ## Status and next steps
 
 The full loop (title -> lobby -> antechamber -> 5+ floors -> upgrade screens -> portal -> a random boss of 5 -> ending) is playable start to finish by any mix of humans and bots and has been simulated across hundreds of seeds without crashes or softlocks.
+
+The **TUTORIAL** entry on the title screen runs a scripted 22-step lesson (`src/tutorial.js`): look, move, smash pots, fight, heavy attack, dodge, block, potion, spell, chest, shop, then a ghost lesson (float, possess a pentagram, attack a practice hero). Doors stay sealed until each step is done; the panel shows your own keys and Xbox buttons. `node tools/tutorial.mjs` plays it headless with an autopilot; `node tools/e2e-tutorial.mjs` checks it in a real browser.
 
 Ideas I did not get to: online play, damage numbers, and a Ghost minimap in single-viewport mode.

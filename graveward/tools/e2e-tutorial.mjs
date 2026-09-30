@@ -1,0 +1,25 @@
+// Browser e2e: title -> TUTORIAL with the real keyboard, and the first steps only advance when the player does them.
+import { serve, launch } from './shot.mjs';
+const srv = await serve(); const port = srv.address().port;
+const browser = await launch(); const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+const logs = []; page.on('console', (m) => { if (m.type() === 'error') logs.push(m.text()); }); page.on('pageerror', (e) => logs.push(e.message));
+let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
+await page.goto(`http://127.0.0.1:${port}/index.html?debug=1&seed=4`); await page.waitForFunction('window.graveward'); await page.waitForTimeout(400);
+const G = (e) => page.evaluate(`(() => { const g = window.graveward; ${e} })()`);
+await page.keyboard.press('ArrowDown'); await page.waitForTimeout(120);
+ok(await G('return g.ui.mainMenu.sel') === 1, 'TUTORIAL is the second menu entry');
+await page.keyboard.press('Enter'); await page.waitForFunction('window.graveward.screen === "playing"', null, { timeout: 5000 });
+ok(await G('return g.match.phase') === 'tutorial', 'tutorial phase started');
+ok(await G('return g.match.tut.step.id') === 'look', 'starts on the look step');
+await page.waitForTimeout(1500);
+ok(await G('return g.match.tut.step.id') === 'look', 'does not advance on its own');
+await page.keyboard.down('KeyJ'); await page.waitForTimeout(2600); await page.keyboard.up('KeyJ');
+await page.waitForFunction('window.graveward.match.tut.step.id !== "look"', null, { timeout: 4000 }); ok(true, 'turning completes the look step');
+await page.keyboard.down('KeyW'); await page.waitForFunction('window.graveward.match.tut.step.id === "enter1"', null, { timeout: 9000 }).catch(() => {}); await page.keyboard.up('KeyW');
+ok(await G('return g.match.tut.step.id') === 'enter1', 'walking completes the move step (door opens)');
+await page.screenshot({ path: '/tmp/claude-0/shots/tut_e2e.png' });
+await page.keyboard.press('Tab'); await page.waitForTimeout(300);
+ok(await G('return g.paused') === true, 'Tab pauses the tutorial');
+ok(await G('return g.ui.pauseMenu.items.some((i) => i.label === "SKIP THIS STEP")') === true, 'pause menu offers SKIP THIS STEP');
+console.log(logs.join('\n') || 'no console errors'); if (logs.length) fails++;
+await browser.close(); srv.close(); process.exit(fails ? 1 : 0);

@@ -115,6 +115,7 @@ export class UI {
     const toggle = (label, key, after) => ({ type: 'toggle', label, get: () => st[key], set: (v) => { st[key] = v; g.saveSettings(); if (after) after(); } });
     this.mainMenu = new Menu([
       { type: 'button', label: 'PLAY', onOk: () => this.push('setup') },
+      { type: 'button', label: 'TUTORIAL', onOk: () => g.startTutorial() },
       { type: 'button', label: 'HOW TO PLAY', onOk: () => { this.howPage = 0; this.push('howto'); } },
       { type: 'button', label: 'OPTIONS', onOk: () => this.push('options') },
       { type: 'button', label: 'CREDITS', onOk: () => { this.creditsT = 0; this.push('credits'); } },
@@ -230,12 +231,22 @@ export class UI {
     }
     if (m.phase === 'upgrade') this.updateUpgrade(dt);
     if (m.phase === 'end') this.updateEnd(dt, nav);
+    if (m.tut && m.tut.done) {
+      if (!this.tutMenu) this.tutMenu = new Menu([
+        { type: 'button', label: 'PLAY A MATCH', onOk: () => { g.quitToTitle(); this.push('setup'); } },
+        { type: 'button', label: 'REPLAY TUTORIAL', onOk: () => { this.tutMenu = null; g.startTutorial(); } },
+        { type: 'button', label: 'BACK TO TITLE', onOk: () => { this.tutMenu = null; g.quitToTitle(); } },
+      ]);
+      this.tutMenu.update(nav, this.mouse, g);
+    } else this.tutMenu = null;
     this.mouse.moved = false;
   }
   buildPause() {
     const g = this.g;
+    const tut = g.match && g.match.tut && !g.match.tut.done;
     this.pauseMenu = new Menu([
       { type: 'button', label: 'RESUME', onOk: () => g.resume() },
+      ...(tut ? [{ type: 'button', label: 'SKIP THIS STEP', onOk: () => { g.match.tut.skip(); g.resume(); } }] : []),
       { type: 'button', label: 'OPTIONS', onOk: () => this.push('options') },
       { type: 'button', label: 'HOW TO PLAY', onOk: () => { this.howPage = 0; this.push('howto'); } },
       { type: 'button', label: 'QUIT TO TITLE', onOk: () => g.quitToTitle() },
@@ -307,7 +318,6 @@ export class UI {
     const ps = this.g.input.padStatus();
     const msg = ps === 'blocked' ? 'THIS PAGE BLOCKS CONTROLLERS. OPEN THE GAME IN ITS OWN TAB' : ps === 'none' ? 'NO CONTROLLER SEEN YET. PLUG IN, THEN PRESS A BUTTON' : 'CONTROLLER FOUND: ' + ps.slice(3).replace(/\s*\(.*$/, '').slice(0, 30).toUpperCase() + '. D-PAD + A TO CHOOSE';
     drawText(ctx, msg, W / 2, H - 11, ps === 'blocked' ? '#e05a4a' : ps === 'none' ? '#8a7a60' : '#7ad07a', 1, { align: 'center' });
-    drawText(ctx, np ? `CONTROLLER CONNECTED (${np}). D-PAD + A TO CHOOSE, OR ARROWS / WASD + ENTER, OR CLICK` : 'ARROWS / WASD + ENTER, OR CLICK.  XBOX PAD: PLUG IN AND PRESS ANY BUTTON', W / 2, H - 11, np ? '#7ad07a' : '#5a4a40', 1, { align: 'center' });
   }
   drawSetup(ctx, W, H, t) {
     panel(ctx, W / 2 - 150, 20, 300, H - 40, C.bg);
@@ -398,6 +408,13 @@ export class UI {
     const g = this.g, m = g.match;
     if (m.phase === 'upgrade') this.drawUpgrade(ctx, W, H, t);
     else if (m.phase === 'end') this.drawEnd(ctx, W, H, t);
+    if (m.tut && m.tut.done && !g.paused && this.tutMenu) {
+      ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(0, 0, W, H);
+      panel(ctx, W / 2 - 110, H / 2 - 62, 220, 124, C.bg);
+      drawText(ctx, 'TUTORIAL COMPLETE', W / 2, H / 2 - 54, C.gold, 2, { align: 'center' });
+      drawText(ctx, 'YOU KNOW THE BASICS. NOW GO HAUNT SOMEONE.', W / 2, H / 2 - 34, C.dim, 1, { align: 'center' });
+      this.tutMenu.draw(ctx, W / 2, H / 2 - 16, t, { lineH: 16, width: 170 });
+    }
     if (g.paused) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
       const s = this.screen;

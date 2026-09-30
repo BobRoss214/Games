@@ -110,7 +110,11 @@ export class Game {
     while (cfg.length < total) cfg.push({ human: false });
     this.startMatch(cfg);
   }
-  startMatch(cfg) {
+  startTutorial() {
+    const dev = this.input.lastDevice || 'kbm1';
+    this.startMatch([{ human: true, godId: 'ossuar', device: dev, name: 'You' }, { human: false }], { tutorial: true });
+  }
+  startMatch(cfg, opts = {}) {
     const s = this.settings;
     const seed = s.seed || ((Math.random() * 1e9) | 0) + 1;
     this.fx.clear(); this.fx.views.clear();
@@ -124,7 +128,7 @@ export class Game {
     this.viewers = m.players.filter((p) => p.human);
     if (viewbot || this.viewers.length === 0) this.viewers = m.players.slice(0, Math.max(1, +this.params.get('views') || 1));
     this.makeLayout();
-    m.startOpening();
+    if (opts.tutorial) m.startTutorial(); else m.startOpening();
     this.screen = 'playing'; this.paused = false; this.ui.stack = ['playing']; this.ui.endMenu = null; this.ui.upSel.clear(); this.ui.pauseMenu = null;
     this.sound.resume();
     if (this.hasMouseP1()) { this.ignoreUnlock = true; this.input.requestLock(); setTimeout(() => (this.ignoreUnlock = false), 600); }
@@ -265,6 +269,7 @@ export class Game {
         case 'heroswap': S.play('swapSting', undefined, undefined, 1); break;
         case 'herofall': S.play('death', x, y, 1.2); break;
         case 'levelup': S.play('levelup', undefined, undefined, 0.9); break;
+        case 'tutstep': S.play('uiOk'); break;
         case 'explosion': S.play('explosion', x, y); break; case 'shockwave': S.play('shockwave', x, y); break; case 'rockimpact': S.play('shockwave', x, y); break;
         case 'chestopen': S.play('chest', x, y); break;
         case 'pickup': S.play(e.what === 'gold' ? 'coin' : 'pickup', undefined, undefined, 0.8); break;

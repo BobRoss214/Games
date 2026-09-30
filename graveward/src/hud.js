@@ -177,7 +177,7 @@ function heroHUD(ctx, vw, vh, m, p, a, t, fxv, compact) {
   // top: role & compass
   drawText(ctx, m.phase === 'opening' ? (compact ? 'FFA' : 'FREE-FOR-ALL') : compact ? 'HERO' : 'YOU ARE THE HERO', pad + 2, 3, m.phase === 'opening' ? '#ff8060' : '#ffd060', 1, { outline: '#300' });
   const w = m.world;
-  if (w.kind === 'floor') drawText(ctx, 'FLOOR ' + (m.floorIndex + 1) + '  ' + (w.spec.theme.name || '').toUpperCase(), pad + 2, 12, '#b0a088', 1);
+  if (w.kind === 'floor') drawText(ctx, m.tut ? 'TUTORIAL' : 'FLOOR ' + (m.floorIndex + 1) + '  ' + (w.spec.theme.name || '').toUpperCase(), pad + 2, 12, '#b0a088', 1);
   else if (w.kind === 'boss') drawText(ctx, 'ATTEMPT ' + (m.bossAttempts + 1) + '/3', pad + 2, 12, '#e06050', 1);
   compass(ctx, vw, a.angle, compact);
   // portal arrow at level 10
@@ -246,7 +246,7 @@ function ghostHUD(ctx, vw, vh, m, p, b, t, fxv, compact, w) {
   const hero = m.heroPlayer;
   if (hero) drawText(ctx, 'HERO: ' + hero.name.toUpperCase() + ' LV' + hero.hero.level, pad + 2, 3, hero.color, 1, { outline: '#000' });
   else drawText(ctx, 'SPECTATING', pad + 2, 3, '#a0a0c0', 1);
-  if (w.kind === 'floor') drawText(ctx, 'FLOOR ' + (m.floorIndex + 1), pad + 2, 12, '#8a88a8', 1);
+  if (w.kind === 'floor') drawText(ctx, m.tut ? 'TUTORIAL' : 'FLOOR ' + (m.floorIndex + 1), pad + 2, 12, '#8a88a8', 1);
   // direction to hero
   const ha = m.heroActor();
   if (ha && b) {
@@ -266,8 +266,8 @@ function ghostHUD(ctx, vw, vh, m, p, b, t, fxv, compact, w) {
       }
     }
     if (msg) drawText(ctx, msg, vw / 2, vh * 0.55, '#c0b0ff', 1, { align: 'center', outline: '#000' });
-    drawText(ctx, p.ghost.ecto >= SLIME_COST ? 'R: SUMMON SLIME' : compact ? 'SMASH SCENERY: ECTO' : 'SMASH SCENERY FOR ECTOPLASM', vw / 2, barY - 10, '#7a9a9a', 1, { align: 'center' });
-    if (!compact) drawText(ctx, 'T: JUMP', vw / 2, barY - 19, '#6a6a8a', 1, { align: 'center' });
+    drawText(ctx, p.ghost.ecto >= SLIME_COST ? m.key(p, 'spell') + ': SUMMON SLIME' : compact ? 'SMASH SCENERY: ECTO' : 'SMASH SCENERY FOR ECTOPLASM', vw / 2, barY - 10, '#7a9a9a', 1, { align: 'center' });
+    if (!compact) drawText(ctx, m.key(p, 'spellNext') + ': JUMP', vw / 2, barY - 19, '#6a6a8a', 1, { align: 'center' });
   } else if (b && b.type === 'trapctl') {
     const trap = b.trap;
     drawText(ctx, trap.tdef.name.toUpperCase() + (trap.state !== 'idle' ? ' ...' : ''), vw / 2, vh * 0.15, '#ffb060', 1, { align: 'center', outline: '#000' });
@@ -310,7 +310,7 @@ export function drawViewportHUD(ctx, vw, vh, match, player, cam, t, fxv, opts = 
     if (w.boss.exposedT > 0) drawText(ctx, 'EXPOSED!', vw / 2, by - 18, '#ffd040', 1, { align: 'center', outline: '#000' });
   }
   // toasts (per player)
-  let ty = compact ? 32 : 40;
+  let ty = (compact ? 32 : 40) + (match.tut && !match.tut.done ? 52 : 0);
   const maxCh = Math.max(16, Math.floor((vw - 12) / 6));
   for (const tt of player.toasts.slice(0, compact ? 1 : 2)) {
     const dur = tt.dur || 4.5, a = clamp(1 - (tt.t - (dur - 1)) / 1, 0, 1);
@@ -334,7 +334,24 @@ export function drawGlobalHUD(ctx, W, Hh, match, t) {
     if (b.sub) drawText(ctx, b.sub, W / 2, y + 26, '#e8dcc0', 1, { align: 'center' });
     ctx.globalAlpha = 1;
   }
+  if (match.tut && !match.tut.done) tutorialPanel(ctx, W, match, t);
   // kill feed (top-right on the whole screen)
-  let y = 30;
+  let y = 30 + (match.tut && !match.tut.done ? 52 : 0);
   for (const f of match.feed.slice(0, 3)) { if (f.t < 6) { const a = clamp(1 - (f.t - 5) / 1, 0, 1); ctx.globalAlpha = a * 0.95; drawText(ctx, f.text, W / 2, y, f.color, 1, { align: 'center', outline: '#000' }); ctx.globalAlpha = 1; y += 9; } }
+}
+
+// Tutorial instruction panel (top centre): current step, what to press, progress, green flash when done.
+function tutorialPanel(ctx, W, match, t) {
+  const pn = match.tut.panel(); if (!pn) return;
+  const pw = Math.min(W - 16, 280), x = Math.round((W - pw) / 2), y = 16;
+  const lines = wrapText(pn.text, Math.floor((pw - 16) / 6));
+  const ph = 22 + lines.length * 9 + (pn.progress !== null ? 7 : 0) + 4;
+  const col = pn.complete ? '#60e060' : '#a8d8ff';
+  panel(ctx, x, y, pw, ph, 'rgba(6,6,14,0.86)', pn.complete ? '#3a8a3a' : '#3a4a6a');
+  drawText(ctx, `STEP ${pn.n}/${pn.total}`, x + 6, y + 5, '#7a8090', 1);
+  drawText(ctx, pn.complete ? 'DONE!' : pn.title, x + pw - 6, y + 5, pn.complete ? '#60e060' : '#ffd060', 1, { align: 'right' });
+  let ly = y + 16;
+  for (const ln of lines) { drawText(ctx, ln, x + 8, ly, pn.complete ? '#88c088' : '#e8f0ff', 1); ly += 9; }
+  if (pn.progress !== null) bar(ctx, x + 8, ly + 1, pw - 16, 3, pn.complete ? 1 : pn.progress, col, '#10141c');
+  void t;
 }
