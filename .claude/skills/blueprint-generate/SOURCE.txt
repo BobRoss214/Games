@@ -1,0 +1,13 @@
+Skill(s): blueprint, blueprint-generate
+Source: https://github.com/imbue-ai/blueprint
+Pinned commit: fb06284691c2c948aeb24c3282492f6628f93c3a
+License: MIT (full text included below as LICENSE)
+Author: Imbue
+Paths copied unmodified: skills/blueprint, skills/blueprint-generate
+
+How this copy was vetted (2026-09-30):
+- Only .md/.json text files were copied. No scripts, no hooks, no binaries.
+- No '!`command`' dynamic-context lines, no allowed-tools grants, no HTML comments, no hidden Unicode, no
+  download-and-run-in-shell patterns, no credential paths, no prompt-override phrases. Frontmatter only has name/description/license.
+- Files were read by hand and scanned automatically before packaging.
+This is text that tells Claude how to work. Read SKILL.md yourself before you use it.

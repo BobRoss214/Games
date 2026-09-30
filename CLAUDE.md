@@ -42,6 +42,10 @@ Read this at the start of every session. Update it when reality changes.
 - Gameplay randomness goes through the seeded RNG (`match.rng` or `grng`), never `Math.random` (visual FX may use it).
 - Pixel font is uppercase-only; HUD must stay readable in a 240x135 quadrant.
 
+### Skills (installed in `.claude/skills/`, all vetted text-only)
+- Use them when they give a better or faster result: `physics-tuning`, `game-feel`, `input-systems`, `camera-systems`, `game-ai`, `game-ui-ux`, `performance-optimization`, `audio-design`, `procedural-gen`, `roguelike` (game design), `verification-before-completion` (run the check before saying "done"), `systematic-debugging`, `blueprint` (plan-first Q&A, `/blueprint`).
+- Each has a `SOURCE.txt` (repo, pinned commit, license). Don't add new skills without vetting them first (text only, no scripts/hooks, read every line) and telling me.
+
 ### Gotchas / don't touch
 - Abilities fire on the first tick past windup (tick-size independent). Don't move that back inside the strike window.
 - Bot movement is stored in world space and re-projected each tick; don't store local fwd/strafe across ticks.

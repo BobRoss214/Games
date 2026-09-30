@@ -1,0 +1,13 @@
+Skill(s): roguelike
+Source: https://github.com/gamedev-skills/awesome-gamedev-agent-skills
+Pinned commit: d4b0e35550c55ae70bdfcab4ef5a0e94610438a9
+License: Apache-2.0 (full text included below as LICENSE/NOTICE)
+Author: Abhishek Barali
+Paths copied unmodified: skills/genres/roguelike
+
+How this copy was vetted (2026-09-30):
+- Only .md/.json text files were copied. No scripts, no hooks, no binaries.
+- No '!`command`' dynamic-context lines, no allowed-tools grants, no HTML comments, no hidden Unicode, no
+  download-and-run-in-shell patterns, no credential paths, no prompt-override phrases. Frontmatter only has name/description/license.
+- Files were read by hand and scanned automatically before packaging.
+This is text that tells Claude how to work. Read SKILL.md yourself before you use it.
