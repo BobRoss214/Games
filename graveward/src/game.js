@@ -64,6 +64,26 @@ export class Game {
     if (p.get('pixel')) s.pixel = p.get('pixel');
     return s;
   }
+  // On-screen button names. Pad players see pad names; keyboard players see keys, plus pad names if a controller is plugged in.
+  labelFor(p, act) {
+    const dev = p.device || 'kbm1', isPad = dev.startsWith('pad'), padConnected = this.input.connectedPads().length > 0;
+    const padName = () => {
+      if (act === 'move') return 'LEFT STICK';
+      if (act === 'look') return 'RIGHT STICK';
+      const c = (this.input.bindingsFor(isPad ? dev : 'pad0')[act] || [])[0];
+      return c === undefined ? '' : keyLabel(c);
+    };
+    if (isPad) return padName() || act.toUpperCase();
+    let kb;
+    if (act === 'move') {
+      const b0 = this.input.bindingsFor(dev), ks = ['fwd', 'strafeL', 'back', 'strafeR'].map((a) => (b0[a] || [])[0] || '');
+      kb = ks.every((k) => /^Key/.test(k)) ? ks.map((k) => k.replace('Key', '')).join('') : 'ARROWS';
+    } else if (act === 'look') kb = dev === 'kbm1' ? 'MOUSE' : 'ARROW KEYS';
+    else { const c = (this.input.bindingsFor(dev)[act] || [])[0]; kb = c === undefined ? act.toUpperCase() : keyLabel(c); }
+    const pn = padConnected ? padName() : '';
+    return pn ? kb + ' / ' + pn : kb;
+  }
+
   saveSettings() { try { const o = Object.assign({}, this.settings); localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* storage unavailable */ } }
   applyQuant() { buildQuantTable(14, this.settings.dither); }
   applyResolution(first) {
@@ -95,7 +115,7 @@ export class Game {
     const seed = s.seed || ((Math.random() * 1e9) | 0) + 1;
     this.fx.clear(); this.fx.views.clear();
     const m = this.match = new Match({ seed, floors: s.floors, botSkill: s.botSkill, players: cfg, gore: s.gore });
-    m.labelFor = (p, act) => { const dev = p.device || 'kbm1'; if (act === 'move') { if (dev.startsWith('pad')) return 'LEFT STICK'; const b0 = this.input.bindingsFor(dev); const ks = ['fwd', 'strafeL', 'back', 'strafeR'].map((a) => (b0[a] || [])[0] || ''); return ks.every((k) => /^Key/.test(k)) ? ks.map((k) => k.replace('Key', '')).join('') : 'ARROWS'; } const b = this.input.bindingsFor(p.device || 'kbm1'); const c = (b[act] || [])[0]; return c === undefined ? act.toUpperCase() : keyLabel(c); };
+    m.labelFor = (p, act) => this.labelFor(p, act);
     // input sources for humans
     const viewbot = this.params.get('viewbot') === '1';
     m.players.forEach((p) => {

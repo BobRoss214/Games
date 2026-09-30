@@ -72,10 +72,11 @@ const HOWTO = [
     'WHOEVER LANDS THE KILLING BLOW BECOMES THE NEW HERO. THE OLD HERO BECOMES A GHOST.',
     'REACH LEVEL 10, ENTER THE PORTAL AND SLAY THE BOSS TO WIN. THE BOSS IS CONTROLLED BY THE GHOSTS.',
     'ONLY THREE BOSS ATTEMPTS IN TOTAL. FAIL THREE TIMES AND EVERYONE LOSES.' ]],
+  ['CONTROLS', null],
   ['PLAYING THE HERO', [
     'ATTACK: TAP TO SWING. LEVEL 3+: HOLD TO CHARGE A HEAVY ATTACK.',
     'LEVEL 5: DODGE ROLL (INVULNERABLE). LEVEL 6: HOLD BLOCK, TIME IT TO PARRY.',
-    'LEVEL 4 / 7: SPELL SLOTS. POTIONS HEAL AND BUFF. SPRINT WITH SHIFT.',
+    'LEVEL 4 / 7: SPELL SLOTS. POTIONS HEAL AND BUFF. SPRINT WITH SHIFT / L STICK CLICK.',
     'CLEAR ROOMS TO UNLOCK DOORS: KILL EVERY MONSTER AND SMASH EVERY RED CRYSTAL.',
     'BREAK POTS AND CRATES FOR GOLD. OPEN CHESTS. SPEND GOLD AT THE SHOP (HAMMER + ANVIL SIGN).',
     'THE TRAPDOOR IN THE EXIT ROOM TAKES YOU DEEPER, BUT ONLY ONCE THE ROOM IS CLEAR.' ]],
@@ -85,10 +86,10 @@ const HOWTO = [
     'SMASHED SCENERY LEAKS ECTOPLASM. COLLECT 6 TO SUMMON A SLIME ANYWHERE.',
     'HURT THE HERO TO EARN BLOOD. EVERY HERO LEVEL-UP GIVES YOU WRATH.',
     'SPEND WRATH BETWEEN FLOORS TO EVOLVE YOUR THREE MONSTERS. HOLD INTERACT TO LEAVE A BODY.',
-    'JUMP KEY TELEPORTS YOU BETWEEN HAUNT POINTS AND THE HERO.' ]],
+    'NEXT-SPELL KEY (T / RB) TELEPORTS YOU BETWEEN HAUNT POINTS AND THE HERO.' ]],
   ['THE BOSS', [
     'AT LEVEL 10 THE PORTAL ROOM OPENS THE WAY. AN ARROW ON YOUR HUD POINTS THE WAY.',
-    'THREE BOSSES EXIST: THE SARCOPHAGUS COLOSSUS, THE JACKAL KING, THE BANDAGE MOTHER.',
+    'FIVE BOSSES: SARCOPHAGUS COLOSSUS, JACKAL KING, BANDAGE MOTHER, SAND DEVOURER, BEATING HEART. ONE IS PICKED AT RANDOM.',
     'EACH GHOST CONTROLS ONE PART OF THE BOSS. BOTS FILL EMPTY PARTS.',
     'WEAK SPOTS: COLOSSUS CHEST OPENS AFTER FIST SLAMS. JACKAL HEADS TAKE DOUBLE DAMAGE MID-ATTACK.',
     'BANDAGE MOTHER: UNWRAP BOTH ARMS TO EXPOSE THE CORE.',
@@ -302,8 +303,10 @@ export class UI {
     this.logo(ctx, W, Math.round(H * 0.11), t, Math.round(W / 96));
     drawText(ctx, 'A LOCAL GAME OF HERO AND HAUNT', W / 2, Math.round(H * 0.11) + 7 * Math.round(W / 96) + 30, '#c8b090', 1, { align: 'center' });
     this.mainMenu.draw(ctx, W / 2, Math.round(H * 0.58), t, { lineH: 16, width: 160 });
-    drawText(ctx, '1-4 PLAYERS  -  SPLIT SCREEN  -  KEYBOARD, MOUSE, GAMEPAD', W / 2, H - 20, C.dim, 1, { align: 'center' });
-    drawText(ctx, 'ARROWS / WASD + ENTER, OR CLICK', W / 2, H - 11, '#5a4a40', 1, { align: 'center' });
+    drawText(ctx, '1-4 PLAYERS  -  SPLIT SCREEN  -  KEYBOARD, MOUSE, GAMEPAD', W / 2, H - 22, C.dim, 1, { align: 'center' });
+    const np = this.g.input.connectedPads().length;
+    drawText(ctx, np ? 'XBOX CONTROLLER CONNECTED. D-PAD + A TO CHOOSE' : 'XBOX PAD? PLUG IT IN AND PRESS ANY BUTTON', W / 2, H - 11, np ? '#7ad07a' : '#5a4a40', 1, { align: 'center' });
+    drawText(ctx, np ? `CONTROLLER CONNECTED (${np}). D-PAD + A TO CHOOSE, OR ARROWS / WASD + ENTER, OR CLICK` : 'ARROWS / WASD + ENTER, OR CLICK.  XBOX PAD: PLUG IN AND PRESS ANY BUTTON', W / 2, H - 11, np ? '#7ad07a' : '#5a4a40', 1, { align: 'center' });
   }
   drawSetup(ctx, W, H, t) {
     panel(ctx, W / 2 - 150, 20, 300, H - 40, C.bg);
@@ -347,6 +350,18 @@ export class UI {
     const [title, lines] = HOWTO[this.howPage];
     drawText(ctx, title, W / 2, 24, C.gold, 2, { align: 'center' });
     let y = 48;
+    if (!lines) {
+      const rows = [['MOVE', 'move'], ['LOOK', 'look'], ['ATTACK (HOLD: HEAVY)', 'attack'], ['BLOCK / ABILITY 2', 'alt'], ['DODGE ROLL', 'dodge'], ['INTERACT / POSSESS', 'interact'], ['CAST SPELL / ABILITY 3', 'spell'], ['NEXT SPELL / HAUNT JUMP', 'spellNext'], ['USE POTION', 'potion'], ['NEXT POTION', 'potionNext'], ['SWAP WEAPON', 'swap'], ['SPRINT', 'sprint']];
+      const cx1 = 44, cx2 = Math.round(W * 0.5), cx3 = Math.round(W * 0.74);
+      drawText(ctx, 'ACTION', cx1, y, C.dim, 1); drawText(ctx, 'KEYBOARD 1', cx2, y, C.dim, 1); drawText(ctx, 'XBOX PAD', cx3, y, C.dim, 1); y += 11;
+      const g = this.g, fake = (d) => ({ device: d });
+      for (const [name, act] of rows) {
+        const kb = g.labelFor(fake('kbm1'), act).split(' / ')[0], pad = g.labelFor(fake('pad0'), act);
+        drawText(ctx, name, cx1, y, C.text, 1); drawText(ctx, kb, cx2, y, C.gold, 1); drawText(ctx, pad, cx3, y, '#a8d8ff', 1); y += 10;
+      }
+      drawText(ctx, 'PAUSE: TAB OR ESC / MENU BUTTON.  REBIND IN OPTIONS.', W / 2, y + 6, C.dim, 1, { align: 'center' });
+      drawText(ctx, 'USING A PAD? PLUG IT IN AND PRESS ANY BUTTON ONCE.', W / 2, y + 17, C.dim, 1, { align: 'center' });
+    } else
     for (const ln of lines) { for (const w of wrapText(ln, Math.floor((W - 90) / 6))) { drawText(ctx, w, 44, y, C.text, 1); y += 10; } y += 5; }
     drawText(ctx, `PAGE ${this.howPage + 1}/${HOWTO.length}   LEFT/RIGHT TO TURN PAGE   ESC TO CLOSE`, W / 2, H - 24, C.dim, 1, { align: 'center' });
   }

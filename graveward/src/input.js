@@ -13,8 +13,10 @@ export const DEFAULT_BINDINGS = {
 };
 export const DEVICE_NAMES = { kbm1: 'KEYBOARD + MOUSE', kb2: 'KEYBOARD 2', pad0: 'GAMEPAD 1', pad1: 'GAMEPAD 2', pad2: 'GAMEPAD 3', pad3: 'GAMEPAD 4' };
 
+// Xbox-layout names for the browser's "standard" gamepad mapping (also fine for most other pads)
+export const PAD_BUTTON_NAMES = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'VIEW', 'MENU', 'L STICK CLICK', 'R STICK CLICK', 'D-PAD UP', 'D-PAD DOWN', 'D-PAD LEFT', 'D-PAD RIGHT'];
 export function keyLabel(code) {
-  if (typeof code === 'number') return 'PAD BTN ' + code;
+  if (typeof code === 'number') return PAD_BUTTON_NAMES[code] || 'PAD BTN ' + code;
   return code.replace('Key', '').replace('Digit', '').replace('Arrow', 'ARROW ').replace('Mouse0', 'LEFT CLICK').replace('Mouse2', 'RIGHT CLICK').replace('Mouse1', 'MIDDLE CLICK').replace('ShiftLeft', 'L SHIFT').replace('ShiftRight', 'R SHIFT').replace('ControlRight', 'R CTRL').replace('ControlLeft', 'L CTRL').replace('Bracket', 'BRKT ').replace('Semicolon', ';').replace('Quote', "'").replace('Comma', ',').replace('Period', '.').replace('Slash', '/').replace('Backslash', '\\').replace('Space', 'SPACE');
 }
 

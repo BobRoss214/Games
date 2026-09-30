@@ -194,9 +194,9 @@ function heroHUD(ctx, vw, vh, m, p, a, t, fxv, compact) {
   const tgt = findInteractable(w, a);
   if (tgt) {
     let msg = '';
-    if (tgt.kind === 'chest') msg = tgt.locked && !h.artifacts.includes('vaultkey') && h.keys <= 0 ? 'LOCKED (VAULT KEY)' : 'E: OPEN CHEST';
+    if (tgt.kind === 'chest') msg = tgt.locked && !h.artifacts.includes('vaultkey') && h.keys <= 0 ? 'LOCKED (VAULT KEY)' : m.key(p, 'interact') + ': OPEN CHEST';
     else if (tgt.kind === 'shop') msg = tgt.item.price + ' GOLD: ' + shortItem(tgt.item);
-    else if (tgt.kind === 'portal') msg = h.level >= MAX_LEVEL ? 'E: ENTER PORTAL' : 'PORTAL DORMANT (LV 10)';
+    else if (tgt.kind === 'portal') msg = h.level >= MAX_LEVEL ? m.key(p, 'interact') + ': ENTER PORTAL' : 'PORTAL DORMANT (LV 10)';
     if (msg) { const col = tgt.kind === 'shop' ? (h.gold >= tgt.item.price ? '#ffd860' : '#a06060') : '#e8dcc0'; drawText(ctx, msg, vw / 2, vh * 0.58, col, 1, { align: 'center', outline: '#000' }); if (tgt.kind === 'shop') drawText(ctx, itemDesc(tgt.item), vw / 2, vh * 0.58 + 9, '#a09080', 1, { align: 'center' }); }
   }
   // crosshair
@@ -257,12 +257,12 @@ function ghostHUD(ctx, vw, vh, m, p, b, t, fxv, compact, w) {
   }
   compass(ctx, vw, b ? b.angle : 0, compact);
   if (b && b.type === 'ghost') {
-    const tg = b.target;
+    const tg = b.target, K = m.key(p, 'interact');
     let msg = '';
     if (tg) {
       switch (tg.kind) {
-        case 'pent': msg = 'E: BECOME A MONSTER'; break; case 'trap': msg = 'E: POSSESS ' + tg.tdef.name.toUpperCase(); break; case 'statue': msg = 'E: WAKE THE STATUE'; break;
-        case 'chest': msg = 'E: SPRING TRAPPED CHEST'; break; case 'scenery': msg = 'E: HAUNT ' + tg.sub.toUpperCase(); break; case 'torch': msg = 'E: SNUFF TORCH'; break; default: break;
+        case 'pent': msg = K + ': BECOME A MONSTER'; break; case 'trap': msg = K + ': POSSESS ' + tg.tdef.name.toUpperCase(); break; case 'statue': msg = K + ': WAKE THE STATUE'; break;
+        case 'chest': msg = K + ': SPRING TRAPPED CHEST'; break; case 'scenery': msg = K + ': HAUNT ' + tg.sub.toUpperCase(); break; case 'torch': msg = K + ': SNUFF TORCH'; break; default: break;
       }
     }
     if (msg) drawText(ctx, msg, vw / 2, vh * 0.55, '#c0b0ff', 1, { align: 'center', outline: '#000' });
@@ -271,7 +271,7 @@ function ghostHUD(ctx, vw, vh, m, p, b, t, fxv, compact, w) {
   } else if (b && b.type === 'trapctl') {
     const trap = b.trap;
     drawText(ctx, trap.tdef.name.toUpperCase() + (trap.state !== 'idle' ? ' ...' : ''), vw / 2, vh * 0.15, '#ffb060', 1, { align: 'center', outline: '#000' });
-    drawText(ctx, 'ATTACK: TRIGGER   HOLD E: RELEASE', vw / 2, barY - 10, '#a0a0c0', 1, { align: 'center' });
+    drawText(ctx, m.key(p, 'attack') + ': TRIGGER   HOLD ' + m.key(p, 'interact') + ': RELEASE', vw / 2, barY - 10, '#a0a0c0', 1, { align: 'center' });
   } else if (b && (b.type === 'monster' || b.type === 'bosspart')) {
     // monster hp + abilities
     if (b.type === 'monster') bar(ctx, 4, barY - 9, Math.min(60, vw / 3), 4, b.hp / b.maxHp, '#40c040', '#102010');
@@ -285,7 +285,7 @@ function ghostHUD(ctx, vw, vh, m, p, b, t, fxv, compact, w) {
       ctx.fillStyle = '#12101c'; ctx.fillRect(x, y, bwid, 9); ctx.fillStyle = cd > 0 ? '#302848' : '#5a4a90'; ctx.fillRect(x, y, Math.round(bwid * (1 - cd)), 9);
       drawText(ctx, ab.name.toUpperCase().slice(0, Math.floor((bwid - 2) / 6)), x + 2, y + 1, '#e8e0f0', 1, { shadow: '#000' });
     });
-    if (b.type === 'monster' && b.age < 9) drawText(ctx, 'HOLD E: LEAVE BODY', vw / 2, barY - 22, '#8a8aaa', 1, { align: 'center' });
+    if (b.type === 'monster' && b.age < 9) drawText(ctx, 'HOLD ' + m.key(p, 'interact') + ': LEAVE BODY', vw / 2, barY - 22, '#8a8aaa', 1, { align: 'center' });
     if (b.type === 'bosspart') drawText(ctx, w.boss && w.boss.dormant ? 'WAITING...' : 'CONTROL A PART OF THE BOSS', vw / 2, vh * 0.12, '#e8a080', 1, { align: 'center', outline: '#000' });
   }
   statusIcons(ctx, pad + 2, 22, b);
@@ -311,7 +311,14 @@ export function drawViewportHUD(ctx, vw, vh, match, player, cam, t, fxv, opts = 
   }
   // toasts (per player)
   let ty = compact ? 32 : 40;
-  for (const tt of player.toasts.slice(0, compact ? 1 : 2)) { const dur = tt.dur || 4.5; const a = clamp(1 - (tt.t - (dur - 1)) / 1, 0, 1); if (tt.t < dur) { ctx.globalAlpha = a; drawText(ctx, tt.text, vw / 2, ty, tt.color, 1, { align: 'center', outline: '#000' }); ctx.globalAlpha = 1; ty += 9; } }
+  const maxCh = Math.max(16, Math.floor((vw - 12) / 6));
+  for (const tt of player.toasts.slice(0, compact ? 1 : 2)) {
+    const dur = tt.dur || 4.5, a = clamp(1 - (tt.t - (dur - 1)) / 1, 0, 1);
+    if (tt.t >= dur) continue;
+    ctx.globalAlpha = a;
+    for (const ln of wrapText(tt.text, maxCh)) { drawText(ctx, ln, vw / 2, ty, tt.color, 1, { align: 'center', outline: '#000' }); ty += 9; }
+    ctx.globalAlpha = 1;
+  }
 }
 
 // Global overlays drawn over the whole canvas: feed, banner
