@@ -55,7 +55,7 @@ Everything below runs on Node 22 with no dependencies, except the browser tests,
 
 | Command | What it does |
 |---|---|
-| `npm test` | 244 content checks (every monster ability at every tier, every weapon and rarity, spell, potion, artifact, trap, prop haunt, statue, pentagram, all 3 bosses) + 6 full headless bot matches |
+| `npm test` | 252 content checks (every monster ability at every tier, every weapon and rarity, spell, potion, artifact, trap, prop haunt, statue, pentagram, all 5 bosses) + 6 full headless bot matches |
 | `node tools/sim.mjs --matches 20 --seed 100 --players 4 --skill hard` | Bot-vs-bot simulations with a stall watchdog. Options: `--matches --seed --minutes --floors --players (2-4) --skill (easy/normal/hard) --hz --verbose` |
 | `npm run test:browser` | Real-browser end-to-end tests: keyboard menu flow, two-keyboard lobby, movement/attacks, pause, defocus, gamepad (injected fake pad, hot-unplug), audio engine |
 | `node tools/shots.mjs <name> [--humans 0 --ff 120 --seed 5 --views 4 --js "..."]` | Screenshots a scenario after fast-forwarding the sim (uses `?auto=1`) |
@@ -84,7 +84,7 @@ src/
   combat.js          damage pipeline, statuses, abilities, projectiles, hazards
   hero.js            Hero controls, progression, inventory, interactions
   ghost.js           Ghost form, possession, traps, props, monster control
-  boss.js            3 bosses, weak-spot rules, phases
+  boss.js            5 bosses, weak-spot rules, phases
   match.js           the director: phases, role swap, locks, upgrade, portal
   ai.js              Hero bot, Ghost bot, trap bot, monster AI
   scene.js           cameras, sprite lists, torch flicker & dynamic lights
@@ -103,6 +103,6 @@ See `DECISIONS.md` for the reasoning behind the main choices and what was resear
 
 ## Status and next steps
 
-The full loop (title -> lobby -> antechamber -> 5+ floors -> upgrade screens -> portal -> 3 bosses -> ending) is playable start to finish by any mix of humans and bots and has been simulated across hundreds of seeds without crashes or softlocks.
+The full loop (title -> lobby -> antechamber -> 5+ floors -> upgrade screens -> portal -> a random boss of 5 -> ending) is playable start to finish by any mix of humans and bots and has been simulated across hundreds of seeds without crashes or softlocks.
 
-Ideas I did not get to: the two bonus bosses (Sand Devourer, Beating Heart), online play, damage numbers, and a Ghost minimap in single-viewport mode.
+Ideas I did not get to: online play, damage numbers, and a Ghost minimap in single-viewport mode.

@@ -42,7 +42,7 @@ Where I had to choose (brief was silent or ambiguous):
 ## Content decisions
 
 * Three gods x three monsters x three evolution tiers, plus slime, slimelet, thralls and hollow shades, and three statue giants. Bone (Ossuar), flesh (Vorrath) and mummies/scarabs (Ashkeleth). All names and designs are original.
-* Bosses: Sarcophagus Colossus (chest cracks open after fist slams), Jackal King (heads take double damage mid-attack), Bandage Mother (unwrap both arms to expose the core). Boss HP scales up by 28% per missing Ghost and bot Ghosts fill the empty parts. Phases at 66% and 33% add falling rocks and faster parts.
+* Bosses: Sarcophagus Colossus (chest cracks open after fist slams), Jackal King (heads take double damage mid-attack), Bandage Mother (unwrap both arms to expose the core), plus the two bonus bosses: Sand Devourer (lunge exposes the head; quicksand pits slow and hurt the Hero) and Beating Heart (heart core takes triple damage only while exposed; poison pools in later phases). Boss HP scales up by 28% per missing Ghost and bot Ghosts fill the empty parts. Phases at 66% and 33% add falling rocks and faster parts.
 * Treasure rooms are usually guarded by pentagrams so they lock: tempting and dangerous.
 * Hero XP table is 75/190/340/540/800/1130/1530/2000/2550 to reach levels 2-10, tuned with bot sims so a good Hero reaches 10 around floors 4-5.
 * If floors run out, depth loops with the themes repeating and monsters scaling, so the game never dead-ends before someone reaches the boss.
@@ -53,4 +53,4 @@ Where I had to choose (brief was silent or ambiguous):
 
 At the final settings (4 bots, normal), 10 consecutive seeds: 0 crashes or stalls, about 60% ended in a boss victory and 40% in the "devoured" ending, 19-37 min of game time (median about 26), 19-59 Hero swaps. Humans think slower than bots, so real matches run longer.
 
-Not done: the two bonus bosses (Sand Devourer, Beating Heart), online multiplayer, damage numbers.
+Not done: online multiplayer, damage numbers.

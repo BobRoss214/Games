@@ -462,6 +462,8 @@ export function updateHazards(w, dt) {
       h.acc -= 0.5;
       if (h.kind === 'poison') {
         for (const t of w.actorsInRadius(h.x, h.y, h.r, (t) => hostile(w, h.owner, h.owner ? h.owner.player : null, t))) applyStatus(t, 'poison', { t: 2.5, dps: h.dps, src: { actor: h.owner, player: h.owner ? h.owner.player : null } });
+      } else if (h.kind === 'pit') {
+        for (const t of w.actorsInRadius(h.x, h.y, h.r, (t) => t.type === 'hero')) { applyStatus(t, 'slow', { t: 1.0, amt: 0.55 }); dealDamage(w, t, 5, { actor: null, player: null, kind: 'env' }, { type: 'aoe', noKnock: true, bypassBlock: true }); }
       } else if (h.kind === 'spikes') {
         for (const t of w.actors) if (!t.dead && t.type === 'hero' && Math.abs(t.x - h.x) < 0.7 && Math.abs(t.y - h.y) < 0.7) dealDamage(w, t, h.dps * 0.5, { actor: null, player: null, kind: 'env' }, { type: 'aoe', noKnock: true, bypassBlock: true });
       }

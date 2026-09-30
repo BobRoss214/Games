@@ -279,6 +279,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
   for (const h of w.hazards) {
     if (dist2(h.x, h.y, vx, vy) > FAR) continue;
     if (h.kind === 'poison') out.push({ x: h.x, y: h.y, z: 0, w: h.r * 2, h: 0.03, color: rgb(70, 200, 50), alpha: 0.32 + Math.sin(t * 4 + h.x) * 0.06, add: false, fullbright: true });
+    else if (h.kind === 'pit') out.push({ x: h.x, y: h.y, z: 0, w: h.r * 2, h: 0.03, color: rgb(40, 26, 12), alpha: 0.85, fullbright: false });
     else if (h.kind === 'rock') { const k = clamp(h.age / h.warn, 0, 1); if (!h.done) out.push({ x: h.x, y: h.y, z: 0, w: h.r * 2 * (0.4 + k * 0.6), h: 0.03, color: RGB_RED, alpha: 0.35 + k * 0.4, add: true, fullbright: true }); }
   }
   // --- particles

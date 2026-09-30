@@ -464,7 +464,8 @@ export function buildBossMap(bossId) {
   const pre = { x: 18, y: 36, w: 10, h: 6, id: 0, type: 'preboss' };
   const arena = { x: 8, y: 6, w: 30, h: 24, id: 1, type: 'arena' };
   carveRoom(map, pre, FLOOR.royalFlag, CEIL.royal, WALL.gold, 0);
-  carveRoom(map, arena, FLOOR.altar, CEIL.dark, WALL.altar, 1);
+  const AR = { sand: [FLOOR.sand, WALL.sand], heart: [FLOOR.flesh, WALL.flesh] }[bossId] || [FLOOR.altar, WALL.altar];
+  carveRoom(map, arena, AR[0], CEIL.dark, AR[1], 1);
   // corridor + boss gate
   for (let y = arena.y + arena.h + 1; y < pre.y - 1; y++) { const ci = y * map.w + 23; map.wall[ci] = 0; map.floor[ci] = FLOOR.royalFlag; map.ceil[ci] = CEIL.royal; }
   const gateY = arena.y + arena.h; map.wall[gateY * map.w + 23] = 0; map.floor[gateY * map.w + 23] = FLOOR.royalFlag; map.ceil[gateY * map.w + 23] = CEIL.royal;

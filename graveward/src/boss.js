@@ -85,9 +85,19 @@ export class Boss {
     for (const p of this.parts) { p.speed *= 1.15; p.dmgMul *= 1.12; for (const k in p.cds) p.cds[k] = 0; }
     if (this.id === 'jackal' && n === 3) for (let i = 0; i < 2; i++) spawnMonster(this.w, 'minimummy', 0, this.cx + (i ? 4 : -4), this.cy + 6, null, { ctl: 'ai', depthScale: true });
     if (this.id === 'colossus') this.exposedT = Math.max(this.exposedT, 3);
+    if (this.id === 'sand') { // the floor collapses into quicksand
+      const ar = this.w.spec.arena;
+      for (let i = 0; i < 2 + n; i++) {
+        const x = ar.x + 4 + this.match.rng.float(0, ar.w - 8), y = ar.y + 8 + this.match.rng.float(0, ar.h - 12);
+        this.w.hazards.push({ id: Math.random(), kind: 'pit', x, y, r: 2.0, t: 1e9, perm: true, age: 0, acc: 0, owner: null });
+      }
+      this.w.emit('rockimpact', { x: this.cx, y: this.cy });
+    }
+    if (this.id === 'heart') for (let i = 0; i < 3; i++) this.w.hazards.push({ id: Math.random(), kind: 'poison', x: this.cx + this.match.rng.float(-7, 7), y: this.cy + this.match.rng.float(2, 12), r: 1.6, t: 25, dps: 6, owner: this.parts[0], age: 0, acc: 0 });
   }
 
   onSlam(part, ab) {
+    if ((this.id === 'sand' || this.id === 'heart') && ab.exposes) { this.exposedT = this.id === 'sand' ? 3.0 : 3.5; this.w.emit('bossexpose', {}); }
     if (this.id === 'colossus' && ab.exposes) { this.exposedT = 4.0; this.w.emit('bossexpose', {}); }
     if (this.id === 'mother' && ab.exposes) { /* arms unwrapped by damage, not slams */ }
   }
@@ -99,10 +109,14 @@ export class Boss {
       mul = 0.4;
       if (this.id === 'colossus') mul = this.exposedT > 0 ? 3.0 : 0.3;
       if (this.id === 'mother') mul = this.armsUnwrapped() ? 2.5 : 0.25;
+      if (this.id === 'heart') mul = this.exposedT > 0 ? 3.0 : 0.35;
+      if (this.id === 'sand') mul = 0.3;
       if (this.id === 'jackal') mul = 0.5;
     } else {
       if (this.id === 'colossus') mul = part.bossPart.id === 'face' ? 1.0 : 0.6;
       if (this.id === 'jackal') mul = part.atk && part.atk.phase < 2 ? 2.0 : 1.0;
+      if (this.id === 'sand') mul = part.bossPart.id === 'head' ? (this.exposedT > 0 ? 2.4 : 0.6) : 0.8;
+      if (this.id === 'heart') mul = 0.6;
       if (this.id === 'mother') {
         if (part.bossPart.id === 'mouth') mul = this.armsUnwrapped() ? 1.4 : 1.0;
         else { // arms: chew through wrapping first

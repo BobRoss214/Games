@@ -310,6 +310,36 @@ export const BOSSES = {
     weakSpot: 'Damage the arms to unwrap them and expose the core: everything hurts more.',
   },
 };
+BOSSES.sand = {
+  name: 'The Sand Devourer', hp: 1500, sprite: 'sandBody', color: '#cfaa6a',
+  parts: [
+    { id: 'head', name: 'Devouring Head', sprite: 'sandHead', w: 2.6, h: 2.8, pos: [0, -5.0], r: 1.0, speed: 1.6, abilities: [
+      { id: 'lunge', name: 'Burrow Lunge', kind: 'leap', dmg: 30, windup: 0.6, strike: 0.4, recover: 0.6, dist: 7, cd: 3.5, knock: 5, exposes: true },
+      { id: 'spit', name: 'Sand Spit', kind: 'proj', proj: 'stone', dmg: 9, speed: 9, windup: 0.5, strike: 0.05, recover: 0.4, cd: 3, count: 5, spread: 0.9, range: 14 } ] },
+    { id: 'ltend', name: 'Left Tendril', sprite: 'sandTendril', w: 2.0, h: 3.0, pos: [-3.4, -3.5], r: 0.8, speed: 1.8, abilities: [
+      { id: 'whip', name: 'Whip', kind: 'melee', dmg: 16, windup: 0.3, strike: 0.08, recover: 0.4, reach: 2.7, arc: 110, cd: 1.0, knock: 2 },
+      { id: 'grab', name: 'Drag Under', kind: 'leap', dmg: 20, windup: 0.5, strike: 0.4, recover: 0.6, dist: 7, cd: 4.5, knock: 6 } ] },
+    { id: 'rtend', name: 'Right Tendril', sprite: 'sandTendril', flip: true, w: 2.0, h: 3.0, pos: [3.4, -3.5], r: 0.8, speed: 1.8, abilities: [
+      { id: 'sweep', name: 'Sand Sweep', kind: 'aoe', dmg: 22, windup: 0.7, strike: 0.15, recover: 0.6, radius: 3.0, cd: 3, knock: 4 },
+      { id: 'whip', name: 'Whip', kind: 'melee', dmg: 16, windup: 0.3, strike: 0.08, recover: 0.4, reach: 2.7, arc: 110, cd: 1.0, knock: 2 } ] },
+  ],
+  weakSpot: 'The head is armoured until it lunges. Watch the floor: it collapses into quicksand each phase.',
+};
+BOSSES.heart = {
+  name: 'The Beating Heart', hp: 1300, sprite: 'heartBody', color: '#c8283e',
+  parts: [
+    { id: 't1', name: 'Left Tendril', sprite: 'heartTendril', w: 2.0, h: 3.0, pos: [-6, -2.0], r: 0.8, speed: 1.2, abilities: [
+      { id: 'lash', name: 'Lash', kind: 'melee', dmg: 15, windup: 0.3, strike: 0.08, recover: 0.4, reach: 3.0, arc: 120, cd: 1.0, knock: 2 },
+      { id: 'pull', name: 'Drag', kind: 'leap', dmg: 18, windup: 0.5, strike: 0.4, recover: 0.6, dist: 8, cd: 5, knock: 6, exposes: true } ] },
+    { id: 't2', name: 'Right Tendril', sprite: 'heartTendril', flip: true, w: 2.0, h: 3.0, pos: [6, -2.0], r: 0.8, speed: 1.2, abilities: [
+      { id: 'lash', name: 'Lash', kind: 'melee', dmg: 15, windup: 0.3, strike: 0.08, recover: 0.4, reach: 3.0, arc: 120, cd: 1.0, knock: 2 },
+      { id: 'slam', name: 'Slam', kind: 'aoe', dmg: 26, windup: 0.8, strike: 0.15, recover: 0.6, radius: 3.0, cd: 3.5, knock: 4, exposes: true } ] },
+    { id: 't3', name: 'Rear Tendril', sprite: 'heartTendril', w: 2.0, h: 3.0, pos: [0, -5.5], r: 0.8, speed: 1.0, abilities: [
+      { id: 'spray', name: 'Blood Spray', kind: 'proj', proj: 'gore', dmg: 9, speed: 8, windup: 0.5, strike: 0.05, recover: 0.4, cd: 2.4, count: 5, spread: 0.8, range: 14 },
+      { id: 'lash', name: 'Lash', kind: 'melee', dmg: 15, windup: 0.3, strike: 0.08, recover: 0.4, reach: 3.0, arc: 120, cd: 1.0, knock: 2 } ] },
+  ],
+  weakSpot: 'The heart is only vulnerable while it is pumping: right after a tendril slam or drag.',
+};
 export const BOSS_IDS = Object.keys(BOSSES);
 
 // ---------------- Room types & floor recipe ----------------

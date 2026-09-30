@@ -228,6 +228,24 @@ export function paintBossBody(id, p = {}) {
     for (let i = 0; i < 5; i++) pc.tri(50 + i * 10, 44, 54 + i * 10, 44, 52 + i * 10, 26 + (i % 2) * 4, bone[3]);
     pc.noise(3, 0.07); return pc.outline(DARK);
   }
+  if (id === 'sand') {
+    const pc = new PC(140, 120); const sand = pal5('#4a3418', '#7a5a30', '#a8844c', '#cfaa6a', '#ecd090');
+    pc.sell(70, 92, 62, 30, sand); // dune
+    for (let i = 0; i < 9; i++) pc.line(14 + i * 14, 108 - (i % 3) * 4, 30 + i * 12, 84 - (i % 4) * 3, sand[1], 2);
+    pc.ellipse(70, 70, 34, 16, H('#120a04')); pc.ellipse(70, 66, 28, 11, H('#000000')); // burrow
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * 6.283; pc.tri(70 + Math.cos(a) * 33, 70 + Math.sin(a) * 15.5, 70 + Math.cos(a + 0.22) * 33, 70 + Math.sin(a + 0.22) * 15.5, 70 + Math.cos(a + 0.11) * 21, 70 + Math.sin(a + 0.11) * 9, BONE[3]); }
+    const glow = p.exposed ? 1 : 0.3; pc.disc(70, 68, 5 * glow + 2, GLOW('#ff9030'));
+    pc.noise(8, 0.07); return pc.outline(DARK);
+  }
+  if (id === 'heart') {
+    const pc = new PC(140, 140), fl = pal5('#3a0610', '#661020', '#961a2e', '#c8283e', '#ff6a78');
+    const beat = 1 + 0.05 * Math.sin((p.t || 0) * 3.1);
+    pc.sell(70, 74, 50 * beat, 52 * beat, fl); pc.sell(44, 50, 28, 26, fl); pc.sell(96, 50, 28, 26, fl);
+    pc.limb(62, 28, 54, 6, 12, fl.slice(0, 4)); pc.limb(82, 28, 92, 4, 12, fl.slice(0, 4)); // vessels
+    for (let i = 0; i < 12; i++) pc.line(30 + (i * 11) % 80, 40 + (i * 17) % 70, 50 + (i * 13) % 60, 60 + (i * 7) % 60, i % 3 ? fl[0] : fl[4], 2);
+    const ex = p.exposed ? 1 : 0.25; pc.ellipse(70, 86, 16, 20, H('#1a0206')); pc.disc(70, 86, 9 * ex + 3, GLOW('#ff3050')); pc.disc(70, 86, 4 * ex + 1.5, GLOW('#ffc0c8'));
+    pc.noise(6, 0.08); return pc.outline(DARK);
+  }
   // mother
   const pc = new PC(140, 140), t = p.t || 0;
   const wrap = pal5('#4e4634', '#7a6e52', '#a89a76', '#cbbd94', '#e6dab4');
@@ -240,6 +258,23 @@ export function paintBossBody(id, p = {}) {
   pc.noise(5, 0.07); return pc.outline(DARK);
 }
 export function paintBossPart(id, variant, p = {}) {
+  if (id === 'sandHead') {
+    const pc = new PC(90, 98), sand = pal5('#4a3418', '#7a5a30', '#a8844c', '#cfaa6a', '#ecd090');
+    pc.limb(45, 96, 45, 50, 40, sand.slice(0, 4)); for (let i = 0; i < 6; i++) pc.line(24, 92 - i * 12, 66, 88 - i * 12, sand[0], 2);
+    pc.sell(45, 38, 34, 32, sand); const open = p.atk ? 16 : 8;
+    pc.ellipse(45, 40, 26, 22 + open * 0.3, H('#0a0402'));
+    for (let r = 0; r < 3; r++) for (let i = 0; i < 12; i++) { const a = (i / 12) * 6.283 + r * 0.26, rr = 22 - r * 6; pc.tri(45 + Math.cos(a) * rr, 40 + Math.sin(a) * (rr * 0.85), 45 + Math.cos(a + 0.2) * rr, 40 + Math.sin(a + 0.2) * (rr * 0.85), 45 + Math.cos(a + 0.1) * (rr - 8), 40 + Math.sin(a + 0.1) * ((rr - 8) * 0.85), BONE[3]); }
+    pc.disc(45, 40, 5, GLOW(p.atk ? '#ff5020' : '#ff9030')); pc.disc(20, 16, 3, GLOW('#ffcc60')); pc.disc(70, 16, 3, GLOW('#ffcc60'));
+    pc.noise(4, 0.07); return pc.outline(DARK);
+  }
+  if (id === 'sandTendril' || id === 'heartTendril') {
+    const heart = id === 'heartTendril', pc = new PC(72, 110);
+    const pal = heart ? pal5('#3a0610', '#661020', '#961a2e', '#c8283e', '#ff6a78') : pal5('#4a3418', '#7a5a30', '#a8844c', '#cfaa6a', '#ecd090');
+    const sway = p.atk ? 10 : 0;
+    for (let s = 0; s < 22; s++) { const t = s / 21, x = 36 + Math.sin(t * 5 + (p.atk ? 1 : 0)) * (7 + sway * t), y = 106 - s * 4.6, r = 12 - t * 8; pc.sell(x, y, r, r * 0.9, pal); if (s % 3 === 1) { pc.disc(x - r * 0.6, y, 1.6, heart ? GLOW('#ff9090') : BONE[3]); pc.disc(x + r * 0.6, y, 1.6, heart ? GLOW('#ff9090') : BONE[3]); } }
+    pc.tri(28, 12, 44, 12, 36, -2 + 0, heart ? pal[4] : BONE[3]); if (heart) { pc.tri(24, 20, 30, 14, 26, 6, pal[4]); pc.tri(48, 20, 42, 14, 46, 6, pal[4]); }
+    pc.noise(5, 0.07); return pc.outline(DARK);
+  }
   if (id === 'colossusFist') { const pc = new PC(72, 80); pc.srect(8, 10, 56, 58, ROCK.slice(0, 4).slice(0, 3).map((c, i, a) => a[i])); pc.sell(36, 40, 28, 30, ROCK); for (let i = 0; i < 4; i++) { pc.rect(10 + i * 13, 6, 10, 20, ROCK[3]); pc.rect(10 + i * 13, 6, 10, 2, ROCK[4]); pc.rect(10 + i * 13, 24, 10, 2, ROCK[0]); } pc.rect(6, 62, 60, 12, ROCK[1]); for (let i = 0; i < 4; i++) pc.set(16 + i * 13, 40, GLOW('#ffb040')); if (p.atk) { pc.disc(36, 40, 8, GLOW('#ff8a30')); } pc.noise(2, 0.08); return pc.outline(DARK); }
   if (id === 'colossusFace') { const pc = new PC(84, 84); pc.srect(8, 4, 68, 72, pal3('#6a5a3a', '#a08850', '#d8bc68')); pc.rect(8, 4, 68, 5, GOLD[3]); pc.rect(8, 71, 68, 5, GOLD[1]); pc.rect(16, 22, 20, 8, DARK); pc.rect(48, 22, 20, 8, DARK); const beam = p.atk ? 1 : 0.6; pc.rect(18, 24, 16, 4, GLOW('#ffd040')); pc.rect(50, 24, 16, 4, GLOW('#ffd040')); pc.disc(42, 46, 6 * beam, GLOW('#ffa020')); pc.rect(28, 56, 28, 8, DARK); for (let i = 0; i < 6; i++) pc.rect(30 + i * 4, 56, 2, 4, H('#c8c0a0')); pc.rect(38, 8, 8, 10, pal4('#0a2a5a', '#1a4a9a', '#2a6ad0', '#5a9aff')[2]); pc.noise(3, 0.06); return pc.outline(DARK); }
   if (id === 'jackalHead') { return jackal(variant, p); }
