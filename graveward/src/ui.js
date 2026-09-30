@@ -304,8 +304,9 @@ export class UI {
     drawText(ctx, 'A LOCAL GAME OF HERO AND HAUNT', W / 2, Math.round(H * 0.11) + 7 * Math.round(W / 96) + 30, '#c8b090', 1, { align: 'center' });
     this.mainMenu.draw(ctx, W / 2, Math.round(H * 0.58), t, { lineH: 16, width: 160 });
     drawText(ctx, '1-4 PLAYERS  -  SPLIT SCREEN  -  KEYBOARD, MOUSE, GAMEPAD', W / 2, H - 22, C.dim, 1, { align: 'center' });
-    const np = this.g.input.connectedPads().length;
-    drawText(ctx, np ? 'XBOX CONTROLLER CONNECTED. D-PAD + A TO CHOOSE' : 'XBOX PAD? PLUG IT IN AND PRESS ANY BUTTON', W / 2, H - 11, np ? '#7ad07a' : '#5a4a40', 1, { align: 'center' });
+    const ps = this.g.input.padStatus();
+    const msg = ps === 'blocked' ? 'THIS PAGE BLOCKS CONTROLLERS. OPEN THE GAME IN ITS OWN TAB' : ps === 'none' ? 'NO CONTROLLER SEEN YET. PLUG IN, THEN PRESS A BUTTON' : 'CONTROLLER FOUND: ' + ps.slice(3).replace(/\s*\(.*$/, '').slice(0, 30).toUpperCase() + '. D-PAD + A TO CHOOSE';
+    drawText(ctx, msg, W / 2, H - 11, ps === 'blocked' ? '#e05a4a' : ps === 'none' ? '#8a7a60' : '#7ad07a', 1, { align: 'center' });
     drawText(ctx, np ? `CONTROLLER CONNECTED (${np}). D-PAD + A TO CHOOSE, OR ARROWS / WASD + ENTER, OR CLICK` : 'ARROWS / WASD + ENTER, OR CLICK.  XBOX PAD: PLUG IN AND PRESS ANY BUTTON', W / 2, H - 11, np ? '#7ad07a' : '#5a4a40', 1, { align: 'center' });
   }
   drawSetup(ctx, W, H, t) {

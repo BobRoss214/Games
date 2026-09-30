@@ -56,7 +56,8 @@ export class Input {
 
   // ---- per-frame ----
   beginFrame() {
-    const list = (navigator.getGamepads ? navigator.getGamepads() : []) || [];
+    let list = [];
+    try { list = (navigator.getGamepads ? navigator.getGamepads() : []) || []; this.padBlocked = !navigator.getGamepads; } catch (e) { this.padBlocked = true; } // throws SecurityError when an embedding page blocks gamepads
     for (let i = 0; i < 4; i++) {
       const g = list[i]; const prev = this.pads[i];
       this.padPrev[i] = prev; this.padEdges[i].clear();
@@ -69,6 +70,11 @@ export class Input {
     }
   }
   endFrame() { this.down.clear(); this.up.clear(); this.mouseDX = 0; this.mouseDY = 0; }
+  padStatus() { // 'blocked' | 'none' | 'ok:<pad id>'
+    if (this.padBlocked) return 'blocked';
+    const i = this.connectedPads()[0];
+    return i === undefined ? 'none' : 'ok:' + (this.pads[i].id || 'pad');
+  }
   connectedPads() { return this.pads.map((p, i) => (p ? i : -1)).filter((i) => i >= 0); }
 
   keyDown(code) { return this.keys.has(code); }
