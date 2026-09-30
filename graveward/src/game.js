@@ -160,6 +160,7 @@ export class Game {
     if (this.input.padRebind) { for (let i = 0; i < 4; i++) for (const b of this.input.padEdges[i]) { const f = this.input.padRebind; this.input.padRebind = null; f(b); break; } }
     for (const m of this.input.connectMsgs.slice()) { if (this.screen === 'playing') { this.match.toast(m, '#80a0e0'); this.input.connectMsgs.shift(); } }
     if (this.screen === 'menu') this.updateMenu(dt); else this.updatePlaying(dt);
+    this.ui.mouse.click = false; // a click lasts one frame; UI.update reads it above
     this.render();
     this.input.endFrame();
   }

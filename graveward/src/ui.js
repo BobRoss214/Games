@@ -20,15 +20,19 @@ class Menu {
     const it = () => this.items[this.sel];
     if (nav.up) { this.sel = (this.sel - 1 + this.items.length) % this.items.length; this.skipHeaders(-1); game.sfx('ui'); }
     if (nav.down) { this.sel = (this.sel + 1) % this.items.length; this.skipHeaders(1); game.sfx('ui'); }
-    if (mouse && mouse.moved) for (let i = 0; i < this.rects.length; i++) { const r = this.rects[i]; if (r && mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h && this.items[i].type !== 'header' && this.sel !== i) { this.sel = i; game.sfx('ui'); } }
+    const hit = (i) => { const r = this.rects[i]; return r && mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h && this.items[i].type !== 'header'; };
+    if (mouse && mouse.moved) for (let i = 0; i < this.rects.length; i++) if (hit(i) && this.sel !== i) { this.sel = i; game.sfx('ui'); }
+    let clicked = false;
+    if (mouse && mouse.click) for (let i = 0; i < this.rects.length; i++) if (hit(i)) { if (this.sel !== i) { this.sel = i; game.sfx('ui'); } clicked = true; break; }
     const cur = it(); if (!cur) return;
-    let ok = nav.ok;
-    if (mouse && mouse.click) { const r = this.rects[this.sel]; if (r && mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h) ok = true; }
+    // clicking a slider's bar sets its value directly; anywhere else on the row (or a button/choice/toggle) activates it
+    const onBar = clicked && cur.type === 'slider' && cur.sliderRect && mouse.x >= cur.sliderRect.x - 2 && mouse.x <= cur.sliderRect.x + cur.sliderRect.w + 2;
+    let ok = nav.ok || (clicked && !onBar);
     if (cur.type === 'slider') {
       const step = cur.step || 0.1;
       if (nav.left) { cur.set(clamp(+(cur.get() - step).toFixed(3), cur.min, cur.max)); game.sfx('ui'); }
       if (nav.right || ok) { cur.set(clamp(+(cur.get() + step).toFixed(3), cur.min, cur.max)); game.sfx('ui'); }
-      if (mouse && mouse.click && cur.sliderRect) { const r = cur.sliderRect; if (mouse.x >= r.x && mouse.x <= r.x + r.w) cur.set(clamp(cur.min + ((mouse.x - r.x) / r.w) * (cur.max - cur.min), cur.min, cur.max)); }
+      if (onBar) { const r = cur.sliderRect; cur.set(clamp(+(cur.min + Math.max(0, Math.min(1, (mouse.x - r.x) / r.w)) * (cur.max - cur.min)).toFixed(3), cur.min, cur.max)); game.sfx('ui'); }
     } else if (cur.type === 'choice') {
       const n = cur.options.length, i = cur.options.indexOf(cur.get());
       if (nav.left) { cur.set(cur.options[(i - 1 + n) % n]); game.sfx('ui'); }
@@ -152,7 +156,7 @@ export class UI {
   update(dt) {
     this.t += dt;
     const g = this.g, nav = g.input.menuNav();
-    const m = this.mouse; if (m.click) m.click = false;
+    const m = this.mouse;
     const s = this.screen;
     if (g.screen === 'playing') return this.updatePlaying(dt, nav);
     switch (s) {
