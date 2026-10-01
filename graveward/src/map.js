@@ -107,8 +107,12 @@ export class GameMap {
         // runs: a few drips of different lengths
         const nd = 1 + (rng ? rng.int(0, 2) : 1);
         for (let k = 0; k < nd; k++) {
-          const ii = Math.min(31, Math.max(0, Math.floor(uc + (k - nd / 2) * 2.2))), len = 4 + ((rng ? rng.int(0, 12) : 4) | 0);
-          for (let j = Math.floor(vc); j < Math.min(32, vc + len); j++) m[j * 32 + ii] = Math.min(255, m[j * 32 + ii] + (j > vc + len - 2 ? 230 : 150));
+          let ii = Math.min(31, Math.max(0, Math.floor(uc + (k - nd / 2) * 2.2))); const len = 4 + ((rng ? rng.int(0, 12) : 4) | 0);
+          for (let j = Math.floor(vc); j < Math.min(32, vc + len); j++) {
+            if (rng && rng.next() < 0.18) ii = Math.min(31, Math.max(0, ii + (rng.next() < 0.5 ? -1 : 1))); // runs wander a little
+            m[j * 32 + ii] = Math.min(255, m[j * 32 + ii] + (j > vc + len - 2 ? 230 : 150));
+            if (j % 3 === 0 && ii < 31) m[j * 32 + ii + 1] = Math.min(255, m[j * 32 + ii + 1] + 60); // wet edge
+          }
         }
         return;
       }

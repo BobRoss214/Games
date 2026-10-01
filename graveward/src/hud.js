@@ -147,10 +147,19 @@ function heroHUD(ctx, vw, vh, m, p, a, t, fxv, compact) {
   const segW = Math.max(2, Math.floor((lw - shown) / shown)), sh = compact ? 6 : 9, hy = barY + 2;
   const filled = a.hp / 10;
   ctx.fillStyle = '#000'; ctx.fillRect(lx0 - 1, hy - 1, shown * (segW + 1) + 1, sh + 2);
+  // a pale trail shows how much was just lost, then drains away
+  a._trail = a._trail === undefined || a.hp >= a._trail ? a.hp : Math.max(a.hp, a._trail - (a._trail - a.hp) * 0.05 - 0.04);
+  const trailF = a._trail / 10, low = a.hp < a.maxHp * 0.3, pulse = low ? 0.75 + 0.25 * Math.sin(t * 8) : 1;
   for (let i = 0; i < shown; i++) {
-    const f = clamp(filled / k - i, 0, 1), sx = lx0 + i * (segW + 1);
-    ctx.fillStyle = '#2a0808'; ctx.fillRect(sx, hy, segW, sh);
-    if (f > 0) { ctx.fillStyle = a.st.poison ? '#60c030' : a.hp < a.maxHp * 0.3 ? '#ff3030' : '#d02020'; ctx.fillRect(sx, hy, Math.ceil(segW * f), sh); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(sx, hy, Math.ceil(segW * f), 1); }
+    const f = clamp(filled / k - i, 0, 1), ft = clamp(trailF / k - i, 0, 1), sx = lx0 + i * (segW + 1);
+    ctx.fillStyle = '#240808'; ctx.fillRect(sx, hy, segW, sh); ctx.fillStyle = '#12040a'; ctx.fillRect(sx, hy + sh - 2, segW, 2);
+    if (ft > f) { ctx.fillStyle = '#e8c890'; ctx.fillRect(sx + Math.ceil(segW * f), hy, Math.ceil(segW * ft) - Math.ceil(segW * f), sh); }
+    if (f > 0) {
+      const w = Math.ceil(segW * f), base = a.st.poison ? [96, 192, 48] : low ? [255, 48, 48] : [208, 32, 32];
+      ctx.fillStyle = `rgb(${base[0] * pulse | 0},${base[1] * pulse | 0},${base[2] * pulse | 0})`; ctx.fillRect(sx, hy, w, sh);
+      ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(sx, hy, w, Math.max(1, sh >> 2)); // glossy top
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx, hy + sh - 2, w, 2); // shaded underside
+    }
   }
   drawText(ctx, Math.ceil(a.hp) + '/' + Math.ceil(a.maxHp), lx0, hy + sh + 3, '#e8c8c0', 1);
   bar(ctx, lx0, hy + sh + 13, Math.min(lw, 72), 2, a.mana / a.maxMana, '#3070e0', '#0a1430');

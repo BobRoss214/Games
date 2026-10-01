@@ -25,7 +25,7 @@ const WET = rgb(214, 70, 78);
 const MEAT = [rgb(70, 10, 16), rgb(110, 20, 28), rgb(150, 36, 44)];
 
 // kind: 'bone' | 'flesh' | 'ooze'; wound: 0..3
-export function realize(base, { seed = 1, kind = 'flesh', wound = 0, gore = 0 } = {}) {
+export function shadeBase(base, { seed = 1, kind = 'flesh' } = {}) {
   const sw = base.w, sh = base.h, W = sw * K, Hh = sh * K, rng = new RNG(seed * 7919 + 13);
   const out = new PC(W, Hh);
   // 1. smooth upscale: coverage (alpha) + premultiplied colour
@@ -83,6 +83,13 @@ export function realize(base, { seed = 1, kind = 'flesh', wound = 0, gore = 0 } 
   // 4. wounds & gore
   const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < Hh && mask[y * W + x] > 0 && !emis[y * W + x];
   const body = []; for (let y = Math.floor(Hh * 0.22); y < Hh * 0.78; y++) for (let x = 0; x < W; x++) if (solid(x, y) && infl[y * W + x] > 0.55) body.push([x, y]);
+  return { W, Hh, out, mask, emis, body, kind };
+}
+
+// wounds are cheap, so one shaded base serves all four wound levels
+export function woundify(ctx, { seed = 1, wound = 0, gore = 0 } = {}) {
+  const { W, Hh, mask, emis, body, kind } = ctx, out = ctx.out.clone(), rng = new RNG(seed * 131 + wound * 17 + 5);
+  const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < Hh && mask[y * W + x] > 0 && !emis[y * W + x];
   const paint = (x, y, c) => { if (solid(x, y)) out.d[y * W + x] = c; };
   const drip = (x, y, len) => { for (let i = 0; i < len; i++) { if (!solid(x, y + i)) break; paint(x, y + i, BLOOD[i < 3 ? 3 : 2]); paint(x + 1, y + i, BLOOD[1]); if (i > 1 && rng.next() < 0.3) paint(x + (rng.next() < 0.5 ? -1 : 1), y + i, BLOOD[1]); } paint(x, y + len, WET); };
   const nW = Math.max(wound, gore ? 1 : 0);
@@ -121,3 +128,5 @@ export function realize(base, { seed = 1, kind = 'flesh', wound = 0, gore = 0 } 
   out.outline(rgb(14, 9, 8));
   return out;
 }
+
+export function realize(base, opts = {}) { return woundify(shadeBase(base, opts), opts); }

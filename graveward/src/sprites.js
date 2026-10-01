@@ -3,7 +3,7 @@ import * as M from './sprites_mon.js';
 import * as X from './sprites_misc.js';
 import { PC, H } from './pixart.js';
 import { paintGib } from './sprites_gore.js';
-import { realize } from './sprites_real.js';
+import { shadeBase, woundify } from './sprites_real.js';
 import { hashSeed } from './util.js';
 import { POTIONS, SPELLS, ARTIFACTS } from './data.js';
 
@@ -20,7 +20,13 @@ const MON_PAINT = {
 
 const KIND = { bone: 'bone', prop: 'flesh', skeleton: 'bone', archer: 'bone', sentinel: 'bone', gargoyle: 'bone', golem: 'bone', slime: 'ooze', wisp: 'ooze', mummy: 'cloth', priest: 'cloth' };
 export const REALISM = { on: true }; // flip off to see the original flat sprites
-const real = (pc, key, sprite, wound) => (REALISM.on ? realize(pc, { seed: hashSeed(key), kind: KIND[sprite] || 'flesh', wound }) : pc).frame();
+const baseCache = new Map(); // shaded sprite, before wounds: new wound levels only redo the cheap part
+const real = (pc, key, sprite, wound) => {
+  if (!REALISM.on) return (typeof pc === 'function' ? pc() : pc).frame();
+  let ctx = baseCache.get(key);
+  if (!ctx) { ctx = shadeBase(typeof pc === 'function' ? pc() : pc, { seed: hashSeed(key), kind: KIND[sprite] || 'flesh' }); baseCache.set(key, ctx); }
+  return woundify(ctx, { seed: hashSeed(key), wound }).frame();
+};
 
 // state: 'idle' | 'walk' | 'atk' | 'hurt' | 'dead'; n = frame index within state; wound 0..3 = how torn up it looks
 export function monsterFrame(sprite, tier, state, n, wound = 0) {
@@ -34,7 +40,7 @@ export function monsterFrame(sprite, tier, state, n, wound = 0) {
     for (let i = 0; i < 3; i++) cache.set(`m|${sprite}|${tier}|dead|${i}|3`, real(fr[i], `${sprite}${tier}dead${i}`, sprite, 3));
     return cache.get(key);
   }
-  const f = real(paint(tier, M.pose(state, n)), `${sprite}${tier}${state}${n}`, sprite, wound);
+  const f = real(() => paint(tier, M.pose(state, n)), `${sprite}${tier}${state}${n}`, sprite, wound);
   cache.set(key, f); return f;
 }
 export function heroFrame(colorHex, state, n) { return memo(`h|${colorHex}|${state}|${n}`, () => ({ frame: () => real(M.paintHero(colorHex, M.pose(state, n)), `hero${colorHex}${state}${n}`, 'hero', 0) })); }
@@ -122,7 +128,7 @@ export function spellHandFrame(color) { return memo('w|spell' + color, () => ({ 
 // Pre-warm the most common frames so the first fight doesn't hitch.
 export function warm() {
   for (const s of ['skeleton', 'archer', 'brute', 'crawler', 'screamer', 'bloat', 'mummy', 'scarab', 'priest', 'slime']) {
-    for (let t = 0; t < 3; t++) { monsterFrame(s, t, 'idle', 0); monsterFrame(s, t, 'walk', 0); monsterFrame(s, t, 'atk', 0); monsterFrame(s, t, 'atk', 1); }
+    for (let t = 0; t < 3; t++) { monsterFrame(s, t, 'idle', 0); monsterFrame(s, t, 'walk', 0); monsterFrame(s, t, 'atk', 0); monsterFrame(s, t, 'atk', 1); monsterFrame(s, t, 'hurt', 0); }
   }
 }
 

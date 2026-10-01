@@ -164,6 +164,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
       const wound = a.maxHp > 0 ? (a.hp / a.maxHp > 0.75 ? 0 : a.hp / a.maxHp > 0.5 ? 1 : a.hp / a.maxHp > 0.25 ? 2 : 3) : 0;
       const f = S.monsterFrame(def.sprite, a.tier, state, n, wound);
       let h = a.giant ? Math.min(1.05, a.h * 0.5) : a.h * 0.62;
+      if (!a.dead && !a.moving) h *= 1 + Math.sin(t * 2.3 + a.id * 1.7) * 0.012; // slow breathing
       if (state === 'dead' && n > 0) h = h * (f.h / (S.monsterFrame(def.sprite, a.tier, 'idle', 0).h)) * 0.95;
       const tint = statusTint(a, t);
       const z = a.flies ? 0.22 + Math.sin(t * 2 + a.id) * 0.05 : 0;
