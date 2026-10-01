@@ -159,7 +159,8 @@ export function collectSprites(match, w, viewer, t, fx, out) {
       else if (a.hurtT > 0) { state = 'hurt'; }
       else if (a.moving) { state = 'walk'; n = Math.floor(a.walkT * 3) % 4; }
       else { state = 'idle'; n = Math.floor(t * 1.6 + a.id) % 2; }
-      const f = S.monsterFrame(def.sprite, a.tier, state, n);
+      const wound = a.maxHp > 0 ? (a.hp / a.maxHp > 0.75 ? 0 : a.hp / a.maxHp > 0.5 ? 1 : a.hp / a.maxHp > 0.25 ? 2 : 3) : 0;
+      const f = S.monsterFrame(def.sprite, a.tier, state, n, wound);
       let h = a.giant ? Math.min(1.05, a.h * 0.5) : a.h * 0.62;
       if (state === 'dead' && n > 0) h = h * (f.h / (S.monsterFrame(def.sprite, a.tier, 'idle', 0).h)) * 0.95;
       const tint = statusTint(a, t);

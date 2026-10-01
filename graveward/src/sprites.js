@@ -2,6 +2,8 @@
 import * as M from './sprites_mon.js';
 import * as X from './sprites_misc.js';
 import { PC, H } from './pixart.js';
+import { realize } from './sprites_real.js';
+import { hashSeed } from './util.js';
 import { POTIONS, SPELLS, ARTIFACTS } from './data.js';
 
 const cache = new Map();
@@ -14,25 +16,30 @@ const MON_PAINT = {
   golem: (t, p) => M.paintGolem(p), wisp: (t, p) => M.paintWisp(p),
 };
 
-// state: 'idle' | 'walk' | 'atk' | 'hurt' | 'dead'; n = frame index within state
-export function monsterFrame(sprite, tier, state, n) {
-  const key = `m|${sprite}|${tier}|${state}|${n}`;
+const KIND = { skeleton: 'bone', archer: 'bone', sentinel: 'bone', gargoyle: 'bone', golem: 'bone', slime: 'ooze', wisp: 'ooze' };
+export const REALISM = { on: true }; // flip off to see the original flat sprites
+const real = (pc, key, sprite, wound) => (REALISM.on ? realize(pc, { seed: hashSeed(key), kind: KIND[sprite] || 'flesh', wound }) : pc).frame();
+
+// state: 'idle' | 'walk' | 'atk' | 'hurt' | 'dead'; n = frame index within state; wound 0..3 = how torn up it looks
+export function monsterFrame(sprite, tier, state, n, wound = 0) {
+  if (state === 'dead') wound = 3;
+  const key = `m|${sprite}|${tier}|${state}|${n}|${wound}`;
   const hit = cache.get(key); if (hit) return hit;
   const paint = MON_PAINT[sprite] || MON_PAINT.skeleton;
   if (state === 'dead') {
     const base = paint(tier, M.pose('idle', 0));
     const fr = M.deathFrames(base);
-    for (let i = 0; i < 3; i++) cache.set(`m|${sprite}|${tier}|dead|${i}`, fr[i].frame());
+    for (let i = 0; i < 3; i++) cache.set(`m|${sprite}|${tier}|dead|${i}|3`, real(fr[i], `${sprite}${tier}dead${i}`, sprite, 3));
     return cache.get(key);
   }
-  const f = paint(tier, M.pose(state, n)).frame();
+  const f = real(paint(tier, M.pose(state, n)), `${sprite}${tier}${state}${n}`, sprite, wound);
   cache.set(key, f); return f;
 }
-export function heroFrame(colorHex, state, n) { return memo(`h|${colorHex}|${state}|${n}`, () => M.paintHero(colorHex, M.pose(state, n))); }
+export function heroFrame(colorHex, state, n) { return memo(`h|${colorHex}|${state}|${n}`, () => ({ frame: () => real(M.paintHero(colorHex, M.pose(state, n)), `hero${colorHex}${state}${n}`, 'hero', 0) })); }
 export function heroDeadFrame(colorHex, n) {
   const key = `h|${colorHex}|dead|${n}`; if (cache.has(key)) return cache.get(key);
   const fr = M.deathFrames(M.paintHero(colorHex, M.pose('idle', 0)));
-  for (let i = 0; i < 3; i++) cache.set(`h|${colorHex}|dead|${i}`, fr[i].frame());
+  for (let i = 0; i < 3; i++) cache.set(`h|${colorHex}|dead|${i}`, real(fr[i], `herodead${colorHex}${i}`, 'hero', 3));
   return cache.get(key);
 }
 export function wispFrame(n) { return memo('wisp|' + n, () => M.paintWisp(M.pose('walk', n))); }
