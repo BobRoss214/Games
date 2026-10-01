@@ -406,16 +406,36 @@ export function paintHero(colorHex, p, weapon = true) {
   const pc = new PC(44, 60), g = new PC(40, 56);
   const col = pal4(shade(colorHex, 0.4), shade(colorHex, 0.7), colorHex, shade(colorHex, 1.3));
   const skin = pal4('#6a4a30', '#a87c58', '#d0a880', '#eccfa8');
+  const leather = pal4('#1a1410', '#3a2c20', '#5a4634', '#7a6248');
   const cx = 20 + p.lean * 0.4, bob = p.bob, hipY = 36 + bob;
-  for (const s of [-1, 1]) { const sw = s < 0 ? p.ls : -p.ls; const fx = cx + s * 3.5 + sw * 3.5, fy = 54 - Math.max(0, sw) * 3; g.limb(cx + s * 2.5, hipY, fx, fy, 4, pal4('#1a1410', '#3a2c20', '#5a4634', '#7a6248')); g.rect(fx - 2, fy - 1, 6, 3, DARK); }
+  // cape in the player's colour, hanging behind
+  g.tri(cx - 8, 17 + bob, cx + 8, 17 + bob, cx + 4 - p.ls * 1.5, 50, col[0]); g.tri(cx - 8, 17 + bob, cx + 1, 17 + bob, cx - 4 - p.ls * 1.5, 50, col[1]);
+  // legs: trousers + tall boots with cuffs
+  for (const s of [-1, 1]) {
+    const sw = s < 0 ? p.ls : -p.ls; const fx = cx + s * 3.5 + sw * 3.5, fy = 54 - Math.max(0, sw) * 3;
+    g.limb(cx + s * 2.5, hipY, fx, fy - 5, 4, pal4('#14100c', '#2a2218', '#463828', '#5a4a34'));
+    g.limb(fx - sw * 0.6, fy - 6, fx, fy, 4.4, leather); g.rect(fx - 3, fy - 7, 6, 2, leather[3]); g.rect(fx - 2, fy - 1, 7, 3, DARK); g.set(fx - 2, fy - 4, leather[3]);
+  }
+  // torso: tunic with a mail yoke, belt, cross strap
   g.sell(cx, 26 + bob, 8, 10.5, col);
-  g.rect(cx - 8, 33 + bob, 16, 3, pal4('#1a1410', '#3a2c20', '#5a4634', '#7a6248')[1]); g.rect(cx - 1, 33 + bob, 3, 3, GOLD[2]);
-  g.sell(cx, 11 + bob, 5.6, 6, skin); g.sell(cx, 8 + bob, 7, 5, IRON); g.rect(cx - 1, 8 + bob, 3, 8, IRON[1]); // helm with nasal
-  g.set(cx - 3, 12 + bob, DARK); g.set(cx + 3, 12 + bob, DARK);
+  g.sell(cx, 20 + bob, 7.2, 4.4, pal4('#30343a', '#5a5e68', '#8a8e98', '#b4b8c0'));
+  for (let i = 0; i < 14; i++) g.set(cx - 6 + (i * 7) % 13, 18 + bob + (i % 4), i & 1 ? IRON[3] : IRON[0]); // mail rings
+  g.line(cx - 6, 21 + bob, cx + 6, 34 + bob, leather[2], 1.6); g.line(cx - 6, 21.8 + bob, cx + 6, 34.8 + bob, leather[0], 0.8);
+  g.rect(cx - 8, 33 + bob, 16, 3, leather[1]); g.rect(cx - 8, 33 + bob, 16, 1, leather[3]); g.rect(cx - 1, 33 + bob, 3, 3, GOLD[2]); g.set(cx, 34 + bob, GOLD[3]);
+  g.rect(cx - 8, 36 + bob, 16, 3, col[1]); g.rect(cx - 8, 38 + bob, 16, 1, col[0]); // tunic skirt
+  // head: face, stubble, helm with brow band, nasal and cheek plates
+  g.sell(cx, 11 + bob, 5.6, 6, skin);
+  g.rect(cx - 4, 13 + bob, 8, 3, skin[1]); g.set(cx - 3, 15 + bob, skin[0]); g.set(cx + 3, 15 + bob, skin[0]); // jaw shadow / stubble
+  g.set(cx - 3, 11.5 + bob, H('#f0f0e8')); g.set(cx + 3, 11.5 + bob, H('#f0f0e8')); g.set(cx - 3, 12 + bob, DARK); g.set(cx + 3, 12 + bob, DARK);
+  g.set(cx, 14 + bob, skin[1]); g.rect(cx - 2, 15.5 + bob, 5, 1, skin[0]);
+  g.sell(cx, 8 + bob, 7, 5, IRON); g.rect(cx - 7, 9.6 + bob, 14, 1, IRON[0]); g.rect(cx - 7, 10.6 + bob, 14, 1, leather[2]); g.rect(cx - 1, 8 + bob, 3, 8, IRON[1]);
+  g.rect(cx - 6, 11 + bob, 2, 5, IRON[1]); g.rect(cx + 4, 11 + bob, 2, 5, IRON[0]);
+  // pauldrons + arms with gauntlets
   const sy = 18 + bob;
-  const lax = cx - 10 - p.as * 1.5, lay = 32 + p.as * 2; g.limb(cx - 7, sy, lax, lay, 4, col); g.disc(lax, lay, 2, skin[2]);
+  g.sell(cx - 8, sy + 1, 3.6, 3, IRON); g.sell(cx + 8, sy + 1, 3.6, 3, IRON);
+  const lax = cx - 10 - p.as * 1.5, lay = 32 + p.as * 2; g.limb(cx - 7, sy, lax, lay, 4, col); g.disc(lax, lay, 2.3, leather[2]); g.rect(lax - 2, lay - 4, 4, 1, leather[3]);
   const rax = p.raise > 0.5 ? cx + 10 : p.lunge ? cx + 12 : cx + 10 + p.as * 1.5, ray = p.raise > 0.5 ? 9 + bob : p.lunge ? 28 : 33 - p.as * 2;
-  g.limb(cx + 7, sy, rax, ray, 4, col); g.disc(rax, ray, 2, skin[2]);
+  g.limb(cx + 7, sy, rax, ray, 4, col); g.disc(rax, ray, 2.3, leather[2]);
   if (weapon) sword(g, rax, ray, p.raise > 0.5 ? -1.9 : p.lunge ? -0.5 : -1.35, 15, IRON, null);
   g.noise(131, 0.05);
   pc.blit(g, 2, 4); pc.outline(DARK); return pc;
