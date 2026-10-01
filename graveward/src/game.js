@@ -89,7 +89,7 @@ export class Game {
   drawInputDiag(ctx, W, H, t) {
     const i = this.input, ago = i.lastMoveAt ? Math.round(performance.now() - i.lastMoveAt) : -1;
     const held = [...i.keys].filter((k) => !k.startsWith('Mouse')).map((k) => k.replace('Key', '')).join(' ') || '-';
-    const lines = ['INPUT TEST (F3 CLOSES)', 'MOUSE EVENTS: ' + i.mouseEvents, 'LAST MOVE: ' + i.lastMove[0] + ',' + i.lastMove[1] + (ago >= 0 ? '  ' + ago + ' MS AGO' : '  NEVER'), 'MOUSE CAPTURED: ' + (i.locked ? 'YES' : 'NO' + (i.lockFailed ? ' (BLOCKED)' : '')), 'KEYS HELD: ' + held, 'AUTO-WALK: F   TURN: ARROWS OR J L', 'BUILD ' + BUILD];
+    const lines = ['INPUT TEST (F3 CLOSES)', 'MOUSE EVENTS: ' + i.mouseEvents, 'LAST MOVE: ' + i.lastMove[0] + ',' + i.lastMove[1] + (ago >= 0 ? '  ' + ago + ' MS AGO' : '  NEVER'), 'MOUSE CAPTURED: ' + (i.locked ? 'YES' : 'NO' + (i.lockFailed ? ' (BLOCKED)' : '')), 'KEYS HELD: ' + held, 'AUTO-WALK: F FWD, V BACK   TURN: ARROWS OR J L', 'BUILD ' + BUILD];
     ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(4, 14, 190, lines.length * 9 + 6);
     lines.forEach((l, k) => drawText(ctx, l, 8, 17 + k * 9, k === 0 ? '#ffe080' : '#a8ffa8', 1));
   }
@@ -397,7 +397,8 @@ export class Game {
       }
     }
     const v0 = this.viewers[0];
-    if (v0 && v0.input && v0.input.isAuto && v0.input.isAuto() && !this.paused) drawText(ctx, 'AUTO-WALK ON  -  PRESS S TO STOP', W / 2, Math.round(H * 0.7), '#80ff80', 1, { align: 'center', outline: '#000' });
+    const au = v0 && v0.input && v0.input.isAuto ? v0.input.isAuto() : 0;
+    if (au && !this.paused) drawText(ctx, au > 0 ? 'AUTO-WALK ON  -  PRESS S TO STOP' : 'AUTO-WALK BACKWARD ON  -  PRESS W TO STOP', W / 2, Math.round(H * 0.7), '#80ff80', 1, { align: 'center', outline: '#000' });
     if (this.input.diag) this.drawInputDiag(ctx, W, H, t);
     this.ui.draw(ctx, W, H, t);
     if (this.paused && this.pauseMsg) drawText(ctx, this.pauseMsg, W / 2, H / 2 - 64, '#ff8060', 1, { align: 'center' });

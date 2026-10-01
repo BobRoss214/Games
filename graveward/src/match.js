@@ -122,7 +122,7 @@ export class Match {
     for (const p of this.players) { p.upgradeReady = false; }
     this.stats.floors++;
     for (const q of this.players) {
-      if (q === hp) { this.hint(q, 'move', `${this.key(q, 'move')} MOVE  -  ${this.key(q, 'attack')} SWING  -  ${this.key(q, 'interact')} INTERACT`); this.hint(q, 'look', `LOOK: ${this.key(q, 'look')}. ON A LAPTOP THE TOUCHPAD CAN GO DEAD WHILE YOU HOLD WASD: USE THE ARROW KEYS, OR PRESS F TO AUTO-WALK.`); this.hint(q, 'rooms', 'KILL EVERYTHING IN A ROOM TO OPEN ITS DOORS. SMASH POTS FOR GOLD.'); }
+      if (q === hp) { this.hint(q, 'move', `${this.key(q, 'move')} MOVE  -  ${this.key(q, 'attack')} SWING  -  ${this.key(q, 'interact')} INTERACT`); this.hint(q, 'look', `LOOK: ${this.key(q, 'look')}. ON A LAPTOP THE TOUCHPAD CAN GO DEAD WHILE YOU HOLD WASD: USE THE ARROW KEYS, OR TAP F (FORWARD) OR V (BACK) TO AUTO-WALK.`); this.hint(q, 'rooms', 'KILL EVERYTHING IN A ROOM TO OPEN ITS DOORS. SMASH POTS FOR GOLD.'); }
       else this.hint(q, 'ghost1', `YOU ARE A GHOST. FLOAT TO A RED PENTAGRAM, PRESS ${this.key(q, 'interact')} TO BECOME A MONSTER.`, 10);
     }
     this.setBanner('FLOOR ' + (index + 1), spec.theme.name, '#d8b060', 3);

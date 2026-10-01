@@ -59,7 +59,7 @@ export function buildTutorialMap() {
 const enterRoom = (n) => ({ id: 'enter' + n, title: 'NEXT ROOM', text: () => 'WALK THROUGH THE OPEN DOOR.', check: (t) => t.inRoom(n) });
 const STEPS = [
   { id: 'look', title: 'LOOK AROUND', text: (K) => `TURN THE CAMERA WITH ${K('look')}. LOOK ALL THE WAY AROUND.`, progress: (t) => t.turned / 5.5, check: (t) => t.turned >= 5.5 },
-  { id: 'move', title: 'MOVE', text: (K) => `WALK WITH ${K('move')}. GO FORWARD AND SIDEWAYS A FEW STEPS.` + (/MOUSE/.test(K('look')) ? ` LAPTOP TOUCHPAD DEAD WHILE YOU WALK? TURN WITH THE ARROW KEYS, OR PRESS ${K('autorun')} TO AUTO-WALK.` : ''), progress: (t) => t.walked / 7, check: (t) => t.walked >= 7, open: 0 },
+  { id: 'move', title: 'MOVE', text: (K) => `WALK WITH ${K('move')}. GO FORWARD AND SIDEWAYS A FEW STEPS.` + (/MOUSE/.test(K('look')) ? ` LAPTOP TOUCHPAD DEAD WHILE YOU WALK? TURN WITH THE ARROW KEYS, OR TAP ${K('autorun')} (FORWARD) OR ${K('autorunBack')} (BACK) TO AUTO-WALK.` : ''), progress: (t) => t.walked / 7, check: (t) => t.walked >= 7, open: 0 },
   enterRoom(1),
   { id: 'smash', title: 'SMASH THINGS', text: (K) => `SWING WITH ${K('attack')} AND SMASH A POT. THEY HOLD GOLD.`, check: (t) => t.delta('propbreak') >= 1 },
   { id: 'gold', title: 'GRAB THE GOLD', text: () => 'WALK OVER THE GOLD ON THE FLOOR TO PICK IT UP.', enter: (t) => t.dropGold(), check: (t) => t.p.hero.gold > t.gold0, open: 1 },

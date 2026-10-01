@@ -4,11 +4,11 @@ import { clamp } from './util.js';
 export const ACTIONS = [
   ['fwd', 'Move forward'], ['back', 'Move back'], ['strafeL', 'Strafe left'], ['strafeR', 'Strafe right'], ['turnL', 'Turn left'], ['turnR', 'Turn right'],
   ['attack', 'Attack / fire'], ['alt', 'Block / ability 2'], ['dodge', 'Dodge roll'], ['interact', 'Interact / possess'], ['spell', 'Cast spell / ability 3'],
-  ['spellNext', 'Next spell / haunt jump'], ['potion', 'Use potion'], ['potionNext', 'Next potion'], ['swap', 'Swap weapon'], ['sprint', 'Sprint'], ['autorun', 'Auto-walk on/off (laptops)'],
+  ['spellNext', 'Next spell / haunt jump'], ['potion', 'Use potion'], ['potionNext', 'Next potion'], ['swap', 'Swap weapon'], ['sprint', 'Sprint'], ['autorun', 'Auto-walk forward on/off'], ['autorunBack', 'Auto-walk backward on/off'],
 ];
 export const DEFAULT_BINDINGS = {
-  kbm1: { fwd: ['KeyW'], back: ['KeyS'], strafeL: ['KeyA'], strafeR: ['KeyD'], turnL: ['KeyJ'], turnR: ['KeyL'], attack: ['Mouse0'], alt: ['Mouse2'], dodge: ['Space'], interact: ['KeyE'], spell: ['KeyR'], spellNext: ['KeyT'], potion: ['KeyQ'], potionNext: ['KeyG'], swap: ['KeyX'], sprint: ['ShiftLeft'], autorun: ['KeyF'] },
-  kb2: { fwd: ['ArrowUp'], back: ['ArrowDown'], strafeL: ['Comma'], strafeR: ['Period'], turnL: ['ArrowLeft'], turnR: ['ArrowRight'], attack: ['Enter'], alt: ['ShiftRight'], dodge: ['Slash'], interact: ['Quote'], spell: ['Semicolon'], spellNext: ['BracketLeft'], potion: ['KeyP'], potionNext: ['BracketRight'], swap: ['Backslash'], sprint: ['ControlRight'], autorun: ['KeyO'] },
+  kbm1: { fwd: ['KeyW'], back: ['KeyS'], strafeL: ['KeyA'], strafeR: ['KeyD'], turnL: ['KeyJ'], turnR: ['KeyL'], attack: ['Mouse0'], alt: ['Mouse2'], dodge: ['Space'], interact: ['KeyE'], spell: ['KeyR'], spellNext: ['KeyT'], potion: ['KeyQ'], potionNext: ['KeyG'], swap: ['KeyX'], sprint: ['ShiftLeft'], autorun: ['KeyF'], autorunBack: ['KeyV'] },
+  kb2: { fwd: ['ArrowUp'], back: ['ArrowDown'], strafeL: ['Comma'], strafeR: ['Period'], turnL: ['ArrowLeft'], turnR: ['ArrowRight'], attack: ['Enter'], alt: ['ShiftRight'], dodge: ['Slash'], interact: ['Quote'], spell: ['Semicolon'], spellNext: ['BracketLeft'], potion: ['KeyP'], potionNext: ['BracketRight'], swap: ['Backslash'], sprint: ['ControlRight'], autorun: ['KeyO'], autorunBack: ['KeyI'] },
   pad: { attack: [7], alt: [6], dodge: [1], interact: [0], spell: [2], potion: [3], swap: [4], spellNext: [5], sprint: [10], potionNext: [11] },
 };
 export const DEVICE_NAMES = { kbm1: 'KEYBOARD + MOUSE', kb2: 'KEYBOARD 2', pad0: 'GAMEPAD 1', pad1: 'GAMEPAD 2', pad2: 'GAMEPAD 3', pad3: 'GAMEPAD 4' };
@@ -129,11 +129,13 @@ export class Input {
         const edge = (act) => (b[act] || []).some((c) => (isPad ? this.padEdges[pi].has(c) : this.down.has(c)));
         const rel = (act) => (b[act] || []).some((c) => (isPad ? (this.pads[pi] && this.padPrev[pi] && !this.pads[pi].buttons[c] && this.padPrev[pi].buttons[c]) : this.up.has(c)));
         for (const [k, act] of EDGES) if (edge(act)) st.pending[k] = true;
-        if (!isPad && edge('autorun')) st.auto = !st.auto; // laptop touchpads go dead while a key is held: latch walking so the hands can be free
+        // laptop touchpads go dead while a key is held: latch walking (1 forward, -1 backward) so the hands can be free
+        if (!isPad && edge('autorun')) st.auto = st.auto === 1 ? 0 : 1;
+        if (!isPad && edge('autorunBack')) st.auto = st.auto === -1 ? 0 : -1;
         if (rel('attack')) st.pending.attackReleased = true;
       },
-      clear: () => { st.pending = {}; st.auto = false; },
-      isAuto: () => !!st.auto,
+      clear: () => { st.pending = {}; st.auto = 0; },
+      isAuto: () => st.auto || 0,
       poll: (dt) => {
         src.take();
         const b = this.bindingsFor(dev);
@@ -146,8 +148,8 @@ export class Input {
           fwd = -ly; strafe = lx; turnRate = rx * 3.4 * stickSens;
           const p = this.pads[pi]; if (p) { if (p.buttons[12]) fwd = 1; if (p.buttons[13]) fwd = -1; if (p.buttons[14]) strafe = -1; if (p.buttons[15]) strafe = 1; }
         } else {
-          if (down('back')) st.auto = false;
-          fwd = (down('fwd') ? 1 : 0) - (down('back') ? 1 : 0); if (st.auto && fwd === 0) fwd = 1; strafe = (down('strafeR') ? 1 : 0) - (down('strafeL') ? 1 : 0);
+          if ((down('back') && st.auto === 1) || (down('fwd') && st.auto === -1)) st.auto = 0; // the opposite key cancels it
+          fwd = (down('fwd') ? 1 : 0) - (down('back') ? 1 : 0); if (st.auto && fwd === 0) fwd = st.auto; strafe = (down('strafeR') ? 1 : 0) - (down('strafeL') ? 1 : 0);
           turnRate = ((down('turnR') ? 1 : 0) - (down('turnL') ? 1 : 0)) * 2.4 * sens;
           if (dev === 'kbm1') {
             turn = Math.max(-300, Math.min(300, this.mouseDX)) * 0.0024 * sens; this.mouseDX = 0; this.mouseDY = 0;

@@ -55,6 +55,19 @@ const dAng = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; wh
   await p.keyboard.press('F3'); await p.waitForTimeout(150); ok(await p.evaluate(() => window.graveward.input.diag), 'F3 opens the input test'); await p.screenshot({ path: '/tmp/claude-0/shots/diag.png' });
   await p.close();
 }
+{ // 2e) auto-walk backward (V): walks backwards with no key held; W cancels it
+  const p = await open(''); const pos = () => p.evaluate(() => { const b = window.graveward.match.players[0].body; return [b.x, b.y, b.angle]; });
+  const facing = (q0, q1) => (q1[0] - q0[0]) * Math.cos(q0[2]) + (q1[1] - q0[1]) * Math.sin(q0[2]); // >0 forward, <0 backward
+  await p.keyboard.down('ArrowLeft'); await p.waitForTimeout(1000); await p.keyboard.up('ArrowLeft'); // face open floor
+  await p.keyboard.press('KeyV'); await p.waitForTimeout(200); const q0 = await pos(); await p.waitForTimeout(500); const q1 = await pos();
+  ok(await p.evaluate(() => window.graveward.match.players[0].input.isAuto()) === -1, 'V turns backward auto-walk on');
+  ok(Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) < 0.01 || facing(q0, q1) < 0, 'it moves backward, not forward (' + facing(q0, q1).toFixed(2) + ')');
+  await p.keyboard.down('KeyW'); await p.waitForTimeout(80); await p.keyboard.up('KeyW'); await p.waitForTimeout(200);
+  ok(await p.evaluate(() => window.graveward.match.players[0].input.isAuto()) === 0, 'W cancels backward auto-walk');
+  await p.keyboard.press('KeyF'); await p.waitForTimeout(150); await p.keyboard.press('KeyV'); await p.waitForTimeout(150);
+  ok(await p.evaluate(() => window.graveward.match.players[0].input.isAuto()) === -1, 'V switches forward auto-walk to backward');
+  await p.close();
+}
 { // 2b) a second player on Keyboard 2 owns the arrow keys: player 1 must not turn with them
   const p = await open(''); await p.evaluate(() => { window.graveward.input.kb2InUse = true; }); const a0 = await ang(p);
   await p.keyboard.down('ArrowRight'); await p.waitForTimeout(500); await p.keyboard.up('ArrowRight');
