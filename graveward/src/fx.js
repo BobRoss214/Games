@@ -23,7 +23,7 @@ export class FX {
   constructor(settings) {
     this.parts = []; this.ground = []; this.beams = []; this.settings = settings || { gore: 2 };
     this.views = new Map(); // player -> {shake, flash:[r,g,b], flashT, flashMax, chroma, hurt}
-    this.splatBudget = 0; this.motes = [];
+    this.splatBudget = 0; this.motes = []; this.pools = [];
   }
   updateMotes(dt, cams, map) {
     const want = Math.min(140, cams.length * 55);
@@ -64,15 +64,18 @@ export class FX {
   }
   blood(map, x, y, z, n, dir, big = false) {
     const m = this.goreMul(); if (m <= 0) return;
-    this.spray(x, y, z, Math.ceil(n * m), C.blood, { blood: true, dir, spread: dir === undefined ? 3.14 : 0.9, smax: big ? 4.5 : 3, vzmax: big ? 3.4 : 2.4, smin2: 0.03, smax2: big ? 0.09 : 0.06, lmax: 1.3 });
+    this.spray(x, y, z, Math.ceil(n * m), C.blood, { blood: true, dir, spread: dir === undefined ? 3.14 : 0.9, smax: big ? 4.5 : 3, vzmax: big ? 3.4 : 2.4, smin2: 0.02, smax2: big ? 0.065 : 0.045, lmax: 1.3 });
   }
   gibs(map, x, y, n, type = 'flesh') {
     if (this.goreMul() < 1) return;
-    const cols = type === 'bone' ? C.bone : type === 'slime' ? C.green : type === 'ecto' ? C.ecto : C.gore;
-    for (let i = 0; i < Math.ceil(n * this.goreMul()); i++) {
-      const a = rnd(0, 6.283), s = rnd(1.2, 4.2);
-      this.add({ x, y, z: rnd(0.15, 0.5), vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: rnd(1.5, 4.2), g: 9, life: rnd(1.2, 2.2), size: rnd(0.07, 0.15), color: pick(i % 3 === 0 ? C.bone : cols), alpha: 1, blood: true, bounce: 0.35, gib: true, persist: true });
-    }
+    const kinds = type === 'bone' ? ['skull', 'bone', 'bone', 'ribs', 'bone', 'flesh'] : type === 'slime' ? ['slime'] : type === 'ecto' ? ['ecto'] : ['limb', 'leg', 'flesh', 'flesh', 'organ', 'guts', 'flesh', 'limb'];
+    const chunks = Math.ceil(n * 0.9 * Math.min(1.5, this.goreMul()));
+    for (let i = 0; i < chunks; i++) this.chunk(pick(kinds), x, y, rnd(0, 6.283), rnd(1.4, 4.2), type !== 'slime' && type !== 'ecto');
+  }
+  // one tumbling sprite chunk (limb, skull, bone...). It bleeds while flying and stays on the floor afterwards.
+  chunk(kind, x, y, dir, speed, bleeds = true) {
+    const h = { limb: 0.17, leg: 0.19, skull: 0.15, bone: 0.12, ribs: 0.2, flesh: 0.13, organ: 0.12, guts: 0.14, slime: 0.12, ecto: 0.11 }[kind] || 0.13;
+    this.add({ x, y, z: rnd(0.2, 0.55), vx: Math.cos(dir) * speed, vy: Math.sin(dir) * speed, vz: rnd(1.6, 4.4), g: 9, life: rnd(1.6, 2.6), size: h, color: 0, alpha: 1, bounce: 0.38, drag: 0.5, gib: true, persist: true, spr: { kind, seed: (Math.random() * 8) | 0, v: (Math.random() * 8) | 0, spin: rnd(6, 14) }, bleeds, trailT: 0, blood: bleeds });
   }
   ring(x, y, r, cols, n = 24, o = {}) {
     for (let i = 0; i < n; i++) { const a = (i / n) * 6.283, s = r / (o.t || 0.35); this.add({ x, y, z: 0.05 + rnd(0, 0.06), vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: rnd(0, 0.6), g: 0.5, life: o.t || 0.35, size: rnd(0.05, 0.11), color: pick(cols), alpha: 0.8, add: !!o.add, drag: 0.2 }); }
@@ -103,6 +106,7 @@ export class FX {
             if (Math.random() < 0.7) map.splatFloor(t.x + (nx || 0) * 0.5 + rnd(-0.3, 0.3), t.y + (ny || 0) * 0.5 + rnd(-0.3, 0.3), 0.28 + Math.min(0.5, amt * 0.012), 140, R);
             if (dir !== undefined && amt > 6) map.splatWall(t.x, t.y, nx, ny, 3.5, 200, R);
           }
+          if (gm >= 1 && !isStone && amt >= 22 && dir !== undefined && !(t.def && t.def.swarm)) this.chunk(isBone ? pick(['bone', 'bone', 'skull']) : pick(['limb', 'flesh', 'leg']), t.x, t.y, dir + rnd(-0.5, 0.5), rnd(3, 5.5), !isBone);
           if (isHero && t.player) { const v = this.viewOf(t.player); v.hurt = Math.min(1, v.hurt + amt / 45); v.chroma = Math.min(1, Math.max(v.chroma || 0, amt / 35)); this.shake(t.player, Math.min(1, amt / 30)); this.flash(t.player, [180, 0, 0], 0.25); v.kick = 0.25; v.dirX = nx; v.dirY = ny; }
           else if (e.srcActor && e.srcActor.type === 'hero' && e.srcActor.player) { const sv = this.viewOf(e.srcActor.player); this.shake(e.srcActor.player, Math.min(0.5, amt / 60)); sv.hitstop = amt > 22 ? 0.07 : 0.04; sv.blade = Math.min(1, (sv.blade || 0) + amt / 45); if (amt > 26) sv.chroma = Math.max(sv.chroma || 0, 0.5); }
           if (e.boss) this.shakeAll(match, 0.1, t.x, t.y, 10);
@@ -119,9 +123,10 @@ export class FX {
               this.blood(map, t.x, t.y, z, 40, undefined, true);
               const bone = ['skeleton', 'archer', 'brute'].includes(t.defId);
               this.gibs(map, t.x, t.y, bone ? 7 : 6, bone ? 'bone' : t.defId === 'slime' ? 'slime' : 'flesh');
+              if (!bone && t.defId !== 'slime') this.pool(t.x, t.y, rnd(0.8, 1.2)); else if (bone) this.pool(t.x, t.y, rnd(0.45, 0.7));
               map.splatFloor(t.x, t.y, 0.9, 230, R);
               map.splatFloor(t.x + rnd(-0.5, 0.5), t.y + rnd(-0.5, 0.5), 0.6, 180, R);
-              for (let i = 0; i < 3; i++) map.splatWall(t.x, t.y, rnd(-1, 1), rnd(-1, 1), 3, 210, R);
+              for (let i = 0; i < 6; i++) map.splatWall(t.x, t.y, rnd(-1, 1), rnd(-1, 1), 3.5, 215, R);
             }
           }
           break;
@@ -187,6 +192,7 @@ export class FX {
       p.life -= dt;
       if (p.life <= 0) { p.dead = true; continue; }
       p.vz -= p.g * dt;
+      if (p.spr) { p.spinT = (p.spinT || 0) + dt * p.spr.spin; if (p.bleeds && (p.trailT -= dt) <= 0 && this.goreMul() > 0) { p.trailT = 0.05; this.add({ x: p.x, y: p.y, z: p.z, vx: p.vx * 0.2 + rnd(-0.3, 0.3), vy: p.vy * 0.2 + rnd(-0.3, 0.3), vz: 0.3, g: 9, life: 0.7, size: 0.035, color: pick(C.blood), alpha: 1, blood: true, drag: 0.4, bounce: 0 }); } }
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       const d = Math.exp(-(p.drag || 0) * dt); p.vx *= d; p.vy *= d;
       if (map && (map.isWall(p.x | 0, p.y | 0))) { p.x -= p.vx * dt; p.y -= p.vy * dt; p.vx *= -0.3; p.vy *= -0.3; }
@@ -195,11 +201,13 @@ export class FX {
         else {
           p.z = 0.02; p.dead = true;
           if (p.blood && map && this.goreMul() > 0) { this.splatBudget++; if (p.size > 0.06 || (this.splatBudget & 3) === 0) map.splatFloor(p.x, p.y, p.size * 3.5 + 0.05, 170, R); }
-          if (p.persist && this.ground.length < 220) this.ground.push({ x: p.x, y: p.y, z: 0, size: p.size, color: p.color });
-          if (this.ground.length >= 220) this.ground.shift();
+          if (p.persist && this.ground.length < 260) this.ground.push(p.spr ? { x: p.x, y: p.y, z: 0, size: p.size, color: 0, spr: p.spr, v: (p.spr.v + ((p.spinT | 0) & 3) * 2) & 7 } : { x: p.x, y: p.y, z: 0, size: p.size, color: p.color });
+          if (p.spr && map && this.goreMul() > 0 && p.bleeds) map.splatFloor(p.x, p.y, 0.32, 150, R);
+          if (this.ground.length >= 260) this.ground.shift();
         }
       }
     }
+    this.updatePools(dt, map, w);
     if (this.parts.some((p) => p.dead)) this.parts = this.parts.filter((p) => !p.dead);
     for (const b of this.beams) b.t -= dt;
     if (this.beams.some((b) => b.t <= 0)) this.beams = this.beams.filter((b) => b.t > 0);
@@ -208,5 +216,20 @@ export class FX {
       if (v.hitstop) v.hitstop = Math.max(0, v.hitstop - dt);
     }
   }
-  clear() { this.parts.length = 0; this.ground.length = 0; this.beams.length = 0; }
+  // a pool that slowly spreads under a fresh kill
+  pool(x, y, max) { if (this.goreMul() <= 0) return; if (this.pools.length > 24) this.pools.shift(); this.pools.push({ x, y, r: 0.25, max: max * Math.min(1.4, this.goreMul()), t: 0 }); }
+  updatePools(dt, map, w) {
+    for (const p of this.pools) {
+      p.t += dt; if (p.r < p.max) { p.r = Math.min(p.max, p.r + dt * 0.22); if (map && ((p.t * 10) | 0) !== (((p.t - dt) * 10) | 0)) map.splatFloor(p.x + rnd(-0.12, 0.12), p.y + rnd(-0.12, 0.12), p.r * 0.85, 50, R); }
+    }
+    if (this.pools.length && this.pools[0].r >= this.pools[0].max) this.pools = this.pools.filter((p) => p.r < p.max);
+    // badly hurt creatures leave a blood trail
+    if (w && this.goreMul() > 0) for (const a of w.actors) {
+      if ((a.type !== 'monster' && a.type !== 'hero') || a.dead || !a.maxHp || a.giant || (a.def && a.def.swarm)) continue;
+      const k = a.hp / a.maxHp; if (k > 0.5 || !a.moving) continue;
+      a.bloodT = (a.bloodT || 0) - dt * (1.6 - k);
+      if (a.bloodT <= 0) { a.bloodT = 0.35; if (map) map.splatFloor(a.x + rnd(-0.1, 0.1), a.y + rnd(-0.1, 0.1), 0.13 + (0.5 - k) * 0.2, 130, R); this.add({ x: a.x, y: a.y, z: (a.h || 0.6) * 0.3, vx: rnd(-0.3, 0.3), vy: rnd(-0.3, 0.3), vz: 0.4, g: 9, life: 0.6, size: 0.04, color: pick(C.blood), alpha: 1, blood: true }); }
+    }
+  }
+  clear() { this.pools.length = 0; this.parts.length = 0; this.ground.length = 0; this.beams.length = 0; }
 }

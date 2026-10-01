@@ -281,7 +281,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
     const h = base * (f.h / idle.h) * 0.95;
     out.push({ x: c.x, y: c.y, z: 0, w: h * ASPECT(f), h, frame: f, emit: 0.02 });
   }
-  for (const g of fx.ground) { if (dist2(g.x, g.y, vx, vy) > 400) continue; out.push({ x: g.x, y: g.y, z: 0, w: g.size, h: g.size * 0.7, color: g.color, alpha: 1 }); }
+  for (const g of fx.ground) { if (dist2(g.x, g.y, vx, vy) > 400) continue; if (g.spr) { const f = S.gibFrame(g.spr.kind, g.spr.seed, g.v); out.push({ x: g.x, y: g.y, z: 0, w: g.size * ASPECT(f), h: g.size, frame: f, emit: 0.03 }); continue; } out.push({ x: g.x, y: g.y, z: 0, w: g.size, h: g.size * 0.7, color: g.color, alpha: 1 }); }
   for (const h of w.hazards) {
     if (dist2(h.x, h.y, vx, vy) > FAR) continue;
     if (h.kind === 'poison') out.push({ x: h.x, y: h.y, z: 0, w: h.r * 2, h: 0.03, color: rgb(70, 200, 50), alpha: 0.32 + Math.sin(t * 4 + h.x) * 0.06, add: false, fullbright: true });
@@ -291,6 +291,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
   // --- particles
   for (const p of fx.parts) {
     if (dist2(p.x, p.y, vx, vy) > 900) continue;
+    if (p.spr) { const f = S.gibFrame(p.spr.kind, p.spr.seed, p.spr.v + ((p.spinT || 0) | 0) * 2); out.push({ x: p.x, y: p.y, z: Math.max(0, p.z), w: p.size * ASPECT(f), h: p.size, frame: f, emit: 0.05, alpha: Math.min(1, p.life * 3) }); continue; }
     out.push({ x: p.x, y: p.y, z: Math.max(0, p.z), w: p.size, h: p.size, color: p.color, alpha: p.alpha * Math.min(1, p.life * 2), add: p.add, fullbright: !!p.add });
   }
   // --- dust motes drifting in the air (lit, so they only show inside light pools)

@@ -2,6 +2,7 @@
 import * as M from './sprites_mon.js';
 import * as X from './sprites_misc.js';
 import { PC, H } from './pixart.js';
+import { paintGib } from './sprites_gore.js';
 import { realize } from './sprites_real.js';
 import { hashSeed } from './util.js';
 import { POTIONS, SPELLS, ARTIFACTS } from './data.js';
@@ -123,5 +124,6 @@ export function warm() {
   }
 }
 
+export function gibFrame(kind, seed, variant) { return memo(`gib|${kind}|${seed & 7}|${variant & 7}`, () => paintGib(kind, seed & 7, variant & 7)); }
 export function shadowFrame() { return memo('shadow', () => X.paintShadow()); }
 export function glowFrame(colorHex) { return memo('glow|' + colorHex, () => X.paintGlow(colorHex)); }

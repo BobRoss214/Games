@@ -60,7 +60,7 @@ export class GameMap {
   // ---------- blood ----------
   _mask(ci) {
     let bi = this.bloodIdx[ci];
-    if (!bi) { bi = this.bloodMasks.length; if (bi > 65000) return null; this.bloodMasks.push(new Uint8Array(256)); this.bloodIdx[ci] = bi; }
+    if (!bi) { bi = this.bloodMasks.length; if (bi > 65000) return null; this.bloodMasks.push(new Uint8Array(1024)); this.bloodIdx[ci] = bi; }
     return this.bloodMasks[bi];
   }
   splatFloor(x, y, radius, amount = 200, rng = null) {
@@ -68,15 +68,15 @@ export class GameMap {
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
       if (!this.inBounds(cx, cy) || this.wall[cy * this.w + cx] !== 0 || !this.floor[cy * this.w + cx]) continue;
       const m = this._mask(cy * this.w + cx); if (!m) continue;
-      for (let py = 0; py < 16; py++) for (let px = 0; px < 16; px++) {
-        const wx = cx + (px + 0.5) / 16, wy = cy + (py + 0.5) / 16;
+      for (let py = 0; py < 32; py++) for (let px = 0; px < 32; px++) {
+        const wx = cx + (px + 0.5) / 32, wy = cy + (py + 0.5) / 32;
         const d = Math.hypot(wx - x, wy - y);
         if (d > radius) continue;
         const jitter = rng ? rng.next() : (((px * 7 + py * 13 + cx * 3 + cy) % 5) / 5);
         const f = (1 - d / radius) * 1.4 + jitter * 0.3 - 0.25;
         if (f <= 0) continue;
-        const v = m[py * 16 + px] + amount * Math.min(1, f);
-        m[py * 16 + px] = v > 255 ? 255 : v;
+        const v = m[py * 32 + px] + amount * Math.min(1, f);
+        m[py * 32 + px] = v > 255 ? 255 : v;
       }
     }
   }
@@ -97,16 +97,19 @@ export class GameMap {
         if (ex < ey) { face = fx < 0.5 ? 0 : 1; u = fy; } else { face = fy < 0.5 ? 2 : 3; u = fx; }
         const key = ci * 4 + face;
         let m = this.wallBlood.get(key);
-        if (!m) { m = new Uint8Array(256); this.wallBlood.set(key, m); }
-        const vc = 4 + (rng ? rng.float(-3, 3) : 0), uc = u * 16;
-        const rad = 1.8 + (rng ? rng.float(0, 2) : 1);
-        for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++) {
-          const dd = Math.hypot(i - uc, (j - vc) * 1.2);
-          if (dd < rad) m[j * 16 + i] = Math.min(255, m[j * 16 + i] + amount * (1 - dd / rad));
+        if (!m) { m = new Uint8Array(1024); this.wallBlood.set(key, m); }
+        const vc = 9 + (rng ? rng.float(-7, 7) : 0), uc = u * 32;
+        const rad = 3.6 + (rng ? rng.float(0, 4) : 2);
+        for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {
+          const dd = Math.hypot(i - uc, (j - vc) * 1.2) + (rng ? rng.float(0, 1.4) : 0);
+          if (dd < rad) m[j * 32 + i] = Math.min(255, m[j * 32 + i] + amount * (1 - dd / rad));
         }
-        // drip
-        const len = 2 + ((rng ? rng.int(0, 5) : 2) | 0);
-        for (let j = Math.floor(vc); j < Math.min(16, vc + len); j++) { const ii = Math.min(15, Math.max(0, Math.floor(uc))); m[j * 16 + ii] = Math.min(255, m[j * 16 + ii] + 140); }
+        // runs: a few drips of different lengths
+        const nd = 1 + (rng ? rng.int(0, 2) : 1);
+        for (let k = 0; k < nd; k++) {
+          const ii = Math.min(31, Math.max(0, Math.floor(uc + (k - nd / 2) * 2.2))), len = 4 + ((rng ? rng.int(0, 12) : 4) | 0);
+          for (let j = Math.floor(vc); j < Math.min(32, vc + len); j++) m[j * 32 + ii] = Math.min(255, m[j * 32 + ii] + (j > vc + len - 2 ? 230 : 150));
+        }
         return;
       }
     }

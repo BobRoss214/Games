@@ -1,7 +1,7 @@
 // Software raycaster: textured walls/floors/ceilings, baked + flickering light, billboard sprites,
 // ordered-dither palette quantization. Renders into a per-viewport low-res ImageData buffer.
 import { clamp } from './util.js';
-import { TW, TWM, TSH } from './textures.js';
+import { TW, TWM } from './textures.js';
 
 export const LS = 4; // lightmap subdivisions per cell
 
@@ -252,8 +252,8 @@ export function renderView(view, scene, cam, time) {
         const c = tdata[(ty | 0) * TW + tx];
         let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
         if (wallBloodMask) {
-          const m = wallBloodMask[(((ty | 0) >> TSH) << 4) + (tx >> TSH)];
-          if (m) { const a = m / 255 * 0.85; r = r + (110 - r) * a; g = g + (10 - g) * a; b = b + (14 - b) * a; }
+          const m = wallBloodMask[(((ty | 0) >> 2) << 5) + (tx >> 2)];
+          if (m > 22) { const th = m > 200 ? 1 : m / 200, a = th * th * (3 - 2 * th) * 0.93, lm = 0.55 + 0.9 * ((r + g + b) / 765), rim = m < 80 ? 0.55 : 1; r = r + (118 * lm * rim - r) * a; g = g + (9 * lm * rim - g) * a; b = b + (14 * lm * rim - b) * a; }
         }
         const tq = ty | 0; const vg = (((vx * vigY[y]) >> 8) * AOV[tq >= TW ? 63 : tq >> 1]) >> 8;
         // ambient occlusion: darker toward ceiling & floor joins
@@ -340,8 +340,8 @@ export function renderView(view, scene, cam, time) {
         }
         const bi2 = map.bloodIdx[ci];
         if (bi2) {
-          const m = map.bloodMasks[bi2][((v >> TSH) << 4) + (u >> TSH)];
-          if (m) { const a = (m / 255) * 0.88; r = r + (120 - r) * a; g = g + (8 - g) * a; b = b + (14 - b) * a; }
+          const m = map.bloodMasks[bi2][((v >> 2) << 5) + (u >> 2)];
+          if (m > 22) { const th = m > 200 ? 1 : m / 200, a = th * th * (3 - 2 * th) * 0.94, lm = 0.55 + 0.9 * ((r + g + b) / 765), rim = m < 80 ? 0.55 : m > 235 ? 1.25 : 1; r = r + (112 * lm * rim - r) * a; g = g + (8 * lm * rim - g) * a; b = b + (13 * lm * rim - b) * a; }
         }
       }
       let lsx = (fx * LS) | 0, lsy = (fy * LS) | 0;
