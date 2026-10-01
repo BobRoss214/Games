@@ -85,3 +85,8 @@ Not done: online multiplayer, damage numbers.
 - Blood masks are 32x32 per cell (were 16x16) with soft edges, a dark rim and wall drips.
 - Bloom (Options > GLOW) works on a quarter-size copy of each view: about 0.2 ms per view. Weapon/hand moved up so the fist is visible above the HUD bar.
 - Measured: 4.0 ms/frame (1 view) and 7.9 ms (4 views) in headless Chromium, vs 4.0 / 6.9 before the overhaul.
+
+## Looking without pointer lock
+- Browsers only grant pointer lock to top-level pages in most embeds; a sandboxed iframe (like a hosted preview) silently refuses. Before, the mouse did nothing then except at the screen edges.
+- Now, when the mouse is not captured, plain mouse movement over the game turns the camera (gain 1.6, since the cursor has limited room) and pushing into an edge keeps turning. `tools/e2e-look.mjs` tests this inside a sandboxed iframe with W held.
+- Options > LOOK WITHOUT MOUSE CAPTURE turns it off. The banner says when the page blocks capture.

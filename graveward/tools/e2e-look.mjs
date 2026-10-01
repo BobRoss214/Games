@@ -22,13 +22,28 @@ const dAng = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; wh
   const p = await open(''); const a0 = await ang(p);
   await p.mouse.move(470, 270); await p.keyboard.down('KeyW'); await p.mouse.move(950, 270); await p.waitForTimeout(600); await p.keyboard.up('KeyW');
   ok(dAng(a0, await ang(p)) > 0.8, 'cursor at the right edge turns right while walking');
-  const a1 = await ang(p); await p.mouse.move(480, 270); await p.waitForTimeout(400); const a2 = await ang(p);
-  ok(Math.abs(dAng(a1, a2)) < 0.25, 'cursor in the middle does not turn');
+  const a1 = await ang(p); await p.mouse.move(480, 270); await p.waitForTimeout(250); const a1b = await ang(p); await p.waitForTimeout(400); const a2 = await ang(p);
+  ok(Math.abs(dAng(a1b, a2)) < 0.05, 'a resting cursor in the middle does not turn');
   await p.mouse.move(8, 270); await p.waitForTimeout(600);
   ok(dAng(a2, await ang(p)) < -0.8, 'cursor at the left edge turns left');
   await p.evaluate(() => { window.graveward.settings.edgeLook = false; }); const a3 = await ang(p); await p.mouse.move(950, 270); await p.waitForTimeout(500);
   ok(Math.abs(dAng(a3, await ang(p))) < 0.05, 'edge look can be switched off in Options');
   await p.close();
+}
+{ // 2c) the real-world case: the game sits in a sandboxed iframe that blocks pointer lock. Plain mouse movement must turn the camera while walking.
+  const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  page.on('pageerror', (e) => logs.push(e.message));
+  await page.goto(`http://127.0.0.1:${port}/tools/blank.html`).catch(() => {});
+  await page.setContent(`<body style="margin:0;background:#000"><iframe id="f" sandbox="allow-scripts allow-same-origin" style="border:0;width:960px;height:540px" src="http://127.0.0.1:${port}/index.html?auto=1&humans=1&players=2&debug=1&seed=4"></iframe></body>`);
+  const fr = page.frames().find((f) => f.url().includes('index.html')); await fr.waitForFunction('window.graveward && window.graveward.match'); await page.waitForTimeout(700);
+  const fang = () => fr.evaluate(() => window.graveward.match.players[0].body.angle);
+  await page.mouse.click(480, 270); await page.waitForTimeout(300);
+  ok(!(await fr.evaluate(() => window.graveward.input.locked)), 'pointer lock is blocked in the sandboxed frame (test setup)');
+  await page.mouse.move(400, 270); await page.waitForTimeout(300); const a0 = await fang(); await page.keyboard.down('KeyW'); await page.mouse.move(520, 270, { steps: 12 }); await page.waitForTimeout(300); await page.keyboard.up('KeyW');
+  ok(dAng(a0, await fang()) > 0.15, 'plain mouse movement turns right while walking, with no pointer lock (' + dAng(a0, await fang()).toFixed(2) + ' rad)');
+  const a1 = await fang(); await page.keyboard.down('KeyD'); await page.mouse.move(400, 270, { steps: 12 }); await page.waitForTimeout(300); await page.keyboard.up('KeyD');
+  ok(dAng(a1, await fang()) < -0.15, 'and turns left while strafing');
+  await page.close();
 }
 { // 2b) a second player on Keyboard 2 owns the arrow keys: player 1 must not turn with them
   const p = await open(''); await p.evaluate(() => { window.graveward.input.kb2InUse = true; }); const a0 = await ang(p);

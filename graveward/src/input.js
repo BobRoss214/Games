@@ -22,7 +22,7 @@ export function keyLabel(code) {
 
 export class Input {
   constructor(settings) {
-    this.s = settings; this.keys = new Set(); this.down = new Set(); this.up = new Set(); this.mouseDX = 0; this.mouseDY = 0; this.locked = false;
+    this.s = settings; this.keys = new Set(); this.down = new Set(); this.up = new Set(); this.mouseDX = 0; this.mouseDY = 0; this.locked = false; this.lockFailed = false;
     this.pads = [null, null, null, null]; this.padPrev = [null, null, null, null]; this.padEdges = [new Set(), new Set(), new Set(), new Set()];
     this.listeners = []; this.rebind = null; this.lastAnyKey = null; this.connectMsgs = [];
     this.mx = 0.5; this.my = 0.5; this.mouseIn = false; this.kb2InUse = false; // cursor over the canvas (0..1); arrow keys belong to Keyboard 2 when it is playing
@@ -49,8 +49,11 @@ export class Input {
     on(canvas, 'contextmenu', (e) => e.preventDefault());
     on(canvas, 'mousemove', (e) => { const r = canvas.getBoundingClientRect(); if (r.width > 0) { this.mx = (e.clientX - r.left) / r.width; this.my = (e.clientY - r.top) / r.height; this.mouseIn = true; } });
     on(canvas, 'mouseleave', () => { this.mouseIn = false; });
-    on(document, 'mousemove', (e) => { if (this.locked) { this.mouseDX += e.movementX; this.mouseDY += e.movementY; } });
-    on(document, 'pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; });
+    // captured mouse: raw movement turns the camera. Not captured (embedded pages often block pointer lock): the cursor still turns the camera
+    // while it is over the game, and pushing it into a screen edge keeps turning (see edgeTurn).
+    on(document, 'mousemove', (e) => { if (this.locked) { this.mouseDX += e.movementX; this.mouseDY += e.movementY; } else if (this.mouseIn && this.s.edgeLook) { this.mouseDX += e.movementX * 1.6; } });
+    on(document, 'pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; if (this.locked) this.lockFailed = false; });
+    on(document, 'pointerlockerror', () => { this.lockFailed = true; });
     on(window, 'gamepadconnected', (e) => this.connectMsgs.push('Gamepad ' + (e.gamepad.index + 1) + ' connected'));
     on(window, 'gamepaddisconnected', (e) => this.connectMsgs.push('Gamepad ' + (e.gamepad.index + 1) + ' disconnected'));
   }

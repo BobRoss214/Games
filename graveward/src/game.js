@@ -380,9 +380,9 @@ export class Game {
     // fade in/out on transitions
     if (m.phase === 'floor' && m.phaseT < 1.2) { ctx.fillStyle = `rgba(0,0,0,${1 - m.phaseT / 1.2})`; ctx.fillRect(0, 0, W, H); }
     if (this.hasMouseP1() && !this.input.locked && !this.paused && m.phase !== 'end' && m.phase !== 'upgrade') {
-      drawText(ctx, 'CLICK TO CAPTURE MOUSE', W / 2, Math.round(H * 0.78), '#ffe080', 1, { align: 'center', outline: '#000' });
+      drawText(ctx, this.input.lockFailed ? 'THIS PAGE BLOCKS MOUSE CAPTURE' : 'CLICK TO CAPTURE MOUSE', W / 2, Math.round(H * 0.78), '#ffe080', 1, { align: 'center', outline: '#000' });
       if (this.settings.edgeLook) {
-        drawText(ctx, 'OR MOVE THE MOUSE TO THE SCREEN EDGES TO TURN', W / 2, Math.round(H * 0.78) + 10, '#c0a860', 1, { align: 'center', outline: '#000' });
+        drawText(ctx, 'MOVE THE MOUSE TO LOOK. AT THE SCREEN EDGE IT KEEPS TURNING', W / 2, Math.round(H * 0.78) + 10, '#c0a860', 1, { align: 'center', outline: '#000' });
         const et = this.input.edgeTurn();
         if (et) { const a = Math.min(1, Math.abs(et) / 2.8); ctx.globalAlpha = 0.25 + 0.6 * a; drawText(ctx, et < 0 ? '<<' : '>>', et < 0 ? 6 : W - 18, Math.round(H / 2) - 3, '#ffe080', 2, { outline: '#000' }); ctx.globalAlpha = 1; }
       }

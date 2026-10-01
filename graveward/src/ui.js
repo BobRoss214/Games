@@ -142,7 +142,7 @@ export class UI {
       choice('PIXEL SIZE', 'pixel', ['chunky', 'fine'], (v) => (v === 'chunky' ? 'CHUNKY 480X270' : 'FINE 640X360'), () => g.applyResolution()),
       { ...slider('FIELD OF VIEW', 'fov', 0.7, 1.25, 0.05), fmt: (v) => Math.round(((2 * Math.atan(Math.tan(v / 2) * (16 / 9))) * 180) / Math.PI) + ' DEG' },
       slider('COLOR DITHER', 'dither', 0, 1, 0.25, () => g.applyQuant()),
-      slider('SCREEN SHAKE', 'shake', 0, 1, 0.25), { ...slider('DARKNESS', 'darkness', 0, 1.5, 0.1, () => g.applyDarkness()), fmt: (v) => (v < 0.05 ? 'ORIGINAL' : Math.round(v * 100) + '%') }, toggle('GLOW (BLOOM)', 'bloom', () => g.applyDarkness()), toggle('SHOW FPS', 'showFps'), toggle('EDGE-OF-SCREEN LOOK', 'edgeLook'),
+      slider('SCREEN SHAKE', 'shake', 0, 1, 0.25), { ...slider('DARKNESS', 'darkness', 0, 1.5, 0.1, () => g.applyDarkness()), fmt: (v) => (v < 0.05 ? 'ORIGINAL' : Math.round(v * 100) + '%') }, toggle('GLOW (BLOOM)', 'bloom', () => g.applyDarkness()), toggle('SHOW FPS', 'showFps'), toggle('LOOK WITHOUT MOUSE CAPTURE', 'edgeLook'),
       choice('GORE', 'gore', [0, 1, 2, 3], (v) => ['OFF', 'LOW', 'HIGH', 'EXCESSIVE'][v], () => g.fx.settings.gore = st.gore),
       { type: 'header', label: 'CONTROLS' },
       { ...slider('MOUSE SENSITIVITY', 'sensitivity', 0.2, 3, 0.1), fmt: (v) => v.toFixed(1) + 'X' }, { ...slider('STICK SENSITIVITY', 'stickSens', 0.3, 2.5, 0.1), fmt: (v) => v.toFixed(1) + 'X' }, { ...slider('STICK DEAD ZONE', 'deadzone', 0.05, 0.5, 0.05), fmt: (v) => Math.round(v * 100) + '%' },
