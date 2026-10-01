@@ -166,7 +166,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
       let h = a.giant ? Math.min(1.05, a.h * 0.5) : a.h * 0.62;
       if (!a.dead && !a.moving) h *= 1 + Math.sin(t * 2.3 + a.id * 1.7) * 0.012; // slow breathing
       if (state === 'dead' && n > 0) h = h * (f.h / (S.monsterFrame(def.sprite, a.tier, 'idle', 0).h)) * 0.95;
-      const tint = statusTint(a, t);
+      const tint = state === 'dead' && n > 0 ? null : statusTint(a, t); // a corpse mid-fall keeps no hit-flash
       const z = a.flies ? 0.22 + Math.sin(t * 2 + a.id) * 0.05 : 0;
       if (!a.flies) contact(out, a.x, a.y, Math.min(h * ASPECT(f), h * 0.95) * 1.5, state === 'dead' ? 0.5 : 0.85); else contact(out, a.x, a.y, h * 0.55, 0.45);
       out.push({ x: a.x, y: a.y, z, w: h * ASPECT(f), h, frame: f, tint: tint ? tint[0] : 0, tintAmt: tint ? tint[1] : 0, emit: a.giant ? 0.18 : 0.08, flip: (a.id & 1) === 1 && state === 'idle' });

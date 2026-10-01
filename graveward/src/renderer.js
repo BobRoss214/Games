@@ -467,8 +467,10 @@ function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, am
     const aa = (alpha * 256) | 0;
     for (let x = x0; x <= x1; x++) {
       if (ty >= zbuf[x] || (ty > doorZ[x])) continue;
+      const big = x1 - x0 > 3 && y1 - y0 > 3, edgeX = x === x0 || x === x1;
       for (let y = y0; y <= y1; y++) {
         if (ty > doorZ[x] && y < doorBot[x]) continue;
+        if (big && edgeX && (y === y0 || y === y1)) continue; // clipped corners: droplets read round, not square
         const i = y * W + x, d = buf[i];
         let R = d & 255, G = (d >> 8) & 255, B = (d >> 16) & 255;
         if (add) { R = Math.min(255, R + ((cr * aa) >> 8)); G = Math.min(255, G + ((cg * aa) >> 8)); B = Math.min(255, B + ((cb * aa) >> 8)); }
