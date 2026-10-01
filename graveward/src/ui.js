@@ -7,7 +7,7 @@ import { ACTIONS, DEFAULT_BINDINGS, DEVICE_NAMES, keyLabel } from './input.js';
 import { clamp } from './util.js';
 
 export const DEFAULT_SETTINGS = {
-  master: 0.8, music: 0.7, sfx: 0.9, mute: false, gore: 2, fov: 0.95, sensitivity: 1, stickSens: 1, deadzone: 0.18, shake: 1, pixel: 'chunky', showFps: false,
+  master: 0.8, music: 0.7, sfx: 0.9, mute: false, gore: 2, fov: 0.95, sensitivity: 1, stickSens: 1, deadzone: 0.18, shake: 1, pixel: 'chunky', showFps: false, edgeLook: true,
   botSkill: 'normal', floors: 5, totalPlayers: 4, seed: 0, dither: 1, bindings: JSON.parse(JSON.stringify(DEFAULT_BINDINGS)),
 };
 
@@ -142,7 +142,7 @@ export class UI {
       choice('PIXEL SIZE', 'pixel', ['chunky', 'fine'], (v) => (v === 'chunky' ? 'CHUNKY 480X270' : 'FINE 640X360'), () => g.applyResolution()),
       { ...slider('FIELD OF VIEW', 'fov', 0.7, 1.25, 0.05), fmt: (v) => Math.round(((2 * Math.atan(Math.tan(v / 2) * (16 / 9))) * 180) / Math.PI) + ' DEG' },
       slider('COLOR DITHER', 'dither', 0, 1, 0.25, () => g.applyQuant()),
-      slider('SCREEN SHAKE', 'shake', 0, 1, 0.25), toggle('SHOW FPS', 'showFps'),
+      slider('SCREEN SHAKE', 'shake', 0, 1, 0.25), toggle('SHOW FPS', 'showFps'), toggle('EDGE-OF-SCREEN LOOK', 'edgeLook'),
       choice('GORE', 'gore', [0, 1, 2, 3], (v) => ['OFF', 'LOW', 'HIGH', 'EXCESSIVE'][v], () => g.fx.settings.gore = st.gore),
       { type: 'header', label: 'CONTROLS' },
       { ...slider('MOUSE SENSITIVITY', 'sensitivity', 0.2, 3, 0.1), fmt: (v) => v.toFixed(1) + 'X' }, { ...slider('STICK SENSITIVITY', 'stickSens', 0.3, 2.5, 0.1), fmt: (v) => v.toFixed(1) + 'X' }, { ...slider('STICK DEAD ZONE', 'deadzone', 0.05, 0.5, 0.05), fmt: (v) => Math.round(v * 100) + '%' },
@@ -374,8 +374,9 @@ export class UI {
         const kb = g.labelFor(fake('kbm1'), act).split(' / ')[0], pad = g.labelFor(fake('pad0'), act);
         drawText(ctx, name, cx1, y, C.text, 1); drawText(ctx, kb, cx2, y, C.gold, 1); drawText(ctx, pad, cx3, y, '#a8d8ff', 1); y += 10;
       }
-      drawText(ctx, 'PAUSE: TAB OR ESC / MENU BUTTON.  REBIND IN OPTIONS.', W / 2, y + 6, C.dim, 1, { align: 'center' });
-      drawText(ctx, 'USING A PAD? PLUG IT IN AND PRESS ANY BUTTON ONCE.', W / 2, y + 17, C.dim, 1, { align: 'center' });
+      drawText(ctx, 'ALSO TURN: ARROW KEYS, OR MOUSE AT THE SCREEN EDGES', W / 2, y + 6, C.dim, 1, { align: 'center' });
+      drawText(ctx, 'PAUSE: TAB OR ESC / MENU.  REBIND IN OPTIONS.', W / 2, y + 17, C.dim, 1, { align: 'center' });
+      drawText(ctx, 'USING A PAD? PLUG IT IN AND PRESS ANY BUTTON ONCE.', W / 2, y + 28, C.dim, 1, { align: 'center' });
     } else
     for (const ln of lines) { for (const w of wrapText(ln, Math.floor((W - 90) / 6))) { drawText(ctx, w, 44, y, C.text, 1); y += 10; } y += 5; }
     drawText(ctx, `PAGE ${this.howPage + 1}/${HOWTO.length}   LEFT/RIGHT TO TURN PAGE   ESC TO CLOSE`, W / 2, H - 24, C.dim, 1, { align: 'center' });

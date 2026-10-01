@@ -10,7 +10,7 @@ Read this at the start of every session. Update it when reality changes.
 - Run: `cd graveward && python3 -m http.server 8000` then open `http://localhost:8000` (or `npm run dev` there). The root `index.html` is a menu linking to each game.
 - Build: `cd graveward && npm run build` copies the game to `graveward/dist/` (it is just a copy).
 - Test (Node 22, no deps): `cd graveward && npm test` (252 content checks + tutorial autopilot + 6 headless bot matches).
-- Browser tests need Playwright: `npm run test:browser` (menus, mouse clicks, two keyboards, fake gamepad, tutorial, audio). Always read their output for console errors, not just PASS/FAIL.
+- Browser tests need Playwright: `npm run test:browser` (menus, mouse clicks, turning, two keyboards, fake gamepad, tutorial, audio). Always read their output for console errors, not just PASS/FAIL.
 
 ## 2. How to work with me
 

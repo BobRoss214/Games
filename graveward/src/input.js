@@ -25,6 +25,7 @@ export class Input {
     this.s = settings; this.keys = new Set(); this.down = new Set(); this.up = new Set(); this.mouseDX = 0; this.mouseDY = 0; this.locked = false;
     this.pads = [null, null, null, null]; this.padPrev = [null, null, null, null]; this.padEdges = [new Set(), new Set(), new Set(), new Set()];
     this.listeners = []; this.rebind = null; this.lastAnyKey = null; this.connectMsgs = [];
+    this.mx = 0.5; this.my = 0.5; this.mouseIn = false; this.kb2InUse = false; // cursor over the canvas (0..1); arrow keys belong to Keyboard 2 when it is playing
     this.devices = new Map(); // devId -> DeviceState
     this.menuHeld = {};
   }
@@ -45,6 +46,8 @@ export class Input {
     });
     on(window, 'mouseup', (e) => { this.keys.delete('Mouse' + e.button); this.up.add('Mouse' + e.button); });
     on(canvas, 'contextmenu', (e) => e.preventDefault());
+    on(canvas, 'mousemove', (e) => { const r = canvas.getBoundingClientRect(); if (r.width > 0) { this.mx = (e.clientX - r.left) / r.width; this.my = (e.clientY - r.top) / r.height; this.mouseIn = true; } });
+    on(canvas, 'mouseleave', () => { this.mouseIn = false; });
     on(document, 'mousemove', (e) => { if (this.locked) { this.mouseDX += e.movementX; this.mouseDY += e.movementY; } });
     on(document, 'pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; });
     on(window, 'gamepadconnected', (e) => this.connectMsgs.push('Gamepad ' + (e.gamepad.index + 1) + ' connected'));
@@ -77,6 +80,14 @@ export class Input {
     return i === undefined ? 'none' : 'ok:' + (this.pads[i].id || 'pad');
   }
   connectedPads() { return this.pads.map((p, i) => (p ? i : -1)).filter((i) => i >= 0); }
+
+  // -1..1: how hard the cursor is pushed into the left/right edge zone while the mouse is NOT captured
+  edgeTurn() {
+    if (this.locked || !this.mouseIn || !this.s.edgeLook) return 0;
+    const Z = 0.14, ramp = (d) => Math.min(1, Math.max(0, d / Z));
+    const l = ramp(Z - this.mx), r = ramp(this.mx - (1 - Z));
+    return (r * r - l * l) * 2.8;
+  }
 
   keyDown(code) { return this.keys.has(code); }
   padAxis(i, a) { const p = this.pads[i]; if (!p) return 0; const v = p.axes[a] || 0; const dz = this.s.deadzone; return Math.abs(v) < dz ? 0 : (v - Math.sign(v) * dz) / (1 - dz); }
@@ -114,7 +125,13 @@ export class Input {
         } else {
           fwd = (down('fwd') ? 1 : 0) - (down('back') ? 1 : 0); strafe = (down('strafeR') ? 1 : 0) - (down('strafeL') ? 1 : 0);
           turnRate = ((down('turnR') ? 1 : 0) - (down('turnL') ? 1 : 0)) * 2.4 * sens;
-          if (dev === 'kbm1') { turn = this.mouseDX * 0.0024 * sens; this.mouseDX = 0; }
+          if (dev === 'kbm1') {
+            turn = this.mouseDX * 0.0024 * sens; this.mouseDX = 0;
+            // arrow keys also turn, unless a second player is on Keyboard 2 (it uses the arrows)
+            if (!this.kb2InUse) turnRate += ((this.keys.has('ArrowRight') ? 1 : 0) - (this.keys.has('ArrowLeft') ? 1 : 0)) * 2.4 * sens;
+            // no pointer lock (embedded page, or before the first click): pushing the cursor to the screen edges turns
+            turnRate += this.edgeTurn() * sens;
+          }
         }
         const attackNow = down('attack'), altNow = down('alt');
         const res = {

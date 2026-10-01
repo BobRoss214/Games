@@ -118,6 +118,7 @@ export class Game {
     const s = this.settings;
     const seed = s.seed || ((Math.random() * 1e9) | 0) + 1;
     this.fx.clear(); this.fx.views.clear();
+    this.input.kb2InUse = cfg.some((c) => c.human && c.device === 'kb2');
     const m = this.match = new Match({ seed, floors: s.floors, botSkill: s.botSkill, players: cfg, gore: s.gore });
     m.labelFor = (p, act) => this.labelFor(p, act);
     // input sources for humans
@@ -374,7 +375,14 @@ export class Game {
     drawGlobalHUD(ctx, W, H, m, t);
     // fade in/out on transitions
     if (m.phase === 'floor' && m.phaseT < 1.2) { ctx.fillStyle = `rgba(0,0,0,${1 - m.phaseT / 1.2})`; ctx.fillRect(0, 0, W, H); }
-    if (this.hasMouseP1() && !this.input.locked && !this.paused && m.phase !== 'end' && m.phase !== 'upgrade') { drawText(ctx, 'CLICK TO CAPTURE MOUSE', W / 2, Math.round(H * 0.78), '#ffe080', 1, { align: 'center', outline: '#000' }); }
+    if (this.hasMouseP1() && !this.input.locked && !this.paused && m.phase !== 'end' && m.phase !== 'upgrade') {
+      drawText(ctx, 'CLICK TO CAPTURE MOUSE', W / 2, Math.round(H * 0.78), '#ffe080', 1, { align: 'center', outline: '#000' });
+      if (this.settings.edgeLook) {
+        drawText(ctx, 'OR MOVE THE MOUSE TO THE SCREEN EDGES TO TURN', W / 2, Math.round(H * 0.78) + 10, '#c0a860', 1, { align: 'center', outline: '#000' });
+        const et = this.input.edgeTurn();
+        if (et) { const a = Math.min(1, Math.abs(et) / 2.8); ctx.globalAlpha = 0.25 + 0.6 * a; drawText(ctx, et < 0 ? '<<' : '>>', et < 0 ? 6 : W - 18, Math.round(H / 2) - 3, '#ffe080', 2, { outline: '#000' }); ctx.globalAlpha = 1; }
+      }
+    }
     this.ui.draw(ctx, W, H, t);
     if (this.paused && this.pauseMsg) drawText(ctx, this.pauseMsg, W / 2, H / 2 - 64, '#ff8060', 1, { align: 'center' });
   }
