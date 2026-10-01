@@ -78,7 +78,7 @@ export class Game {
     if (act === 'move') {
       const b0 = this.input.bindingsFor(dev), ks = ['fwd', 'strafeL', 'back', 'strafeR'].map((a) => (b0[a] || [])[0] || '');
       kb = ks.every((k) => /^Key/.test(k)) ? ks.map((k) => k.replace('Key', '')).join('') : 'ARROWS';
-    } else if (act === 'look') kb = dev === 'kbm1' ? 'MOUSE' : 'ARROW KEYS';
+    } else if (act === 'look') kb = dev === 'kbm1' ? (this.input.kb2InUse ? 'MOUSE' : 'MOUSE OR ARROW KEYS') : 'ARROW KEYS';
     else { const c = (this.input.bindingsFor(dev)[act] || [])[0]; kb = c === undefined ? act.toUpperCase() : keyLabel(c); }
     const pn = padConnected ? padName() : '';
     return pn ? kb + ' / ' + pn : kb;

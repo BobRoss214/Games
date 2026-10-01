@@ -90,3 +90,4 @@ Not done: online multiplayer, damage numbers.
 - Browsers only grant pointer lock to top-level pages in most embeds; a sandboxed iframe (like a hosted preview) silently refuses. Before, the mouse did nothing then except at the screen edges.
 - Now, when the mouse is not captured, plain mouse movement over the game turns the camera (gain 1.6, since the cursor has limited room) and pushing into an edge keeps turning. `tools/e2e-look.mjs` tests this inside a sandboxed iframe with W held.
 - Options > LOOK WITHOUT MOUSE CAPTURE turns it off. The banner says when the page blocks capture.
+- Laptop touchpads: many laptops switch the touchpad off while a key is held ("ignore touchpad while typing"). The browser then never receives mouse movement, so no code can fix looking with the touchpad while holding WASD. Arrow keys turn while walking (and are named in the tutorial and the first hint); a gamepad right stick or a USB mouse also avoids it.
