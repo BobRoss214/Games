@@ -170,7 +170,8 @@ export function trapControl(w, proxy, intent, dt) {
   if (trap.wall) { proxy.angle = trap.dir + clamp(angleDiff(proxy.angle, trap.dir), -1.0, 1.0); }
   trap.aim = proxy.angle;
   if (intent.attack || intent.attackPressed) triggerTrap(w, trap, p);
-  if (intent.interactHeld) { proxy.holdInteract += dt; if (proxy.holdInteract > 0.6) { releaseTrap(w, p, proxy); } } else proxy.holdInteract = 0;
+  if (!intent.interactHeld) proxy.holdArmed = true; // same rule as monsters: the key that possessed it doesn't count
+  if (intent.interactHeld && proxy.holdArmed) { proxy.holdInteract += dt; if (proxy.holdInteract > 0.6) { releaseTrap(w, p, proxy); } } else proxy.holdInteract = 0;
 }
 
 export function triggerTrap(w, trap, player) {
