@@ -48,11 +48,14 @@ export function paintPot(kind) {
   pc.noise(3, 0.1); pc.outline(DARK); return pc;
 }
 export function paintCrate() {
-  const pc = new PC(34, 32);
-  pc.srect(1, 2, 32, 29, WOOD.slice(1)); pc.rect(1, 2, 32, 3, WOOD[3]);
-  pc.rect(1, 14, 32, 3, WOOD[0]); pc.rect(15, 2, 4, 29, WOOD[0]);
-  for (const [x, y] of [[4, 5], [28, 5], [4, 26], [28, 26]]) pc.set(x, y, IRON[3]);
-  pc.line(1, 2, 32, 30, WOOD[0]); pc.noise(4, 0.1); pc.outline(DARK); return pc;
+  const pc = new PC(34, 32), rng = new RNG(41);
+  // vertical planks with grain, a cross brace, nails and a split corner
+  for (let i = 0; i < 4; i++) { const x = 1 + i * 8; pc.rect(x, 2, 8, 29, WOOD[1 + (i & 1)]); pc.rect(x, 2, 1, 29, WOOD[0]); pc.rect(x + 1, 2, 1, 29, WOOD[3]); for (let k = 0; k < 6; k++) pc.set(x + rng.int(2, 6), 4 + rng.int(0, 25), WOOD[0]); }
+  pc.rect(1, 2, 32, 3, WOOD[3]); pc.rect(1, 28, 32, 3, WOOD[0]);
+  pc.quad([[1, 7], [4, 7], [33, 26], [30, 26]], WOOD[2]); pc.quad([[33, 7], [30, 7], [1, 26], [4, 26]], WOOD[1]); pc.line(1, 8, 32, 26, WOOD[0]);
+  for (const [x, y] of [[3, 4], [30, 4], [3, 28], [30, 28], [16, 16]]) { pc.disc(x, y, 1.1, IRON[3]); pc.set(x + 1, y + 1, IRON[0]); }
+  pc.tri(26, 2, 33, 2, 33, 9, DARK); pc.line(26, 2, 33, 9, WOOD[3]); // split corner
+  pc.noise(4, 0.1); pc.outline(DARK); return pc;
 }
 export function paintUrn() {
   const pc = new PC(28, 40);
@@ -63,11 +66,15 @@ export function paintUrn() {
   pc.noise(5, 0.1); pc.outline(DARK); return pc;
 }
 export function paintBones(kind) {
-  const pc = new PC(36, 22), rng = new RNG(kind === 'skull' ? 9 : 4);
-  const n = kind === 'skull' ? 6 : 4;
-  for (let i = 0; i < 5; i++) { const x = rng.int(3, 24), y = rng.int(12, 19); pc.line(x, y, x + rng.int(6, 10), y + rng.int(-2, 2), BONE[2], 2); pc.disc(x, y, 1.4, BONE[3]); }
-  for (let i = 0; i < n; i++) { const x = 8 + i * 5 + rng.int(-2, 2), y = 8 + rng.int(0, 5) - (kind === 'skull' ? (i % 2) * 4 : 0); pc.sell(x, y, 4.2, 4.4, BONE); pc.set(x - 1.5, y, DARK); pc.set(x + 1.5, y, DARK); pc.rect(x - 2, y + 2.5, 5, 2, BONE[1]); }
-  pc.outline(DARK); return pc;
+  const pc = new PC(44, 26), rng = new RNG(kind === 'skull' ? 9 : 4);
+  const n = kind === 'skull' ? 7 : 4;
+  for (let i = 0; i < 7; i++) { const x = rng.int(3, 30), y = rng.int(14, 22); pc.line(x, y, x + rng.int(6, 12), y + rng.int(-2, 2), BONE[2], 2); pc.disc(x, y, 1.5, BONE[3]); pc.disc(x + 8, y, 1.4, BONE[1]); }
+  if (kind !== 'skull') { // a curved rib cage fragment and a hip bone
+    for (let i = 0; i < 4; i++) pc.line(30 + i * 2, 20, 35 + i * 2, 12 + i, BONE[2], 1.4);
+    pc.line(28, 21, 42, 21, BONE[1], 2); pc.tri(4, 20, 12, 22, 8, 14, BONE[2]); pc.set(8, 19, DARK);
+  }
+  for (let i = 0; i < n; i++) { const x = 8 + i * 5 + rng.int(-2, 2), y = 9 + rng.int(0, 5) - (kind === 'skull' ? (i % 3) * 4 : 0); pc.sell(x, y, 4.4, 4.6, BONE); pc.disc(x - 1.6, y, 1.2, DARK); pc.disc(x + 1.6, y, 1.2, DARK); pc.set(x, y + 1.5, DARK); pc.rect(x - 2, y + 2.8, 5, 2, BONE[1]); for (let t = 0; t < 4; t++) pc.set(x - 1.5 + t, y + 4.6, t & 1 ? DARK : BONE[3]); }
+  pc.noise(8, 0.08); pc.outline(DARK); return pc;
 }
 export function paintCoffin(open) {
   const pc = new PC(48, 32);
@@ -328,11 +335,42 @@ export function paintWeapon(kind, fx = {}) {
       break;
     }
     case 'dagger': pc.quad([[cx - 4, 70], [cx + 4, 70], [cx + 2, 30], [cx - 2, 30]], BONE[2]); pc.tri(cx - 2, 30, cx + 2, 30, cx, 20, BONE[3]); pc.rect(cx - 1, 30, 2, 40, BONE[3]); pc.rect(cx - 8, 70, 16, 4, IRON[2]); pc.rect(cx - 2, 74, 5, 10, LEATHER[2]); pc.disc(cx, 86, 3, IRON[2]); break;
-    case 'axe': pc.rect(cx - 2, 20, 5, 70, WOOD[2]); pc.rect(cx - 2, 20, 1, 70, WOOD[3]); pc.quad([[cx + 2, 12], [cx + 26, 6], [cx + 30, 40], [cx + 2, 36]], IRON[2]); pc.quad([[cx + 2, 12], [cx + 26, 6], [cx + 24, 14], [cx + 2, 20]], IRON[3]); pc.line(cx + 30, 8, cx + 30, 40, IRON[3], 2); pc.rect(cx - 3, 26, 8, 4, IRON[1]); pc.rect(cx - 3, 32, 8, 4, IRON[1]); break;
-    case 'spear': pc.rect(cx - 2, 16, 5, 80, WOOD[2]); pc.rect(cx - 2, 16, 1, 80, WOOD[3]); pc.tri(cx - 6, 20, cx + 7, 20, cx, -6, IRON[3]); pc.tri(cx, 20, cx + 7, 20, cx, -6, IRON[2]); pc.rect(cx - 4, 20, 9, 4, GOLD[2]); pc.rect(cx - 3, 26, 7, 2, H('#a02020')); break;
+    case 'axe': { // bearded axe: curved bit with a bright edge, rivets, grained haft with a leather wrap
+      pc.rect(cx - 2, 20, 5, 70, WOOD[2]); pc.rect(cx - 2, 20, 1, 70, WOOD[3]); pc.rect(cx + 2, 20, 1, 70, WOOD[1]);
+      for (let y = 26; y < 88; y += 7) pc.line(cx - 2, y, cx + 2, y + 1.5, WOOD[1], 1);
+      for (let y = 62; y < 82; y += 3) pc.line(cx - 2, y, cx + 3, y + 2, LEATHER[2], 1.6);
+      pc.quad([[cx + 2, 10], [cx + 28, 2], [cx + 33, 24], [cx + 24, 46], [cx + 2, 38]], IRON[1]);
+      pc.quad([[cx + 2, 10], [cx + 24, 4], [cx + 22, 20], [cx + 2, 24]], IRON[2]);
+      pc.line(cx + 28, 2, cx + 33, 24, IRON[3], 1.6); pc.line(cx + 33, 24, cx + 24, 46, IRON[3], 1.6); // honed edge
+      pc.line(cx + 5, 14, cx + 22, 8, IRON[3], 1); pc.line(cx + 5, 33, cx + 20, 36, IRON[0], 1);
+      pc.disc(cx + 6, 24, 1.4, IRON[3]); pc.disc(cx + 6, 30, 1.4, IRON[3]); pc.rect(cx - 3, 18, 7, 22, IRON[0]); pc.rect(cx - 3, 18, 7, 2, IRON[2]);
+      for (let i = 0; i < 6; i++) pc.set(cx + 10 + (i * 5) % 17, 8 + (i * 9) % 30, H('#6a3a22'));
+      break;
+    }
+    case 'spear': { // leaf blade with a midrib, bronze socket, wrapped haft
+      pc.rect(cx - 2, 18, 5, 80, WOOD[2]); pc.rect(cx - 2, 18, 1, 80, WOOD[3]); pc.rect(cx + 2, 18, 1, 80, WOOD[1]);
+      for (let y = 30; y < 94; y += 9) pc.line(cx - 2, y, cx + 2, y + 1.5, WOOD[1], 1);
+      pc.tri(cx - 6, 22, cx + 7, 22, cx, -8, GOLD[1]); pc.tri(cx - 6, 22, cx, 22, cx, -8, GOLD[3]);
+      pc.line(cx, 20, cx, -4, GOLD[0], 1); pc.line(cx - 5, 21, cx - 1, 2, GOLD[3], 1); pc.line(cx + 6, 21, cx + 1, 2, GOLD[0], 1);
+      pc.rect(cx - 4, 22, 9, 5, GOLD[2]); pc.rect(cx - 4, 22, 9, 1, GOLD[3]); pc.rect(cx - 4, 26, 9, 1, GOLD[0]);
+      pc.rect(cx - 3, 28, 7, 2, H('#a02020')); pc.rect(cx - 3, 31, 7, 1, H('#601010'));
+      for (let y = 60; y < 84; y += 3) pc.line(cx - 2, y, cx + 3, y + 2, LEATHER[2], 1.6);
+      break;
+    }
     case 'mace': pc.rect(cx - 2, 30, 5, 60, WOOD[2]); pc.sell(cx, 18, 14, 14, IRON); for (let i = 0; i < 8; i++) { const a = i * 0.785; pc.tri(cx + Math.cos(a) * 12, 18 + Math.sin(a) * 12, cx + Math.cos(a + 0.3) * 12, 18 + Math.sin(a + 0.3) * 12, cx + Math.cos(a + 0.15) * 20, 18 + Math.sin(a + 0.15) * 20, IRON[3]); } pc.rect(cx - 4, 28, 9, 4, IRON[1]); break;
     case 'khopesh': pc.rect(cx - 3, 54, 6, 30, GOLD[2]); pc.limb(cx, 56, cx - 2, 22, 7, pal4('#8a6420', '#d8ac3c', '#f8dc72', '#ffffff')); pc.limb(cx - 2, 24, cx + 20, 8, 9, pal4('#8a6420', '#d8ac3c', '#f8dc72', '#ffffff')); pc.limb(cx + 19, 10, cx + 26, 24, 7, pal4('#8a6420', '#d8ac3c', '#f8dc72', '#ffffff')); pc.rect(cx - 7, 56, 14, 4, GOLD[1]); pc.set(cx + 24, 18, GLOW('#ffffff')); break;
-    case 'hammer': pc.rect(cx - 2, 26, 5, 68, WOOD[2]); pc.rect(cx - 2, 26, 1, 68, WOOD[3]); pc.srect(cx - 18, 4, 36, 26, IRON.slice(1)); pc.rect(cx - 18, 4, 36, 3, IRON[3]); pc.rect(cx - 18, 27, 36, 3, IRON[0]); pc.rect(cx - 16, 12, 4, 10, IRON[0]); pc.rect(cx + 12, 12, 4, 10, IRON[0]); break;
+    case 'hammer': { // banded steel head with a bevelled face and rivets, long haft
+      pc.rect(cx - 2, 28, 5, 68, WOOD[2]); pc.rect(cx - 2, 28, 1, 68, WOOD[3]); pc.rect(cx + 2, 28, 1, 68, WOOD[1]);
+      for (let y = 36; y < 92; y += 8) pc.line(cx - 2, y, cx + 2, y + 1.5, WOOD[1], 1);
+      pc.srect(cx - 18, 4, 36, 26, IRON.slice(1)); pc.rect(cx - 18, 4, 36, 3, IRON[3]); pc.rect(cx - 18, 27, 36, 3, IRON[0]);
+      pc.rect(cx - 18, 4, 3, 26, IRON[3]); pc.rect(cx + 15, 4, 3, 26, IRON[0]); // bevelled end faces
+      pc.rect(cx - 5, 4, 10, 26, IRON[1]); pc.rect(cx - 5, 4, 10, 1, IRON[3]); pc.rect(cx - 5, 29, 10, 1, IRON[0]); // centre band
+      for (const [x, y] of [[-12, 9], [-12, 24], [11, 9], [11, 24], [-1, 9], [-1, 24]]) { pc.disc(cx + x, y, 1.3, IRON[3]); pc.set(cx + x + 1, y + 1, IRON[0]); }
+      pc.line(cx - 14, 16, cx - 7, 17, IRON[0], 1); pc.line(cx + 8, 14, cx + 14, 15, IRON[3], 1);
+      pc.rect(cx - 4, 30, 9, 4, IRON[1]);
+      for (let y = 70; y < 90; y += 3) pc.line(cx - 2, y, cx + 3, y + 2, LEATHER[2], 1.6);
+      break;
+    }
     case 'crossbow': pc.rect(cx - 3, 20, 6, 60, WOOD[2]); pc.rect(cx - 3, 20, 1, 60, WOOD[3]); pc.limb(cx - 24, 34, cx, 26, 5, WOOD.slice(1)); pc.limb(cx + 24, 34, cx, 26, 5, WOOD.slice(1)); pc.line(cx - 24, 36, cx, 46, H('#d8d0b0')); pc.line(cx + 24, 36, cx, 46, H('#d8d0b0')); pc.rect(cx - 1, 6, 3, 26, IRON[3]); pc.tri(cx - 3, 6, cx + 4, 6, cx, -2, IRON[3]); pc.rect(cx - 5, 44, 10, 4, IRON[2]); break;
     case 'knives': for (const [ox, oy, r] of [[-8, 10, -0.2], [0, 0, 0], [8, 10, 0.2]]) { pc.line(cx + ox, 56 + oy, cx + ox + r * 30, 20 + oy, IRON[3], 5); pc.line(cx + ox, 56 + oy, cx + ox + r * 30, 20 + oy, BONE[3], 2); pc.limb(cx + ox, 66 + oy, cx + ox, 56 + oy, 5, WOOD.slice(1)); } break;
     case 'sling': pc.line(cx - 16, 60, cx - 4, 20, LEATHER[3], 3); pc.line(cx + 16, 60, cx + 4, 20, LEATHER[3], 3); pc.sell(cx, 16, 7, 6, LEATHER); pc.disc(cx, 16, 4, H('#8a8478')); pc.rect(cx - 3, 60, 6, 20, LEATHER[2]); break;
