@@ -165,7 +165,12 @@ export class Game {
   start() { this.last = now(); const loop = (tm) => { try { this.frameStep(); } catch (e) { console.error(e); this.lastError = e; } requestAnimationFrame(loop); }; requestAnimationFrame(loop); }
   frameStep() {
     const tNow = now(); let dt = (tNow - this.last) / 1000; this.last = tNow; dt = Math.min(dt, 0.1); this.t += dt; this.lastDt = dt;
-    this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0; }
+    this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) {
+      this.fps = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0;
+      // slow machine: after a few seconds of low frame rate in a match, drop the glow pass (not saved; Options still shows the player's choice)
+      if (this.screen === 'playing' && !this.paused && this.fps < 40) this.lowFps = (this.lowFps || 0) + 0.5; else this.lowFps = 0;
+      if (this.lowFps >= 4 && !this.glowDropped && this.settings.bloom !== false) { this.glowDropped = true; setBloom(false); }
+    }
     this.input.beginFrame();
     if (this.input.padPending) { /* reserved */ }
     if (this.input.padRebind) { for (let i = 0; i < 4; i++) for (const b of this.input.padEdges[i]) { const f = this.input.padRebind; this.input.padRebind = null; f(b); break; } }

@@ -25,7 +25,19 @@ export class FX {
     this.views = new Map(); // player -> {shake, flash:[r,g,b], flashT, flashMax, chroma, hurt}
     this.splatBudget = 0; this.motes = []; this.pools = [];
   }
+  // embers drifting up from wall torches near a camera
+  updateEmbers(dt, cams, map) {
+    if (!map.torches || !cams.length) return;
+    for (const c of cams) {
+      for (const tr of map.torches) {
+        if (tr.kind || tr.out || tr.x === undefined) continue;
+        const d2 = (tr.x - c.x) ** 2 + (tr.y - c.y) ** 2; if (d2 > 49) continue;
+        if (Math.random() < dt * 1.6) this.add({ x: tr.x + rnd(-0.08, 0.08), y: tr.y + rnd(-0.08, 0.08), z: 0.55 + rnd(0, 0.1), vx: rnd(-0.12, 0.12), vy: rnd(-0.12, 0.12), vz: rnd(0.25, 0.6), g: -0.15, life: rnd(0.9, 1.8), size: 0.011, color: pick(C.fire), alpha: 0.9, add: true, drag: 0.6 });
+      }
+    }
+  }
   updateMotes(dt, cams, map) {
+    this.updateEmbers(dt, cams, map);
     const want = Math.min(140, cams.length * 55);
     while (this.motes.length < want) this.motes.push({ x: 1e9, y: 0, z: 0.5, ph: Math.random() * 6.28, sp: 0.02 + Math.random() * 0.05 });
     if (this.motes.length > want) this.motes.length = want;

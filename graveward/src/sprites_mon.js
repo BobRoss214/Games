@@ -24,29 +24,53 @@ export function pose(name, n = 0) {
 function skull(pc, cx, cy, r, o = {}) {
   const pal = o.pal || BONE;
   pc.sell(cx, cy, r, r + 0.6, pal);
-  pc.rect(cx - r + 2, cy + r - 2, r * 2 - 3, 3, pal[1]); // jaw
-  for (let i = 0; i < 4; i++) pc.set(cx - r + 3 + i * (r * 2 - 6) / 3, cy + r, DARK);
-  pc.disc(cx - r * 0.45, cy - 0.5, r * 0.32 + 0.5, DARK); pc.disc(cx + r * 0.45, cy - 0.5, r * 0.32 + 0.5, DARK);
+  pc.rect(cx - r + 2, cy + r - 2, r * 2 - 3, 3, pal[1]); // upper jaw
+  // cheekbones and brow
+  pc.set(cx - r + 0.5, cy + 1.5, pal[3]); pc.set(cx + r - 0.5, cy + 1.5, pal[0]); pc.line(cx - r + 1, cy - 2.5, cx + r - 1, cy - 2.5, pal[3]);
+  // sockets (deep) and nose cavity
+  pc.disc(cx - r * 0.45, cy - 0.5, r * 0.32 + 0.6, DARK); pc.disc(cx + r * 0.45, cy - 0.5, r * 0.32 + 0.6, DARK);
   const eye = o.eye || GLOW('#ff3020');
   pc.set(cx - r * 0.45, cy - 0.5, eye); pc.set(cx + r * 0.45, cy - 0.5, eye);
   if (o.big) { pc.set(cx - r * 0.45 - 1, cy - 0.5, eye); pc.set(cx + r * 0.45 + 1, cy - 0.5, eye); }
-  pc.set(cx, cy + 1.5, DARK);
+  pc.set(cx, cy + 1.5, DARK); pc.set(cx - 0.6, cy + 2.2, DARK); pc.set(cx + 0.6, cy + 2.2, DARK);
+  // teeth: alternating light and dark between the jaw line and the chin
+  for (let i = 0; i < r * 2 - 3; i++) pc.set(cx - r + 2 + i, cy + r, i & 1 ? DARK : pal[3]);
+  for (let i = 0; i < r * 2 - 4; i++) pc.set(cx - r + 2.5 + i, cy + r + 1, i & 1 ? pal[3] : pal[0]);
+  pc.set(cx - r + 1, cy + r - 1, DARK); pc.set(cx + r - 1, cy + r - 1, DARK); // jaw hinge gaps
+  // a hairline crack across the cranium
+  pc.set(cx + 1, cy - r + 0.5, pal[0]); pc.set(cx + 1.5, cy - r + 1.5, pal[0]); pc.set(cx + 1, cy - r + 2.5, pal[0]);
 }
 
 function skeletonBody(pc, p, o = {}) {
   const cx = 20 + p.lean * 0.4, bob = p.bob, hipY = 36 + bob;
   const limb = o.limb || BONE;
+  // legs: femur + shin with a kneecap, and a foot
   for (const s of [-1, 1]) {
     const sw = s < 0 ? p.ls : -p.ls;
     const fx = cx + s * 3.5 + sw * 3.5, fy = 54 - Math.max(0, sw) * 3;
-    pc.limb(cx + s * 2.5, hipY, fx, fy, 2.6, limb);
-    pc.rect(fx - 2, fy, 5, 2, limb[1]);
+    const kx = cx + s * 3.2 + sw * 1.6, ky = (hipY + fy) / 2 + 1 - Math.max(0, sw) * 1.5;
+    pc.limb(cx + s * 2.5, hipY, kx, ky, 2.9, limb);
+    pc.limb(kx, ky, fx, fy, 2.2, limb);
+    pc.disc(kx, ky, 1.7, limb[3]); pc.set(kx - 0.6, ky - 0.6, limb[3]);
+    pc.rect(fx - 2, fy, 5, 2, limb[1]); pc.set(fx + 2, fy + 1, limb[2]); pc.set(fx - 2, fy, limb[0]);
   }
-  pc.sell(cx, hipY, 4.5, 2.6, limb); // pelvis
-  // ribcage
+  // pelvis: iliac wings around a dark gap
+  pc.sell(cx, hipY, 4.8, 2.6, limb);
+  pc.tri(cx - 6, hipY - 2, cx - 2, hipY - 1, cx - 3, hipY + 3, limb[2]); pc.tri(cx + 6, hipY - 2, cx + 2, hipY - 1, cx + 3, hipY + 3, limb[1]);
+  pc.set(cx, hipY + 1, DARK); pc.set(cx, hipY + 2, DARK);
+  // ribcage: dark hollow, curved ribs that meet a sternum, collar bones, vertebrae
   pc.ellipse(cx, 25 + bob, 6.5, 8.5, DARK);
-  for (let i = 0; i < 4; i++) { const y = 19 + bob + i * 3.4, w = 5.6 - Math.abs(i - 1.2) * 0.7; pc.line(cx - w, y, cx + w, y + 0.5, limb[2]); pc.line(cx - w, y + 1, cx + w, y + 1.5, limb[0]); }
-  pc.line(cx, 16 + bob, cx, 33 + bob, limb[1]); // spine
+  for (let i = 0; i < 5; i++) {
+    const y = 18.5 + bob + i * 2.9, w = 6.2 - Math.abs(i - 1.3) * 0.8 - i * 0.15;
+    for (const s of [-1, 1]) {
+      pc.line(cx + s * 1.2, y, cx + s * w, y + 1.4, s < 0 ? limb[2] : limb[1], 1.3);
+      pc.set(cx + s * (w - 0.5), y + 1.5, limb[3]); pc.set(cx + s * (w + 0.2), y + 2.2, limb[0]);
+    }
+  }
+  pc.line(cx - 6, 16.2 + bob, cx - 1, 17 + bob, limb[2]); pc.line(cx + 6, 16.2 + bob, cx + 1, 17 + bob, limb[1]);
+  pc.line(cx, 17.5 + bob, cx, 29 + bob, limb[2], 1.2); // sternum
+  for (let i = 0; i < 9; i++) pc.set(cx, 15 + bob + i * 2.1, i & 1 ? limb[3] : limb[1]); // spine (down the middle, behind the ribs)
+  for (let i = 0; i < 4; i++) { pc.set(cx, 32 + bob + i * 1.2, limb[2]); } // lumbar vertebrae
   return { cx, bob, hipY };
 }
 

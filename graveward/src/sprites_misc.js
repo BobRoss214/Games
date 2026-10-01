@@ -312,7 +312,21 @@ export function paintWeapon(kind, fx = {}) {
   const cx = 32;
   const blade = fx.color ? pal4('#101820', fx.color, fx.color, '#ffffff') : IRON;
   switch (kind) {
-    case 'sword': pc.quad([[cx - 5, 62], [cx + 5, 62], [cx + 3, 6], [cx - 3, 6]], IRON[2]); pc.tri(cx - 3, 6, cx + 3, 6, cx, -2, IRON[3]); pc.rect(cx - 1, 6, 2, 56, IRON[3]); pc.rect(cx - 5, 8, 2, 52, IRON[1]); for (let i = 0; i < 6; i++) pc.set(cx + 2, 12 + i * 8, H('#7a4a2a')); pc.rect(cx - 13, 62, 26, 5, GOLD[1]); pc.rect(cx - 13, 62, 26, 1, GOLD[3]); pc.rect(cx - 3, 67, 6, 12, WOOD[1]); pc.disc(cx, 82, 3.5, GOLD[2]); break;
+    case 'sword': { // worn short sword: bevelled blade with a fuller, nicked edge, brass guard, wrapped grip, round pommel
+      pc.quad([[cx - 5, 62], [cx + 5, 62], [cx + 3, 8], [cx - 3, 8]], IRON[2]);
+      pc.quad([[cx - 5, 62], [cx, 62], [cx, 8], [cx - 3, 8]], IRON[3]); // lit bevel
+      pc.tri(cx - 3, 8, cx + 3, 8, cx, -3, IRON[2]); pc.tri(cx - 3, 8, cx, 8, cx, -3, IRON[3]);
+      pc.line(cx + 0.5, 12, cx + 0.5, 58, IRON[1], 1.6); pc.line(cx - 1, 12, cx - 1, 58, IRON[3], 1); // fuller
+      pc.line(cx - 5, 62, cx - 3, 8, IRON[3], 1); pc.line(cx + 5, 62, cx + 3, 8, IRON[0], 1); // edges
+      const rust = [H('#6a3a22'), H('#8a4a2a'), H('#a8683a')];
+      for (let i = 0; i < 14; i++) { const y = 14 + ((i * 29) % 46), x = cx + (((i * 7) % 9) - 4) * 0.8; pc.set(x, y, rust[i % 3]); if (i % 3 === 0) pc.set(x + 1, y + 1, rust[0]); }
+      for (const [y, d] of [[22, 1], [37, -1], [49, 1]]) { pc.set(cx + 5 * d - d, y, 0); pc.set(cx + 4 * d - d, y + 1, 0); } // nicks in the edge
+      pc.rect(cx - 13, 62, 26, 5, GOLD[1]); pc.rect(cx - 13, 62, 26, 1, GOLD[3]); pc.rect(cx - 13, 66, 26, 1, GOLD[0]);
+      pc.disc(cx - 11, 64.5, 1.6, GOLD[2]); pc.disc(cx + 11, 64.5, 1.6, GOLD[2]); pc.set(cx, 64, DARK);
+      pc.rect(cx - 3, 67, 6, 13, WOOD[1]); for (let i = 0; i < 6; i++) pc.line(cx - 3, 68 + i * 2, cx + 3, 70 + i * 2, WOOD[0], 1); pc.rect(cx - 3, 67, 1, 13, WOOD[2]);
+      pc.disc(cx, 83, 4, GOLD[1]); pc.disc(cx - 1, 82, 1.8, GOLD[3]);
+      break;
+    }
     case 'dagger': pc.quad([[cx - 4, 70], [cx + 4, 70], [cx + 2, 30], [cx - 2, 30]], BONE[2]); pc.tri(cx - 2, 30, cx + 2, 30, cx, 20, BONE[3]); pc.rect(cx - 1, 30, 2, 40, BONE[3]); pc.rect(cx - 8, 70, 16, 4, IRON[2]); pc.rect(cx - 2, 74, 5, 10, LEATHER[2]); pc.disc(cx, 86, 3, IRON[2]); break;
     case 'axe': pc.rect(cx - 2, 20, 5, 70, WOOD[2]); pc.rect(cx - 2, 20, 1, 70, WOOD[3]); pc.quad([[cx + 2, 12], [cx + 26, 6], [cx + 30, 40], [cx + 2, 36]], IRON[2]); pc.quad([[cx + 2, 12], [cx + 26, 6], [cx + 24, 14], [cx + 2, 20]], IRON[3]); pc.line(cx + 30, 8, cx + 30, 40, IRON[3], 2); pc.rect(cx - 3, 26, 8, 4, IRON[1]); pc.rect(cx - 3, 32, 8, 4, IRON[1]); break;
     case 'spear': pc.rect(cx - 2, 16, 5, 80, WOOD[2]); pc.rect(cx - 2, 16, 1, 80, WOOD[3]); pc.tri(cx - 6, 20, cx + 7, 20, cx, -6, IRON[3]); pc.tri(cx, 20, cx + 7, 20, cx, -6, IRON[2]); pc.rect(cx - 4, 20, 9, 4, GOLD[2]); pc.rect(cx - 3, 26, 7, 2, H('#a02020')); break;
