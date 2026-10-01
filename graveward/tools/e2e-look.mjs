@@ -41,5 +41,28 @@ const dAng = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; wh
   await p.evaluate(() => document.dispatchEvent(new MouseEvent('mousemove', { movementX: 120, movementY: 0 }))); await p.waitForTimeout(150);
   ok(dAng(a0, await ang(p)) > 0.15, 'captured mouse movement still turns the camera'); await p.close();
 }
+{ // 4) fast monitors: many display frames with NO simulation step in between must not drop mouse turning or button presses
+  const p = await open('');
+  const r = await p.evaluate(async () => {
+    const g = window.graveward, me = g.match.players[0].body; g.input.locked = true; await new Promise((res) => setTimeout(res, 300));
+    const a0 = me.angle, real = g.frameStep; g.frameStep = () => {};
+    for (let i = 0; i < 100; i++) { document.dispatchEvent(new MouseEvent('mousemove', { movementX: 2 })); g.acc = 0; real.call(g); }
+    // a potion tap (down + up) that happens entirely inside frames with no simulation step
+    const h = g.match.players[0].hero, potions0 = (h.potions.health || 0);
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyQ' })); g.acc = 0; real.call(g); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyQ' })); g.acc = 0; real.call(g);
+    for (let i = 0; i < 6; i++) { g.last -= 20; real.call(g); } g.frameStep = real;
+    return { turned: me.angle - a0, potionsUsed: potions0 - (h.potions.health || 0) };
+  });
+  ok(Math.abs(r.turned - 0.48) < 0.05, 'mouse turning survives frames with no simulation step (' + r.turned.toFixed(3) + ' of 0.480 rad)');
+  ok(r.potionsUsed === 1, 'a button tap inside frames with no simulation step still fires, exactly once (' + r.potionsUsed + ')');
+  await p.close();
+}
+{ // 5) pressing menu keys while paused must not fire in the game after resuming
+  const p = await open(''); await p.keyboard.press('Tab'); await p.waitForTimeout(200);
+  await p.keyboard.press('Space'); await p.keyboard.press('KeyQ'); await p.waitForTimeout(200);
+  const before = await p.evaluate(() => window.graveward.match.players[0].hero.potions.health || 0);
+  await p.evaluate(() => window.graveward.resume()); await p.waitForTimeout(400);
+  ok((await p.evaluate(() => window.graveward.match.players[0].hero.potions.health || 0)) === before, 'keys pressed while paused do not fire after resume'); await p.close();
+}
 console.log(logs.join('\n') || 'no console errors'); if (logs.length) fails++;
 await browser.close(); srv.close(); process.exit(fails ? 1 : 0);

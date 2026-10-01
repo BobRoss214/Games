@@ -118,7 +118,7 @@ export class Game {
     const s = this.settings;
     const seed = s.seed || ((Math.random() * 1e9) | 0) + 1;
     this.fx.clear(); this.fx.views.clear();
-    this.input.kb2InUse = cfg.some((c) => c.human && c.device === 'kb2');
+    this.input.kb2InUse = cfg.some((c) => c.human && c.device === 'kb2'); this.input.clearPending();
     const m = this.match = new Match({ seed, floors: s.floors, botSkill: s.botSkill, players: cfg, gore: s.gore });
     m.labelFor = (p, act) => this.labelFor(p, act);
     // input sources for humans
@@ -160,6 +160,7 @@ export class Game {
     if (this.input.padPending) { /* reserved */ }
     if (this.input.padRebind) { for (let i = 0; i < 4; i++) for (const b of this.input.padEdges[i]) { const f = this.input.padRebind; this.input.padRebind = null; f(b); break; } }
     for (const m of this.input.connectMsgs.slice()) { if (this.screen === 'playing') { this.match.toast(m, '#80a0e0'); this.input.connectMsgs.shift(); } }
+    if (this.screen === 'menu' || this.paused) this.input.clearPending();
     if (this.screen === 'menu') this.updateMenu(dt); else this.updatePlaying(dt);
     this.ui.mouse.click = false; // a click lasts one frame; UI.update reads it above
     this.render();

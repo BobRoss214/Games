@@ -67,3 +67,9 @@ Not done: online multiplayer, damage numbers.
 * Ghost-thrown props use `lobSolution`: a real ballistic arc that lands on the hero's chest, leading a moving hero a little. Flight time is capped at 0.78 s so the arc fits under the ceiling.
 * Semi-implicit Euler, same arc at 30 and 60 Hz (tested). Horizontal motion keeps its existing sub-stepping, so fast bolts do not tunnel through thin walls.
 * Bouncers (knife, stone, shard, bone) lose energy and damage each bounce, roll with friction, then rest or become a pickup (knife). Pots shatter. Arrows and spit die on the floor or walls.
+
+## Input is never dropped between simulation steps
+* The sim runs at a fixed 60 Hz; the screen can refresh much faster (120/144/240 Hz), so many display frames run no simulation step. Mouse movement used to be thrown away at the end of every frame and button presses could vanish in those frames.
+* Now mouse movement waits in `mouseDX` until a step uses it (capped per step so a stall cannot whip the camera), and each device source latches that frame's presses/releases at the end of every frame. A press is consumed exactly once even when a frame runs several steps.
+* Paused / in menus: pending input is cleared so a menu key cannot fire in the game on resume.
+* Regression tests: `tools/e2e-look.mjs` (fast-monitor emulation).

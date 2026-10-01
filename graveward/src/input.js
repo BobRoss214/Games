@@ -26,6 +26,7 @@ export class Input {
     this.pads = [null, null, null, null]; this.padPrev = [null, null, null, null]; this.padEdges = [new Set(), new Set(), new Set(), new Set()];
     this.listeners = []; this.rebind = null; this.lastAnyKey = null; this.connectMsgs = [];
     this.mx = 0.5; this.my = 0.5; this.mouseIn = false; this.kb2InUse = false; // cursor over the canvas (0..1); arrow keys belong to Keyboard 2 when it is playing
+    this.frameId = 0; this.sourceMap = new Map(); // every display frame, each device source takes the button presses of that frame (even when no simulation step runs)
     this.devices = new Map(); // devId -> DeviceState
     this.menuHeld = {};
   }
@@ -59,6 +60,7 @@ export class Input {
 
   // ---- per-frame ----
   beginFrame() {
+    this.frameId++;
     let list = [];
     try { list = (navigator.getGamepads ? navigator.getGamepads() : []) || []; this.padBlocked = !navigator.getGamepads; } catch (e) { this.padBlocked = true; } // throws SecurityError when an embedding page blocks gamepads
     for (let i = 0; i < 4; i++) {
@@ -73,7 +75,12 @@ export class Input {
       } else this.pads[i] = null;
     }
   }
-  endFrame() { this.down.clear(); this.up.clear(); this.mouseDX = 0; this.mouseDY = 0; }
+  // Called at the end of every display frame. Presses and releases from this frame are latched into each device's pending set
+  // (a no-op if a simulation step already took them), then the per-frame sets are cleared. Mouse movement is NOT cleared here:
+  // it waits in mouseDX until a simulation step uses it, so a fast monitor (many frames per step) never drops turning.
+  endFrame() { for (const s of this.sourceMap.values()) s.take(); this.down.clear(); this.up.clear(); }
+  // paused / in menus: forget anything pending so it cannot fire when play resumes
+  clearPending() { this.mouseDX = 0; this.mouseDY = 0; for (const s of this.sourceMap.values()) s.clear(); }
   padStatus() { // 'blocked' | 'none' | 'ok:<pad id>'
     if (this.padBlocked) return 'blocked';
     const i = this.connectedPads()[0];
@@ -106,15 +113,25 @@ export class Input {
 
   // ---- intent source for a device (persistent state, edges accumulate until consumed) ----
   source(dev) {
-    const st = { pending: {}, attackPrev: false };
+    const st = { pending: {}, attackPrev: false, takenFrame: -1 };
     const isPad = dev.startsWith('pad'), pi = isPad ? +dev.slice(3) : -1;
+    const EDGES = [['attackPressed', 'attack'], ['altPressed', 'alt'], ['dodge', 'dodge'], ['interact', 'interact'], ['spell', 'spell'], ['spellNext', 'spellNext'], ['potion', 'potion'], ['potionNext', 'potionNext'], ['swap', 'swap']];
     const src = {
       dev,
-      poll: (dt) => {
+      // latch this display frame's presses/releases into st.pending, once per frame
+      take: () => {
+        if (st.takenFrame === this.frameId) return; st.takenFrame = this.frameId;
         const b = this.bindingsFor(dev);
-        const down = (act) => (b[act] || []).some((c) => (isPad ? (this.pads[pi] && this.pads[pi].buttons[c]) : this.keys.has(c)));
         const edge = (act) => (b[act] || []).some((c) => (isPad ? this.padEdges[pi].has(c) : this.down.has(c)));
         const rel = (act) => (b[act] || []).some((c) => (isPad ? (this.pads[pi] && this.padPrev[pi] && !this.pads[pi].buttons[c] && this.padPrev[pi].buttons[c]) : this.up.has(c)));
+        for (const [k, act] of EDGES) if (edge(act)) st.pending[k] = true;
+        if (rel('attack')) st.pending.attackReleased = true;
+      },
+      clear: () => { st.pending = {}; },
+      poll: (dt) => {
+        src.take();
+        const b = this.bindingsFor(dev);
+        const down = (act) => (b[act] || []).some((c) => (isPad ? (this.pads[pi] && this.pads[pi].buttons[c]) : this.keys.has(c)));
         const I = st.intent || (st.intent = {});
         let fwd = 0, strafe = 0, turnRate = 0, turn = 0;
         const sens = this.s.sensitivity, stickSens = this.s.stickSens;
@@ -126,7 +143,7 @@ export class Input {
           fwd = (down('fwd') ? 1 : 0) - (down('back') ? 1 : 0); strafe = (down('strafeR') ? 1 : 0) - (down('strafeL') ? 1 : 0);
           turnRate = ((down('turnR') ? 1 : 0) - (down('turnL') ? 1 : 0)) * 2.4 * sens;
           if (dev === 'kbm1') {
-            turn = this.mouseDX * 0.0024 * sens; this.mouseDX = 0;
+            turn = Math.max(-300, Math.min(300, this.mouseDX)) * 0.0024 * sens; this.mouseDX = 0; this.mouseDY = 0;
             // arrow keys also turn, unless a second player is on Keyboard 2 (it uses the arrows)
             if (!this.kb2InUse) turnRate += ((this.keys.has('ArrowRight') ? 1 : 0) - (this.keys.has('ArrowLeft') ? 1 : 0)) * 2.4 * sens;
             // no pointer lock (embedded page, or before the first click): pushing the cursor to the screen edges turns
@@ -136,10 +153,10 @@ export class Input {
         const attackNow = down('attack'), altNow = down('alt');
         const res = {
           fwd, strafe, turn, turnRate, attack: attackNow, alt: altNow, sprint: down('sprint'), interactHeld: down('interact'),
-          attackPressed: !!(st.pending.attackPressed || edge('attack')), attackReleased: !!(st.pending.attackReleased || (st.attackPrev && !attackNow) || rel('attack')),
-          altPressed: !!(st.pending.altPressed || edge('alt')), dodge: !!(st.pending.dodge || edge('dodge')), interact: !!(st.pending.interact || edge('interact')),
-          spell: !!(st.pending.spell || edge('spell')), spellNext: !!(st.pending.spellNext || edge('spellNext')), potion: !!(st.pending.potion || edge('potion')),
-          potionNext: !!(st.pending.potionNext || edge('potionNext')), swap: !!(st.pending.swap || edge('swap')), ability2: !!(st.pending.spell || edge('spell')), aimAngle: undefined,
+          attackPressed: !!st.pending.attackPressed, attackReleased: !!(st.pending.attackReleased || (st.attackPrev && !attackNow)),
+          altPressed: !!st.pending.altPressed, dodge: !!st.pending.dodge, interact: !!st.pending.interact,
+          spell: !!st.pending.spell, spellNext: !!st.pending.spellNext, potion: !!st.pending.potion,
+          potionNext: !!st.pending.potionNext, swap: !!st.pending.swap, ability2: !!st.pending.spell, aimAngle: undefined,
         };
         st.attackPrev = attackNow;
         // pending edges persist until the sim consumes a tick (handles frames with zero sim ticks)
@@ -148,6 +165,7 @@ export class Input {
       },
       consume: () => { st.pending = {}; },
     };
+    this.sourceMap.set(dev, src);
     return src;
   }
 
