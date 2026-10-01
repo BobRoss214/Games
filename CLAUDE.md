@@ -34,7 +34,7 @@ Read this at the start of every session. Update it when reality changes.
 
 ### Layout
 - `index.html` (root): menu page. `graveward/`: the game (`index.html`, `style.css`, `game.js` bootstrap, `src/`, `tools/`).
-- `graveward/src/`: `data.js` = all content as data (tune numbers here). `match.js` = game director. `tutorial.js` = scripted tutorial (map + steps). `world.js/combat.js/hero.js/ghost.js/boss.js/ai.js` = simulation (no DOM, runs in Node). `renderer.js/scene.js/hud.js/ui.js/fx.js/audio.js/input.js/game.js` = presentation.
+- `graveward/src/`: `data.js` = all content as data (tune numbers here). `match.js` = game director. `tutorial.js` = scripted tutorial (map + steps). `world.js/combat.js/hero.js/ghost.js/boss.js/ai.js` = simulation (no DOM, runs in Node). `renderer.js/scene.js/hud.js/ui.js/fx.js/audio.js/input.js/game.js` = presentation. `sprites_real.js` (2x shading + HP wounds) and `sprites_gore.js` (gib sprites) sit on top of the hand-drawn sprites. Options has DARKNESS and GLOW (bloom).
 - `graveward/README.md` (player + dev guide) and `DECISIONS.md` (why things are the way they are).
 
 ### Style
