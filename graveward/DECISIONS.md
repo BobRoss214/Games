@@ -60,3 +60,10 @@ Not done: online multiplayer, damage numbers.
 * Steps complete by watching the same event counters the game already emits (propbreak, dodge, block, potion, spellcast, chestopen, buy, pentagram), so no duplicate detection logic.
 * Levels are granted at the step that needs them (3 heavy, 5 dodge, 6 block, 7 spell). The learner cannot die (HP topped up, deaths revived); the practice hero in the ghost lesson takes damage but is healed and never falls, so no role swap happens.
 * The ghost lesson resets the pentagram if the player leaves or loses the monster body, so it cannot dead-end.
+
+## Thrown / shot object physics
+* Gravity is in wall-heights per second squared (one unit = one wall height, ceiling at 1). Physical things get it; energy (fireball, dark bolt, curse, wave, spark) stays straight so spell aiming is unchanged.
+* Players only aim left/right, so physical shots get an automatic upward speed (`autoLob`) that makes them cross their launch height at a reference range (arrows 9 units, knives/stones 8). Arc height is capped under the ceiling, and gravity values are small enough that bots (which aim flat) still hit at normal range.
+* Ghost-thrown props use `lobSolution`: a real ballistic arc that lands on the hero's chest, leading a moving hero a little. Flight time is capped at 0.78 s so the arc fits under the ceiling.
+* Semi-implicit Euler, same arc at 30 and 60 Hz (tested). Horizontal motion keeps its existing sub-stepping, so fast bolts do not tunnel through thin walls.
+* Bouncers (knife, stone, shard, bone) lose energy and damage each bounce, roll with friction, then rest or become a pickup (knife). Pots shatter. Arrows and spit die on the floor or walls.

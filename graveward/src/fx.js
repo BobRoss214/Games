@@ -127,7 +127,12 @@ export class FX {
           break;
         }
         case 'projwall': this.spray(e.x, e.y, 0.35, 5, e.kind === 'fireball' ? C.fire : C.spark, { add: true, dir: Math.atan2(-e.vy, -e.vx), spread: 1.1, smax: 2.4 }); break;
-        case 'projhit': if (e.kind === 'acid' || e.kind === 'gore') this.spray(e.x, e.y, 0.2, 8, e.kind === 'acid' ? C.green : C.gore, { blood: e.kind === 'gore' }); break;
+        case 'projhit':
+          if (e.kind === 'acid' || e.kind === 'gore') this.spray(e.x, e.y, 0.2, 8, e.kind === 'acid' ? C.green : C.gore, { blood: e.kind === 'gore' });
+          else if (e.kind === 'throwprop') this.spray(e.x, e.y, 0.2, 10, C.dust, { smax: 3, vzmin: 1, vzmax: 3.2 }); // pot shards
+          break;
+        case 'projbounce': this.spray(e.x, e.y, 0.08, e.wall ? 3 : 2 + Math.round((e.power || 0.5) * 2), e.wall ? C.spark : C.dust, { smax: 1.2 + (e.power || 0.5), vzmin: 0.4, vzmax: 1.2 + (e.power || 0.5) }); break;
+        case 'projland': this.spray(e.x, e.y, 0.06, 3, C.dust, { smax: 1.2, vzmin: 0.3, vzmax: 1.2 }); break;
         case 'explosion': {
           const r = e.radius || 1.5;
           this.spray(e.x, e.y, 0.3, 50, e.fire ? C.fire : e.gore ? C.gore : C.dust, { add: !!e.fire, smax: 5, vzmax: 4, lmax: 0.9, alpha: 0.85, smax2: 0.09, smin2: 0.03 });

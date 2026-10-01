@@ -106,6 +106,8 @@ See `DECISIONS.md` for the reasoning behind the main choices and what was resear
 
 The full loop (title -> lobby -> antechamber -> 5+ floors -> upgrade screens -> portal -> a random boss of 5 -> ending) is playable start to finish by any mix of humans and bots and has been simulated across hundreds of seeds without crashes or softlocks.
 
+**Thrown and shot objects use real gravity** (`combat.js`): arrows, bolts, knives, stones, bone shards, spit and ghost-thrown props arc and fall; knives, stones, shards and bones bounce, roll and come to rest (a missed throwing knife becomes a pickup); pots shatter; fireballs and other magic fly straight. Shots leave with a small automatic upward speed so aim stays fair at normal range and only long shots drop. Hits are height-aware (a high lob passes over a short target) and a ground shadow shows where airborne things will land. `node tools/physics.mjs` checks all of it, including 30 Hz vs 60 Hz agreement.
+
 The **TUTORIAL** entry on the title screen runs a scripted 22-step lesson (`src/tutorial.js`): look, move, smash pots, fight, heavy attack, dodge, block, potion, spell, chest, shop, then a ghost lesson (float, possess a pentagram, attack a practice hero). Doors stay sealed until each step is done; the panel shows your own keys and Xbox buttons. `node tools/tutorial.mjs` plays it headless with an autopilot; `node tools/e2e-tutorial.mjs` checks it in a real browser.
 
 Ideas I did not get to: online play, damage numbers, and a Ghost minimap in single-viewport mode.

@@ -335,6 +335,16 @@ export function paintWeapon(kind, fx = {}) {
 export function paintFaceIcon() { return new PC(1, 1); }
 
 // soft radial glow used for additive halos (intensity is baked into the colour)
+// small dark ellipse: the ground shadow under airborne objects (drawn with partial alpha)
+export function paintShadow(w = 16, h = 8) {
+  const pc = new PC(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (x + 0.5 - w / 2) / (w / 2), dy = (y + 0.5 - h / 2) / (h / 2);
+    if (dx * dx + dy * dy <= 1) pc.set(x, y, 0xff0c0a0a);
+  }
+  return pc;
+}
+
 export function paintGlow(colorHex, size = 32) {
   const pc = new PC(size, size), n = parseInt(colorHex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
   const c = (size - 1) / 2;

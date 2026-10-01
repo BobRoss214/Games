@@ -2,7 +2,7 @@
 import { clamp, angleDiff, dist, dist2, TAU } from './util.js';
 import { GODS, MONSTERS, TRAPS, PROPS } from './data.js';
 import { DECAL } from './textures.js';
-import { spawnMonster, startAbility, updateAbility, speedMultiplier, dealDamage, applyStatus, spawnProj, spawnPickup, hostile, abilityReady, spawnHazard } from './combat.js';
+import { spawnMonster, startAbility, updateAbility, speedMultiplier, dealDamage, applyStatus, spawnProj, spawnPickup, hostile, abilityReady, spawnHazard, PROJ, lobSolution } from './combat.js';
 import { applyMotion } from './hero.js';
 
 export const SLIME_COST = 6;
@@ -278,9 +278,13 @@ export function hauntProp(w, p, pr) {
   switch (kind) {
     case 'throw': {
       if (hero && dist(hero.x, hero.y, pr.x, pr.y) < 11 && w.hasLOS(pr.x, pr.y, hero.x, hero.y, false)) {
-        const ang = Math.atan2(hero.y - pr.y, hero.x - pr.x);
-        const a = { x: pr.x, y: pr.y, r: 0, h: 0.7, team: 'ghost', player: p, st: {}, dmgMul: 1 };
-        spawnProj(w, a, 'throwprop', ang, 9, 7, { knock: 0.7 });
+        // a real lob: gravity pulls it down onto the hero's chest, and it leads a moving target a little
+        const kindId = pr.sub === 'bones' || pr.sub === 'skullpile' ? 'throwbone' : 'throwprop';
+        const def = PROJ[kindId], a = { x: pr.x, y: pr.y, r: 0, h: 0.7, team: 'ghost', player: p, st: {}, dmgMul: 1 };
+        const z0 = a.h * 0.6, aimZ = (hero.h || 1) * 0.5;
+        let sol = lobSolution(def, pr.x, pr.y, z0, hero.x, hero.y, aimZ);
+        sol = lobSolution(def, pr.x, pr.y, z0, hero.x + (hero.vx || 0) * sol.T * 0.8, hero.y + (hero.vy || 0) * sol.T * 0.8, aimZ);
+        spawnProj(w, a, kindId, sol.ang, sol.speed, 7, { knock: 0.7, vz: sol.vz });
       }
       destroyProp(w, pr, { fromGhost: true });
       break;

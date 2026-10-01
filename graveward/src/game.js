@@ -285,6 +285,8 @@ export class Game {
         case 'wardcast': S.play('ward', x, y); break; case 'sightcast': S.play('ward', x, y, 0.6); break;
         case 'potion': S.play('potion', x, y); break;
         case 'projwall': S.play('hitStone', x, y, 0.4); break;
+        case 'projbounce': S.play('hitStone', x, y, Math.min(0.5, 0.12 + (e.power || 0.3) * 0.25)); break;
+        case 'projhit': if (e.kind === 'throwprop') S.play('hit', x, y, 0.55); break;
         case 'propbreak': S.play('hit', x, y, 0.5); break; case 'prophit': S.play('hitStone', x, y, 0.4); break;
         case 'crystalbreak': S.play('explosion', x, y, 0.5); break; case 'crystalhit': S.play('block', x, y, 0.6); break;
         case 'bossroar': case 'bossphase': S.play('roar', undefined, undefined, 1); break; case 'bossdeath': S.play('explosion', undefined, undefined, 1.2); S.play('roar', undefined, undefined, 0.8); break;

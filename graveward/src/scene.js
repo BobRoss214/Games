@@ -9,6 +9,7 @@ const RGB_RED = rgb(255, 60, 40), RGB_ORANGE = rgb(255, 150, 40), RGB_BLUE = rgb
 const dynUndo = [];
 let lastMapForDyn = null;
 
+const FLOOR_SHADOW = 0.08;
 export function makeCamera(match, player, t, fxv, opts = {}) {
   const b = player.body;
   const w = match.world;
@@ -263,7 +264,11 @@ export function collectSprites(match, w, viewer, t, fx, out) {
     if (dist2(p.x, p.y, vx, vy) > FAR) continue;
     const f = S.projFrame(p.def.sprite, t);
     const sz = p.def.size;
-    out.push({ x: p.x, y: p.y, z: Math.max(0.05, p.z - sz / 2), w: sz * ASPECT(f), h: sz, frame: f, add: !!p.def.glow && p.kind !== 'boulder', fullbright: !!p.def.glow, emit: 0.4, alpha: 1 });
+    if (p.gravity && !p.rest && p.z > FLOOR_SHADOW) { // ground shadow: shows where the arc will land; fades as it rises
+      const sh = S.shadowFrame(), k = Math.max(0.35, 1 - p.z * 0.6);
+      out.push({ x: p.x, y: p.y, z: 0.015, w: sz * 1.5 * k, h: sz * 0.5 * k, frame: sh, alpha: 0.5, emit: 0 });
+    }
+    out.push({ x: p.x, y: p.y, z: Math.max(0.05, p.z - sz / 2), w: sz * ASPECT(f), h: sz, frame: f, add: !!p.def.glow && p.kind !== 'boulder', fullbright: !!p.def.glow, emit: 0.4, alpha: p.rest ? 0.9 : 1 });
     if (p.def.glow) { const g = p.def.glow; out.push({ x: p.x, y: p.y, z: Math.max(0, p.z - sz), w: sz * 3, h: sz * 3, frame: S.glowFrame(rgbHex(g)), add: true, fullbright: true, alpha: 0.55 }); }
   }
   // --- corpses & gibs & hazards

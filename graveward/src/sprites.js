@@ -116,4 +116,5 @@ export function warm() {
   }
 }
 
+export function shadowFrame() { return memo('shadow', () => X.paintShadow()); }
 export function glowFrame(colorHex) { return memo('glow|' + colorHex, () => X.paintGlow(colorHex)); }

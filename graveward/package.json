@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "python3 -m http.server 8000",
     "build": "node tools/build.mjs",
-    "test": "node tools/smoke.mjs && node tools/tutorial.mjs && node tools/sim.mjs --matches 6",
+    "test": "node tools/smoke.mjs && node tools/physics.mjs && node tools/tutorial.mjs && node tools/sim.mjs --matches 6",
     "test:browser": "node tools/e2e.mjs && node tools/e2e-pad.mjs && node tools/e2e-tutorial.mjs && node tools/e2e-mouse.mjs && node tools/e2e-look.mjs && node tools/audiotest.mjs",
     "test:all": "npm test && npm run test:browser",
     "sim": "node tools/sim.mjs",

@@ -5,22 +5,23 @@ import { newId } from './world.js';
 
 // ---------------- projectile definitions ----------------
 export const PROJ = {
-  arrow: { r: 0.12, life: 2.0, sprite: 'arrow', glow: null, size: 0.35 },
-  arrowPierce: { r: 0.14, life: 2.0, sprite: 'arrow', glow: [0.6, 1, 0.8], size: 0.4, pierce: true },
-  bolt: { r: 0.14, life: 2.0, sprite: 'arrow', glow: null, size: 0.4 },
-  knife: { r: 0.12, life: 1.6, sprite: 'knife', glow: null, size: 0.3 },
-  stone: { r: 0.12, life: 1.5, sprite: 'stone', glow: null, size: 0.2 },
-  shard: { r: 0.14, life: 1.4, sprite: 'shard', glow: null, size: 0.3 },
-  gore: { r: 0.16, life: 1.6, sprite: 'gore', glow: [1, 0.2, 0.2], size: 0.35, splat: true },
+  arrow: { r: 0.12, life: 2.0, sprite: 'arrow', glow: null, size: 0.35, gravity: 2.6, ref: 9 },
+  arrowPierce: { r: 0.14, life: 2.0, sprite: 'arrow', glow: [0.6, 1, 0.8], size: 0.4, pierce: true, gravity: 2.6, ref: 9 },
+  bolt: { r: 0.14, life: 2.0, sprite: 'arrow', glow: null, size: 0.4, gravity: 1.6, ref: 9 },
+  knife: { r: 0.12, life: 1.6, sprite: 'knife', glow: null, size: 0.3, gravity: 3, ref: 8, bounce: 0.3, fric: 0.6 },
+  stone: { r: 0.12, life: 1.5, sprite: 'stone', glow: null, size: 0.2, gravity: 3, ref: 8, bounce: 0.35, fric: 0.6 },
+  shard: { r: 0.14, life: 1.4, sprite: 'shard', glow: null, size: 0.3, gravity: 2.5, ref: 6, bounce: 0.4, fric: 0.6 },
+  gore: { r: 0.16, life: 1.6, sprite: 'gore', glow: [1, 0.2, 0.2], size: 0.35, splat: true, gravity: 4, ref: 7 },
   wave: { r: 0.3, life: 1.4, sprite: 'wave', glow: [1, 0.4, 0.5], size: 0.7, pierce: true },
-  acid: { r: 0.16, life: 1.5, sprite: 'acid', glow: [0.4, 1, 0.3], size: 0.35, splat: true, gravity: 2 },
+  acid: { r: 0.16, life: 1.5, sprite: 'acid', glow: [0.4, 1, 0.3], size: 0.35, splat: true, gravity: 4, ref: 7 },
   darkbolt: { r: 0.16, life: 1.8, sprite: 'darkbolt', glow: [0.7, 0.3, 1], size: 0.45 },
   curse: { r: 0.18, life: 1.8, sprite: 'curseorb', glow: [0.8, 0.6, 0.1], size: 0.5 },
   fireball: { r: 0.2, life: 2.0, sprite: 'fireball', glow: [1, 0.55, 0.15], size: 0.6, explode: 1.4 },
   boulder: { r: 0.3, life: 2.2, sprite: 'boulder', glow: null, size: 0.8, explode: 1.2 },
   dart: { r: 0.08, life: 1.2, sprite: 'dart', glow: null, size: 0.2 },
   spark: { r: 0.15, life: 0.5, sprite: 'spark', glow: [0.6, 0.9, 1], size: 0.4 },
-  throwprop: { r: 0.22, life: 1.2, sprite: 'pot', glow: null, size: 0.4, gravity: 3 },
+  throwprop: { r: 0.22, life: 2.0, sprite: 'pot', glow: null, size: 0.4, gravity: 6, shatter: true },
+  throwbone: { r: 0.2, life: 2.5, sprite: 'shard', glow: null, size: 0.42, gravity: 6, bounce: 0.45, fric: 0.6 },
   ember: { r: 0.15, life: 1.0, sprite: 'fireball', glow: [1, 0.5, 0.1], size: 0.35 },
 };
 
@@ -385,38 +386,97 @@ export function spawnProj(w, a, kind, ang, speed, dmg, o = {}) {
     r: def.r, dmg, life: o.range ? o.range / speed : def.life, team: a.team, srcActor: a, player: a.player, pierce: !!(o.pierce || def.pierce), hitSet: new Set(), dead: false,
     knock: o.knock ?? 0.6, stun: o.stun, status: o.status, debuff: o.debuff, pool: o.pool, dmgMul: o.dmgMul || 1, weaponFx: o.weaponFx, vamp: o.vamp, crit: o.crit, ffaPlayer: a.player, gravity: def.gravity || 0,
     explode: def.explode, splat: def.splat, homing: o.homing, spellKind: o.spellKind,
+    bounces: 0, rolling: false, rest: false,
   };
+  if (p.gravity) p.vz = o.vz !== undefined ? o.vz : autoLob(def, p.z, speed);
   w.projs.push(p);
   return p;
+}
+
+// Gravity is real, but players only aim left/right. So physical shots leave with a small upward speed that makes them
+// cross their launch height at def.ref units, and never arc above the ceiling (wall height is 1).
+const CEIL_Z = 0.98, FLOOR_Z = 0.05;
+export function autoLob(def, z0, speed) {
+  const g = def.gravity, T = (def.ref || 8) / Math.max(1, speed);
+  const cap = Math.sqrt(2 * g * Math.max(0.01, 0.92 - z0));
+  return Math.min(0.5 * g * T, cap);
+}
+// Launch solution for a thrown object that should reach (tx, ty, tz): flight time ~ distance/9, at most 0.78 s so the arc stays under the ceiling.
+export function lobSolution(def, x0, y0, z0, tx, ty, tz) {
+  const g = def.gravity, d = Math.hypot(tx - x0, ty - y0);
+  const T = Math.max(0.3, Math.min(d / 9, 0.78));
+  return { ang: Math.atan2(ty - y0, tx - x0), speed: Math.max(1, d) / T, vz: (tz - z0 + 0.5 * g * T * T) / T, T };
+}
+
+// wall test shared by all projectiles (open doors let things through)
+function wallAt(w, cx, cy) {
+  if (!w.blockedAt(cx, cy, true)) return false;
+  const ci = cy * w.map.w + cx, di = w.map.doorIdx[ci];
+  if (di >= 0 && w.map.doors[di].open >= 0.5) return false;
+  return w.map.wall[ci] !== 0;
+}
+
+// Vertical motion for projectiles with gravity: semi-implicit Euler (same arc at 30 and 60 Hz), ceiling thump, floor bounce / roll / rest.
+// Returns true when the projectile is finished or resting and must not move horizontally this tick.
+function stepVertical(w, p, dt) {
+  if (p.rest) return true;
+  if (p.rolling) { // sliding along the floor: friction until it stops
+    const k = Math.exp(-(p.def.roll || 4.5) * dt); p.vx *= k; p.vy *= k; p.z = FLOOR_Z;
+    if (Math.hypot(p.vx, p.vy) < 0.4) { settleProj(w, p); return true; }
+    return false;
+  }
+  p.vz -= p.gravity * dt; p.z += p.vz * dt;
+  if (p.z > CEIL_Z && p.vz > 0) { p.z = CEIL_Z; p.vz = -p.vz * 0.3; }
+  if (p.z <= FLOOR_Z) {
+    const vimp = -p.vz; p.z = FLOOR_Z;
+    if (p.def.shatter || !p.def.bounce) { w.emit('projland', { x: p.x, y: p.y, kind: p.kind, proj: p }); projDie(w, p, true); return true; }
+    p.bounces++;
+    if (vimp > 0.9 && p.bounces <= 4) {
+      p.vz = vimp * p.def.bounce; p.vx *= p.def.fric; p.vy *= p.def.fric; p.dmgMul *= 0.5; // a bounce loses energy, and the hit it can still make
+      w.emit('projbounce', { x: p.x, y: p.y, kind: p.kind, power: vimp, proj: p });
+    } else { p.vz = 0; p.rolling = true; w.emit('projbounce', { x: p.x, y: p.y, kind: p.kind, power: Math.min(vimp, 0.9), proj: p }); }
+  }
+  return false;
+}
+function settleProj(w, p) {
+  p.rolling = false; p.vx = p.vy = 0; p.vz = 0;
+  if (p.kind === 'knife' && p.srcActor && p.srcActor.type === 'hero') { spawnPickup(w, 'knife', p.x, p.y, { amount: 1 }); p.dead = true; return; } // a missed knife can be picked up again
+  p.rest = true; p.life = 2.5;
 }
 
 export function updateProjs(w, dt) {
   for (const p of w.projs) {
     if (p.dead) continue;
     p.life -= dt; if (p.life <= 0) { projDie(w, p, false); continue; }
-    if (p.gravity) { p.vz -= p.gravity * dt; p.z += p.vz * dt; if (p.z <= 0.05) { projDie(w, p, true); continue; } }
+    if (p.gravity) { if (stepVertical(w, p, dt)) continue; if (p.dead) continue; }
+    const bouncer = !!(p.def.bounce && !p.def.shatter);
     const steps = Math.ceil(Math.hypot(p.vx, p.vy) * dt / 0.12) || 1;
     const sdt = dt / steps;
     for (let s = 0; s < steps && !p.dead; s++) {
+      const ox = p.x, oy = p.y;
       p.x += p.vx * sdt; p.y += p.vy * sdt;
-      if (w.blockedAt(p.x | 0, p.y | 0, true)) {
-        const ci = (p.y | 0) * w.map.w + (p.x | 0);
-        const di = w.map.doorIdx[ci];
-        if (!(di >= 0 && w.map.doors[di].open >= 0.5) && w.map.wall[ci] !== 0) { w.emit('projwall', { x: p.x - p.vx * sdt, y: p.y - p.vy * sdt, vx: p.vx, vy: p.vy, kind: p.kind, proj: p }); projDie(w, p, true); break; }
+      if (wallAt(w, p.x | 0, p.y | 0)) {
+        if (!bouncer) { w.emit('projwall', { x: p.x - p.vx * sdt, y: p.y - p.vy * sdt, vx: p.vx, vy: p.vy, kind: p.kind, proj: p }); projDie(w, p, true); break; }
+        bounceOff(w, p, ox, oy, (cx, cy) => wallAt(w, cx, cy)); continue;
       }
       if (w.map.solidProps[(p.y | 0) * w.map.w + (p.x | 0)]) {
         const pr = w.propAtCell(p.x | 0, p.y | 0);
         if (pr && (pr.kind === 'scenery' || pr.kind === 'crystal')) {
           if (p.player && p.srcActor && p.srcActor.type === 'hero' && (pr.destructible || pr.kind === 'crystal')) w.match.hitProp(w, pr, p.dmg, p.srcActor);
-          if (pr.kind === 'scenery' && !pr.destructible) { projDie(w, p, true); break; }
+          if (pr.kind === 'scenery' && !pr.destructible) {
+            if (bouncer) { bounceOff(w, p, ox, oy, (cx, cy) => w.map.solidProps[cy * w.map.w + cx] === 1); continue; }
+            projDie(w, p, true); break;
+          }
           if (pr.kind === 'crystal') { projDie(w, p, true); break; }
         }
       }
+      if (p.rest || p.rolling) continue; // things lying on the floor do not hurt anyone
       for (const t of w.actors) {
         if (t.dead || p.hitSet.has(t.id)) continue;
         if (!hostile(w, p.srcActor, p.player, t)) continue;
         const rr = p.r + t.r;
         if (dist2(p.x, p.y, t.x, t.y) > rr * rr) continue;
+        if (p.gravity && (p.z > (t.h || 1) + 0.12 || p.z < -0.1)) continue; // arcs fly over short targets and under nothing
         const d = Math.hypot(p.vx, p.vy) || 1;
         const status = Object.assign({}, p.status || {});
         if (p.debuff === 'curse') status.curse = { t: 8 * (p.player && p.player.godId === 'ashkeleth' ? 1.5 : 1) };
@@ -429,6 +489,15 @@ export function updateProjs(w, dt) {
       }
     }
   }
+}
+
+// Reflect off whichever face was hit (test each axis alone), losing speed. Position goes back to before the step.
+function bounceOff(w, p, ox, oy, solid) {
+  const hitX = solid(p.x | 0, oy | 0), hitY = solid(ox | 0, p.y | 0), both = !hitX && !hitY;
+  const e = p.def.bounce, sp = Math.hypot(p.vx, p.vy);
+  if (hitX || both) p.vx = -p.vx * e; if (hitY || both) p.vy = -p.vy * e;
+  p.x = ox; p.y = oy; p.dmgMul *= 0.5; p.bounces++;
+  w.emit('projbounce', { x: p.x, y: p.y, kind: p.kind, power: Math.min(2, sp * 0.25), proj: p, wall: true });
 }
 
 export function applyWeaponFx(w, src, t, effects) {
