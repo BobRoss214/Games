@@ -344,6 +344,8 @@ export function renderView(view, scene, cam, time) {
             emissive = (dc === 70 || dc === 72 ? 0.9 * pulse : dc >= 75 ? 0.5 : 0.1) * (cam.ghost && dc === 70 ? 1.6 : 1);
           }
         }
+        const si = map.floorStainIdx[ci];
+        if (si) { const sm = map.floorStains[si][((v >> 2) << 5) + (u >> 2)]; if (sm) { const k = 1 - sm * 0.0058; r *= k; g *= k; b *= k * 1.03; } }
         const bi2 = map.bloodIdx[ci];
         if (bi2) {
           const m = map.bloodMasks[bi2][((v >> 2) << 5) + (u >> 2)];

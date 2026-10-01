@@ -122,6 +122,22 @@ export class GameMap {
   // Values 1-127 = darkening, 128-255 = moss. Stored per wall face like wall blood. Uses a hash, not the gameplay RNG.
   computeGrime() {
     this.grime = new Map();
+    // floor stains: dark irregular patches, 32x32 per cell like blood (index 0 = none)
+    this.floorStainIdx = new Uint16Array(this.w * this.h); this.floorStains = [null];
+    const fh = (n) => { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; };
+    for (let ci = 0; ci < this.w * this.h; ci++) {
+      if (this.wall[ci] !== 0 || !this.floor[ci] || fh(ci * 31 + 5) > 0.2 || this.floorStains.length > 60000) continue;
+      const m = new Uint8Array(1024); let sd = ci * 977 + 3; const r = () => fh(sd++);
+      const nb = 2 + Math.floor(r() * 3);
+      for (let b = 0; b < nb; b++) {
+        const bx = r() * 32, by = r() * 32, rad = 3 + r() * 7, st = 50 + r() * 70;
+        for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {
+          const d = Math.hypot(i - bx, (j - by) * 1.2) + r() * 2.2; // ragged edge
+          if (d < rad) m[j * 32 + i] = Math.min(127, m[j * 32 + i] + st * (1 - d / rad));
+        }
+      }
+      this.floorStainIdx[ci] = this.floorStains.length; this.floorStains.push(m);
+    }
     const hash = (n) => { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; };
     const W = this.w, H = this.h;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
