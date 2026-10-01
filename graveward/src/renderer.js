@@ -382,6 +382,42 @@ export function renderView(view, scene, cam, time) {
   }
   vis.sort((a, b) => b._ty - a._ty);
   for (let i = 0; i < vis.length; i++) drawSprite(view, vis[i], scene, cam, projScale, horizon, camZ, light, lw, ambR, ambG, ambB, vlR, vlG, vlB, fogR, fogG, fogB, fogD, time);
+  if (BLOOM) bloomPass(view);
+}
+
+// ---- bloom: bright pixels (torches, fire, magic) bleed a soft glow into the dark. Works on a 1/4-size copy, so it costs little. ----
+let BLOOM = true;
+export function setBloom(on) { BLOOM = !!on; }
+let bloomLow = null, bloomTmp = null, bloomW = 0, bloomH = 0;
+function bloomPass(view) {
+  const W = view.w, H = view.h, w = W >> 2, h = H >> 2, buf = view.buf;
+  if (!bloomLow || bloomW !== w || bloomH !== h) { bloomW = w; bloomH = h; bloomLow = new Float32Array(w * h * 3); bloomTmp = new Float32Array(w * h * 3); }
+  const lo = bloomLow, tmp = bloomTmp; let any = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let r = 0, g = 0, b = 0; const o = (y * 4 + 1) * W + x * 4 + 1;
+    for (let k = 0; k < 4; k++) { const c = buf[o + (k >> 1) * 2 * W + (k & 1) * 2]; r += c & 255; g += (c >> 8) & 255; b += (c >> 16) & 255; }
+    r = r * 0.25 - 110; g = g * 0.25 - 110; b = b * 0.25 - 110; const i = (y * w + x) * 3;
+    lo[i] = r > 0 ? r : 0; lo[i + 1] = g > 0 ? g : 0; lo[i + 2] = b > 0 ? b : 0; any += lo[i] + lo[i + 1] + lo[i + 2];
+  }
+  if (any < 40) return;
+  for (let pass = 0; pass < 2; pass++) { // separable 5-tap blur, twice
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 3; c++) { let s = 0; for (let k = -2; k <= 2; k++) { const xx = x + k < 0 ? 0 : x + k >= w ? w - 1 : x + k; s += lo[(y * w + xx) * 3 + c]; } tmp[(y * w + x) * 3 + c] = s * 0.2; }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 3; c++) { let s = 0; for (let k = -2; k <= 2; k++) { const yy = y + k < 0 ? 0 : y + k >= h ? h - 1 : y + k; s += tmp[(yy * w + x) * 3 + c]; } lo[(y * w + x) * 3 + c] = s * 0.2; }
+  }
+  const gain = 2.0 + 0.6 * DARK;
+  for (let y = 0; y < H; y++) {
+    const fy = (y + 0.5) / 4 - 0.5, y0 = fy < 0 ? 0 : fy >= h - 1 ? h - 2 : Math.floor(fy), ty = Math.min(1, Math.max(0, fy - y0));
+    for (let x = 0; x < W; x++) {
+      const fx = (x + 0.5) / 4 - 0.5, x0 = fx < 0 ? 0 : fx >= w - 1 ? w - 2 : Math.floor(fx), tx = Math.min(1, Math.max(0, fx - x0));
+      const i00 = (y0 * w + x0) * 3, i10 = i00 + 3, i01 = i00 + w * 3, i11 = i01 + 3;
+      const w00 = (1 - tx) * (1 - ty), w10 = tx * (1 - ty), w01 = (1 - tx) * ty, w11 = tx * ty;
+      const ar = (lo[i00] * w00 + lo[i10] * w10 + lo[i01] * w01 + lo[i11] * w11) * gain;
+      if (ar < 0.5 && lo[i00 + 1] + lo[i11 + 1] + lo[i00 + 2] < 1) continue;
+      const ag = (lo[i00 + 1] * w00 + lo[i10 + 1] * w10 + lo[i01 + 1] * w01 + lo[i11 + 1] * w11) * gain, ab = (lo[i00 + 2] * w00 + lo[i10 + 2] * w10 + lo[i01 + 2] * w01 + lo[i11 + 2] * w11) * gain;
+      const c = buf[y * W + x]; let r = (c & 255) + ar, g = ((c >> 8) & 255) + ag, b = ((c >> 16) & 255) + ab;
+      buf[y * W + x] = 0xff000000 | ((b > 255 ? 255 : b) << 16) | ((g > 255 ? 255 : g) << 8) | (r > 255 ? 255 : r);
+    }
+  }
 }
 
 let shadeRadius = 3.2;

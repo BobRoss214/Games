@@ -78,3 +78,10 @@ Not done: online multiplayer, damage numbers.
 - `setDarkness(d)` in `renderer.js` scales ambient light, contrast curve, fog, lantern power and vignette together. 0 = the old look, 1 = default, 1.6 max. It is the playability safety valve: Options > DARKNESS.
 - Textures are still authored at 64x64 in code, then `realism()` in `textures.js` upscales to 128x128 and adds lit relief, ambient occlusion, mottling, grain, grime and a desaturated/cool-shadow/warm-light grade. Cost: ~200 ms extra at startup, no per-frame cost (60 fps unchanged).
 - Output stays pixelated: internal resolution and the Bayer dither are untouched.
+
+## Sprites, gore, bloom (stages 3-4 and polish)
+- Monsters/heroes/bosses/first-person weapons go through `realize()` (`sprites_real.js`): 2x upscale with crisp colours, lit relief, edge darkening, grain and grime. Monsters get four wound levels from their HP fraction (frames are cached per level). Corpses always use the fully wounded look.
+- Gibs are small sprites (`sprites_gore.js`) that tumble by swapping 90-degree rotations. They bleed in flight, land with the old physics, and stay on the floor (cap 260). Kills start a slowly spreading pool; monsters under half HP leave a blood trail.
+- Blood masks are 32x32 per cell (were 16x16) with soft edges, a dark rim and wall drips.
+- Bloom (Options > GLOW) works on a quarter-size copy of each view: about 0.2 ms per view. Weapon/hand moved up so the fist is visible above the HUD bar.
+- Measured: 4.0 ms/frame (1 view) and 7.9 ms (4 views) in headless Chromium, vs 4.0 / 6.9 before the overhaul.

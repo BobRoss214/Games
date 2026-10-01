@@ -107,15 +107,15 @@ export function projFrame(kind, t) {
   return memo('proj|' + kind + (animated ? '|' + (Math.floor(t * 12) % 4) : ''), () => X.paintProj(kind, animated ? (Math.floor(t * 12) % 4) * 0.4 : 0));
 }
 
-export function bossBodyFrame(id, exposed, t) { return memo(`bb|${id}|${exposed ? 1 : 0}|${Math.floor(t * 3) % 2}`, () => X.paintBossBody(id, { exposed, t: Math.floor(t * 3) % 2 })); }
+export function bossBodyFrame(id, exposed, t) { const tt = Math.floor(t * 3) % 2; return memo(`bb|${id}|${exposed ? 1 : 0}|${tt}`, () => ({ frame: () => real(X.paintBossBody(id, { exposed, t: tt }), `boss${id}${exposed}${tt}`, 'golem', 0) })); }
 export function bossPartFrame(spriteId, atk, extra = {}) {
   const variant = spriteId === 'jackalHeadFire' ? 'fire' : spriteId === 'jackalHeadHowl' ? 'howl' : 'fang';
   const id = spriteId.startsWith('jackalHead') ? 'jackalHead' : spriteId;
-  return memo(`bp|${spriteId}|${atk ? 1 : 0}|${extra.unwrapped ? 1 : 0}`, () => X.paintBossPart(id, variant, { atk, unwrapped: extra.unwrapped }));
+  return memo(`bp|${spriteId}|${atk ? 1 : 0}|${extra.unwrapped ? 1 : 0}`, () => ({ frame: () => real(X.paintBossPart(id, variant, { atk, unwrapped: extra.unwrapped }), `bp${spriteId}${atk}`, 'golem', 0) }));
 }
 
-export function weaponFrame(sprite, color) { return memo('w|' + sprite + (color || ''), () => X.paintWeapon(sprite, { color })); }
-export function spellHandFrame(color) { return memo('w|spell' + color, () => X.paintWeapon('spell', { color })); }
+export function weaponFrame(sprite, color) { return memo('w|' + sprite + (color || ''), () => ({ frame: () => real(X.paintWeapon(sprite, { color }), 'weapon' + sprite, 'weapon', 0) })); }
+export function spellHandFrame(color) { return memo('w|spell' + color, () => ({ frame: () => real(X.paintWeapon('spell', { color }), 'weaponspell', 'weapon', 0) })); }
 
 // Pre-warm the most common frames so the first fight doesn't hitch.
 export function warm() {

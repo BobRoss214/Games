@@ -55,7 +55,7 @@ function drawWeapon(ctx, vw, vh, a, t, fxv, player) {
   if (!a || a.dead) return;
   const h = a.hero; const wp = currentWeapon(a); const def = WEAPONS[wp.id];
   const sc = (vh * 0.68) / 112;
-  let px = vw * 0.68, py = vh + 6 * sc, rot = 0.12, dx = 0, dy = 0, scaleK = 1;
+  let px = vw * 0.68, py = vh - 14 * sc, rot = 0.12, dx = 0, dy = 0, scaleK = 1;
   const moving = a.moving && !a.atk, bobT = a.walkT * 5.2;
   if (moving) { dx += Math.sin(bobT) * 7 * sc * 0.6; dy += Math.abs(Math.cos(bobT)) * 6 * sc * 0.6; rot += Math.sin(bobT) * 0.02; }
   else { dy += Math.sin(t * 1.6) * 1.5 * sc; rot += Math.sin(t * 1.1) * 0.01; }
@@ -83,10 +83,10 @@ function drawWeapon(ctx, vw, vh, a, t, fxv, player) {
   if (a.invuln > 0 && (Math.floor(t * 20) & 1) && a.spawnFlash) ctx.globalAlpha = 0.7;
   if (at && at.ab.id === 'weapon' && at.t >= at.ab.windup * 0.7 && at.t < at.ab.windup + at.ab.strike + 0.12 && kind === 'slash') {
     const side = swing ? swing.side : 1; ctx.save(); ctx.globalAlpha *= 0.28;
-    for (let k = 1; k <= 3; k++) { ctx.save(); ctx.translate(-side * k * 26, k * 6); ctx.rotate(-side * k * 0.17); ctx.drawImage(frameCanvas(f), -32, -104); ctx.restore(); }
+    for (let k = 1; k <= 3; k++) { ctx.save(); ctx.translate(-side * k * 26, k * 6); ctx.rotate(-side * k * 0.17); ctx.drawImage(frameCanvas(f), -32, -104, 64, 112); ctx.restore(); }
     ctx.restore();
   }
-  ctx.drawImage(frameCanvas(f), -32, -104);
+  ctx.drawImage(frameCanvas(f), -32, -104, 64, 112);
   // blood on blade
   const bl = fxv ? fxv.blade || 0 : 0;
   if (bl > 0.05 && sprite !== 'spell' && def.kind === 'melee') {
