@@ -317,7 +317,10 @@ export class UI {
     const g2 = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.9); g2.addColorStop(0, 'rgba(0,0,0,0)'); g2.addColorStop(1, 'rgba(0,0,0,0.75)'); ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
     this.logo(ctx, W, Math.round(H * 0.11), t, Math.round(W / 96));
     drawText(ctx, 'A LOCAL GAME OF HERO AND HAUNT', W / 2, Math.round(H * 0.11) + 7 * Math.round(W / 96) + 30, '#c8b090', 1, { align: 'center' });
-    this.mainMenu.draw(ctx, W / 2, Math.round(H * 0.58), t, { lineH: 16, width: 160 });
+    const my = Math.round(H * 0.58), mh = this.mainMenu.items.length * 16 + 8;
+    const mg = ctx.createLinearGradient(W / 2 - 110, 0, W / 2 + 110, 0); mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.2, 'rgba(0,0,0,0.6)'); mg.addColorStop(0.8, 'rgba(0,0,0,0.6)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mg; ctx.fillRect(W / 2 - 110, my - 6, 220, mh); // dark band so the menu stays readable over the bright room
+    this.mainMenu.draw(ctx, W / 2, my, t, { lineH: 16, width: 160 });
     drawText(ctx, '1-4 PLAYERS  -  SPLIT SCREEN  -  KEYBOARD, MOUSE, GAMEPAD', W / 2, H - 22, C.dim, 1, { align: 'center' });
     const ps = this.g.input.padStatus();
     const msg = ps === 'blocked' ? 'THIS PAGE BLOCKS CONTROLLERS. OPEN THE GAME IN ITS OWN TAB' : ps === 'none' ? 'NO CONTROLLER SEEN YET. PLUG IN, THEN PRESS A BUTTON' : 'CONTROLLER FOUND: ' + ps.slice(3).replace(/\s*\(.*$/, '').slice(0, 30).toUpperCase() + '. D-PAD + A TO CHOOSE';

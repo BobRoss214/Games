@@ -1,7 +1,7 @@
 // Game shell: owns the canvas, settings, input, audio, fx, UI and the current match. Runs the fixed-step loop.
 import { RNG, clamp, dist, now } from './util.js';
 import { Match } from './match.js';
-import { View, renderView, buildQuantTable, setDarkness, setBloom } from './renderer.js';
+import { View, renderView, buildQuantTable, setDarkness, setBloom, darkness } from './renderer.js';
 import { buildTextures } from './textures.js';
 import * as S from './sprites.js';
 import { makeCamera, collectSprites, updateLights } from './scene.js';
@@ -93,7 +93,7 @@ export class Game {
     ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(4, 14, 190, lines.length * 9 + 6);
     lines.forEach((l, k) => drawText(ctx, l, 8, 17 + k * 9, k === 0 ? '#ffe080' : '#a8ffa8', 1));
   }
-  applyDarkness() { setDarkness(this.settings.darkness); setBloom(this.settings.bloom !== false); }
+  applyDarkness() { setDarkness(this.settings.darkness); setBloom(this.settings.bloom !== false && !this.glowDropped); }
   saveSettings() { try { const o = Object.assign({}, this.settings); localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* storage unavailable */ } }
   applyQuant() { buildQuantTable(14, this.settings.dither); }
   applyResolution(first) {
@@ -334,6 +334,7 @@ export class Game {
     }
   }
   renderBG() {
+    const want = Math.min(this.settings.darkness, 0.12); if (darkness() !== want) setDarkness(want); // menus keep the room readable behind the title
     const w = this.bgWorld; if (!w) { this.bgCtx.fillStyle = '#050305'; this.bgCtx.fillRect(0, 0, this.W, this.H); return; }
     const r = this.bgRoom, t = this.t;
     const ang = t * 0.12 + 0.6, rad = Math.min(r.w, r.h) * 0.18;
@@ -345,6 +346,7 @@ export class Game {
   }
   render() {
     const ctx = this.ctx, W = this.W, H = this.H, t = this.t;
+    if (this.screen === 'playing' && darkness() !== this.settings.darkness) this.applyDarkness();
     ctx.imageSmoothingEnabled = false;
     if (this.screen === 'menu') {
       this.renderBG();
