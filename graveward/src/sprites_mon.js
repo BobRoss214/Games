@@ -199,6 +199,14 @@ export function paintCrawler(tier, p) {
   g.ellipse(hx + 2, hy + 1, 5 * sc, (2.5 + open * 4) * sc, H('#1a0508'));
   for (let i = 0; i < 4 + tier; i++) { const x = hx - 2 + i * 2.6 * sc; g.tri(x, hy - 1.2 * sc, x + 1.4, hy - 1 * sc, x + 0.7, hy + 2 * sc, pal3('#a89878', '#e8e0c8', '#fffbe8')[1]); g.tri(x + 1, hy + (1 + open * 3.6) * sc, x + 2.4, hy + (1 + open * 3.6) * sc, x + 1.7, hy + (open * 3.6 - 1) * sc, pal3('#a89878', '#e8e0c8', '#fffbe8')[1]); }
   g.disc(hx - 1, hy - 4 * sc, 1.6, GLOW('#ffe030')); g.disc(hx + 4, hy - 4 * sc, 1.6, GLOW('#ffe030'));
+  // detail: ribs pushing through the hide, a bony spine ridge, a ragged tail, claws, drool and a torn ear
+  const BN = pal3('#8a7a60', '#c8b890', '#eadfc0');
+  for (let k = 0; k < 5; k++) { const rx = cx - 9 * sc + k * 4.2 * sc; g.line(rx, 15 - bob, rx + 1.2, 24 - bob, FLESH[0], 1.2); g.line(rx - 0.8, 15.4 - bob, rx + 0.2, 23 - bob, FLESH[4], 0.7); }
+  for (let k = 0; k < 7; k++) { const x = cx - 12 * sc + k * 3.6 * sc; g.tri(x - 1, 12.5 - bob, x, 9 - bob - (k & 1), x + 1, 12.5 - bob, BN[1]); }
+  g.line(cx - 13 * sc, 20 - bob, cx - 20 * sc, 24 - bob + p.ls, FLESH[1], 3); g.line(cx - 20 * sc, 24 - bob + p.ls, cx - 23 * sc, 22 - bob + p.ls, FLESH[2], 1.8);
+  for (let i = 0; i < 4; i++) { const s2 = i < 2 ? -1 : 1, far = i % 2, sw = Math.sin(i * 1.7 + p.ls * 2.2) * 2.5, fx = cx + s2 * 11 * sc + sw - far * 3; for (let c = -1; c <= 1; c++) g.line(fx + c, 34, fx + c * 1.6 + 1, 36.4, BN[2], 1); }
+  g.line(hx + 6 * sc, hy + 3 * sc, hx + 6 * sc, hy + 5 * sc + open * 2, H('#8ac0c0'), 1); g.set(hx + 6 * sc, hy + 5.6 * sc + open * 2, H('#cfeeee'));
+  g.tri(hx - 4 * sc, hy - 7 * sc, hx - 2 * sc, hy - 11 * sc, hx, hy - 7 * sc, FLESH[2]); g.set(hx - 2 * sc, hy - 8.5 * sc, FLESH[0]);
   g.noise(31 + tier, 0.08);
   pc.blit(g, 2, 2); pc.outline(DARK); return pc;
 }
@@ -276,7 +284,15 @@ export function paintMummy(tier, p) {
     if (tier === 1) { g.line(rax, ray, rax + Math.cos(ang) * 14, ray + Math.sin(ang) * 14, GOLD[2], 2.4); g.line(rax + Math.cos(ang) * 14, ray + Math.sin(ang) * 14, rax + Math.cos(ang + 1.1) * 18, ray + Math.sin(ang + 1.1) * 18, GOLD[3], 2); }
     else { g.line(rax, ray + 8, rax, ray - 18, GOLD[1], 2); g.ring && 0; g.disc(rax, ray - 20, 3, GLOW('#40ffe0')); g.line(rax - 3, ray - 16, rax + 3, ray - 16, GOLD[3], 1.5); }
   }
-  g.noise(61 + tier, 0.06);
+    // detail: crossing bandage strips, rotten gaps, loose ends, leg bands
+  const ROT = pal3('#1a0e08', '#3a2416', '#5a3a24');
+  for (let i = 0; i < 6; i++) { const y = 16 + bob + i * 3.2; g.line(cx - 8, y, cx + 8, y + 5, WRAP[3], 1.4); g.line(cx - 8, y + 1.4, cx + 8, y + 6.4, WRAP[0], 1); }
+  g.ellipse(cx + 3, 25 + bob, 2.2, 3.2, ROT[0]); g.set(cx + 3, 25 + bob, ROT[2]); g.ellipse(cx - 4, 31 + bob, 1.8, 2.4, ROT[1]);
+  for (const sd of [-1, 1]) { const sw = sd < 0 ? p.ls : -p.ls; const kx = cx + sd * 3.2 + sw * 1.6, ky = 46 + bob; g.line(kx - 2.5, ky, kx + 2.5, ky + 1, WRAP[0], 1.4); g.line(kx - 2.5, ky - 3, kx + 2.5, ky - 2, WRAP[3], 1); }
+  for (let k = 0; k < 3; k++) { const x0 = lax + (k - 1) * 1.6, w = Math.sin(k * 1.9 + p.bob + p.ls) * 1.3; g.line(x0, lay + 1, x0 + w, lay + 7 + k * 2, WRAP[1 + (k & 1)], 1.2); } // loose ends trailing off the hand
+  g.line(cx + 6, 9 + bob, cx + 9 + p.ls, 19 + bob, WRAP[2], 1.5); g.line(cx + 7, 10 + bob, cx + 11 + p.ls, 16 + bob, WRAP[1], 1); // strip hanging from the head
+  g.line(cx - 4, 12.5 + bob, cx + 4, 13 + bob, WRAP[0], 1); // gaping jaw wrap
+g.noise(61 + tier, 0.06);
   pc.blit(g, 2, 4); pc.outline(DARK); return pc;
 }
 
