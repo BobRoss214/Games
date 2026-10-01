@@ -468,7 +468,8 @@ function realism(tex, id) {
       let f = relief * ao * mott * grain * grime; f = Math.max(0.55, Math.min(1.45, f));
       rr *= f; gg *= f; bb *= f;
       // muted grade: desaturate a little, cool the shadows, warm the lights
-      const l = rr * 0.3 + gg * 0.59 + bb * 0.11, ds = kind === 'special' ? 0.08 : 0.22;
+      const l = rr * 0.3 + gg * 0.59 + bb * 0.11, ds = kind === 'special' ? 0.08 : (id === 34 || id === 37) ? 0.5 : 0.22; // the gold-tile and altar floors were glaring
+      if (id === 34) { rr *= 0.78; gg *= 0.78; bb *= 0.78; }
       rr += (l - rr) * ds; gg += (l - gg) * ds; bb += (l - bb) * ds;
       if (l < 70) { const t = 1 - l / 70; rr *= 1 - 0.1 * t; bb *= 1 + 0.06 * t; } else { const t = Math.min(1, (l - 140) / 115); rr *= 1 + 0.05 * t; bb *= 1 - 0.05 * t; }
       out[i] = (0xff000000 | (Math.min(255, Math.max(0, bb)) << 16) | (Math.min(255, Math.max(0, gg)) << 8) | Math.min(255, Math.max(0, rr))) >>> 0;

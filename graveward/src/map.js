@@ -114,6 +114,40 @@ export class GameMap {
       }
     }
   }
+  // Procedural wall dirt (presentation only): dark damp streaks running down from the ceiling and moss patches near the floor.
+  // Values 1-127 = darkening, 128-255 = moss. Stored per wall face like wall blood. Uses a hash, not the gameplay RNG.
+  computeGrime() {
+    this.grime = new Map();
+    const hash = (n) => { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; };
+    const W = this.w, H = this.h;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const ci = y * W + x; if (this.wall[ci] === 0) continue;
+      const nb = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+      for (let face = 0; face < 4; face++) {
+        const [nx, ny] = nb[face]; if (!this.inBounds(nx, ny) || this.wall[ny * W + nx] !== 0) continue;
+        let seed = (ci * 4 + face) * 7919 + 17;
+        const r = () => hash(seed++);
+        if (r() > 0.8) continue;
+        const m = new Uint8Array(1024);
+        const ns = 1 + Math.floor(r() * 4);
+        for (let k = 0; k < ns; k++) {
+          const c = Math.floor(r() * 32), L = 8 + Math.floor(r() * 22), base = 60 + r() * 67, wide = r() < 0.4 ? 1 : 0;
+          for (let j = 0; j < L && j < 32; j++) {
+            const a = base * Math.pow(1 - j / L, 0.7) * (0.75 + 0.5 * r());
+            for (let d = -wide; d <= wide; d++) { const cc = c + d; if (cc < 0 || cc > 31) continue; const v = m[j * 32 + cc] + a * (d ? 0.5 : 1); m[j * 32 + cc] = Math.min(127, v); }
+          }
+        }
+        if (r() < 0.3) { // moss
+          const c0 = Math.floor(r() * 32), wd = 4 + Math.floor(r() * 10), hgt = 3 + Math.floor(r() * 6);
+          for (let j = 32 - hgt; j < 32; j++) for (let i = Math.max(0, c0 - wd); i < Math.min(32, c0 + wd); i++) {
+            const cover = (1 - Math.abs(i - c0) / wd) * ((j - (32 - hgt)) / hgt + 0.25) + (r() - 0.5) * 0.5;
+            if (cover > 0.25) m[j * 32 + i] = 128 + Math.min(127, Math.round(cover * 160));
+          }
+        }
+        this.grime.set(ci * 4 + face, m);
+      }
+    }
+  }
   // bit0 west wall, bit1 east, bit2 north, bit3 south: used for contact shadows on floors/ceilings
   computeAO() {
     const W = this.w, H = this.h; this.aoBits = new Uint8Array(W * H);

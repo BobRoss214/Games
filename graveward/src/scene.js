@@ -102,6 +102,7 @@ export function updateLights(match, w, cams, t, fx) {
 
 // ---------- sprite collection ----------
 const ASPECT = (f) => f.w / f.h;
+const contact = (out, x, y, wid, alpha = 0.85) => out.push({ x, y, z: 0, w: wid, h: wid * 0.42, frame: S.softShadowFrame(), alpha, emit: 0 }); // drawn first, so it lands under the sprite
 
 function statusTint(a, t) {
   const s = a.st; if (!s) return null;
@@ -148,6 +149,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
       else f = S.heroFrame(col, 'idle', Math.floor(t * 1.6 + a.id) % 2);
       const h = a.dead && a.deadT > 0.25 ? 0.4 : 0.62;
       const tint = statusTint(a, t);
+      contact(out, a.x, a.y, h * 0.8, a.dead ? 0.4 : 0.85);
       out.push({ x: a.x, y: a.y, z: 0, w: h * ASPECT(f), h, frame: f, tint: tint ? tint[0] : 0, tintAmt: tint ? tint[1] : 0, alpha: a.invuln > 0 && !a.dead ? 0.6 + Math.sin(t * 30) * 0.3 : 1, emit: 0.1 });
       continue;
     }
@@ -165,6 +167,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
       if (state === 'dead' && n > 0) h = h * (f.h / (S.monsterFrame(def.sprite, a.tier, 'idle', 0).h)) * 0.95;
       const tint = statusTint(a, t);
       const z = a.flies ? 0.22 + Math.sin(t * 2 + a.id) * 0.05 : 0;
+      if (!a.flies) contact(out, a.x, a.y, Math.min(h * ASPECT(f), h * 0.95) * 1.5, state === 'dead' ? 0.5 : 0.85); else contact(out, a.x, a.y, h * 0.55, 0.45);
       out.push({ x: a.x, y: a.y, z, w: h * ASPECT(f), h, frame: f, tint: tint ? tint[0] : 0, tintAmt: tint ? tint[1] : 0, emit: a.giant ? 0.18 : 0.08, flip: (a.id & 1) === 1 && state === 'idle' });
       if (a.atk && a.atk.phase === 0 && a.atk.ab.kind !== 'melee' && !a.dead) { /* windup telegraph: little glow */ out.push({ x: a.x, y: a.y, z: h * 0.7, w: 0.16, h: 0.16, color: a.atk.ab.kind === 'beam' ? RGB_ORANGE : RGB_RED, alpha: 0.6, add: true, fullbright: true }); }
       continue;
@@ -207,6 +210,7 @@ export function collectSprites(match, w, viewer, t, fx, out) {
         let h = isPillar ? 1.0 : def.h * (p.sub === 'sarcophagus' ? 0.75 : 0.85);
         let z = def.z || 0;
         if (p.sub === 'chandelier') { z = p.falling > 0 ? 0.62 * (p.falling / 0.5) : 0.62; }
+        if (p.sub !== 'chandelier' && p.sub !== 'cobweb' && p.sub !== 'chains') contact(out, p.x, p.y, Math.min(h * ASPECT(f), h * 1.1) * 1.1, 0.8);
         out.push({ x: p.x, y: p.y, z, w: h * ASPECT(f), h, frame: f, emit: p.sub === 'brazier' ? 0.7 : 0.05, tint: p.hitT > 0 ? RGB_WHITE : 0, tintAmt: p.hitT > 0 ? 0.5 : 0 });
         if (p.sub === 'brazier') out.push({ x: p.x, y: p.y, z: 0.25, w: 1.2, h: 1.2, frame: S.glowFrame('#ff7a20'), add: true, fullbright: true, alpha: 0.4 + Math.sin(t * 11 + p.id) * 0.06 });
         if (p.hitT > 0) p.hitT -= 1 / 60;
@@ -214,12 +218,13 @@ export function collectSprites(match, w, viewer, t, fx, out) {
       }
       case 'chest': {
         const f = S.propFrame('chest', p.tier ? 1 : 0, p.opened ? 1 : 0);
+        contact(out, p.x, p.y, 0.6, 0.8);
         out.push({ x: p.x, y: p.y, z: 0, w: 0.5, h: 0.4, frame: f, emit: p.opened ? 0.5 : 0.06 });
         if (p.trapped && !p.opened && viewerIsGhostSide) out.push({ x: p.x, y: p.y, z: 0.5, w: 0.14, h: 0.14, color: RGB_RED, alpha: 0.7, add: true, fullbright: true });
         break;
       }
       case 'crystal': out.push({ x: p.x, y: p.y, z: 0.1, w: 1.0, h: 1.0, frame: S.glowFrame('#ff2030'), add: true, fullbright: true, alpha: 0.35 + Math.sin(t * 4 + p.id) * 0.1 }); out.push({ x: p.x, y: p.y, z: 0, w: 0.45, h: 0.72, frame: S.propFrame('crystal', '', 0, t), emit: 0.7, tint: p.hitT > 0 ? RGB_WHITE : 0, tintAmt: p.hitT > 0 ? 0.6 : 0 }); if (p.hitT > 0) p.hitT -= 1 / 60; break;
-      case 'statue': { const f = S.statueFrame(p.sub); const h = Math.min(1.0, MONSTERS[p.sub].h * 0.5); out.push({ x: p.x, y: p.y, z: 0, w: h * ASPECT(f), h, frame: f, emit: 0.03 }); if (viewerIsGhostSide) out.push({ x: p.x, y: p.y, z: h * 0.85, w: 0.16, h: 0.08, color: RGB_ORANGE, alpha: 0.55 + Math.sin(t * 4) * 0.3, add: true, fullbright: true }); break; }
+      case 'statue': { const f = S.statueFrame(p.sub); const h = Math.min(1.0, MONSTERS[p.sub].h * 0.5); contact(out, p.x, p.y, h * ASPECT(f) * 1.1, 0.8); out.push({ x: p.x, y: p.y, z: 0, w: h * ASPECT(f), h, frame: f, emit: 0.03 }); if (viewerIsGhostSide) out.push({ x: p.x, y: p.y, z: h * 0.85, w: 0.16, h: 0.08, color: RGB_ORANGE, alpha: 0.55 + Math.sin(t * 4) * 0.3, add: true, fullbright: true }); break; }
       case 'shop': {
         if (p.sold) break;
         out.push({ x: p.x, y: p.y, z: 0, w: 0.42, h: 0.5, frame: S.propFrame('shop'), emit: 0.2 });

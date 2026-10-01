@@ -7,6 +7,7 @@ import { realize } from './sprites_real.js';
 import { hashSeed } from './util.js';
 import { POTIONS, SPELLS, ARTIFACTS } from './data.js';
 
+const WEB1 = ((130 << 24) | (0xd0 << 16) | (0xc8 << 8) | 0xc8) >>> 0, WEB2 = ((95 << 24) | (0xb4 << 16) | (0xa8 << 8) | 0xa8) >>> 0; // thin, see-through (the renderer dithers partial alpha)
 const cache = new Map();
 const memo = (key, fn) => { let v = cache.get(key); if (!v) { const r = fn(); v = r.frame ? r.frame() : r; cache.set(key, v); } return v; };
 
@@ -17,7 +18,7 @@ const MON_PAINT = {
   golem: (t, p) => M.paintGolem(p), wisp: (t, p) => M.paintWisp(p),
 };
 
-const KIND = { skeleton: 'bone', archer: 'bone', sentinel: 'bone', gargoyle: 'bone', golem: 'bone', slime: 'ooze', wisp: 'ooze' };
+const KIND = { bone: 'bone', prop: 'flesh', skeleton: 'bone', archer: 'bone', sentinel: 'bone', gargoyle: 'bone', golem: 'bone', slime: 'ooze', wisp: 'ooze', mummy: 'cloth', priest: 'cloth' };
 export const REALISM = { on: true }; // flip off to see the original flat sprites
 const real = (pc, key, sprite, wound) => (REALISM.on ? realize(pc, { seed: hashSeed(key), kind: KIND[sprite] || 'flesh', wound }) : pc).frame();
 
@@ -44,38 +45,39 @@ export function heroDeadFrame(colorHex, n) {
   return cache.get(key);
 }
 export function wispFrame(n) { return memo('wisp|' + n, () => M.paintWisp(M.pose('walk', n))); }
-export function statueFrame(sub) { return memo('statue|' + sub, () => X.paintStatueDormant(MON_PAINT[sub](0, M.pose('idle', 0)))); }
+export function statueFrame(sub) { return rp('statue|' + sub, () => X.paintStatueDormant(MON_PAINT[sub](0, M.pose('idle', 0))), 'bone'); }
 
+const rp = (key, fn, kind) => memo(key, () => ({ frame: () => real(fn(), key, kind, 0) })); // props get the same shading pass as creatures
 export function propFrame(kind, sub, state = 0, t = 0) {
   const tf = Math.floor(t * 8) % 3;
   switch (kind) {
     case 'torch': return memo('torch|' + tf, () => X.paintTorch(tf * 1.7));
     case 'sign': return memo('sign', () => X.paintSign());
-    case 'chest': return memo(`chest|${state}|${sub}`, () => X.paintChest(!!state, sub));
+    case 'chest': return rp(`chest|${state}|${sub}`, () => X.paintChest(!!state, sub), 'prop');
     case 'crystal': return memo('crystal|' + tf, () => X.paintCrystal(tf * 0.9));
-    case 'shop': return memo('shopstand', () => X.paintShopStand());
+    case 'shop': return rp('shopstand', () => X.paintShopStand(), 'prop');
     case 'portal': return memo('portal|' + (Math.floor(t * 6) % 6), () => X.paintPortal((Math.floor(t * 6) % 6) * 0.5));
-    case 'trap': return memo(`trap|${sub}|${state}`, () => X.paintTrap(sub, state));
+    case 'trap': return rp(`trap|${sub}|${state}`, () => X.paintTrap(sub, state), 'prop');
     case 'fountainHeal': return memo('fountainheal|' + tf, () => X.paintFountain(tf, true));
     case 'scenery':
       switch (sub) {
-        case 'pot': return memo('pot', () => X.paintPot('pot'));
-        case 'jar': return memo('jar', () => X.paintPot('jar'));
-        case 'crate': return memo('crate', () => X.paintCrate());
-        case 'urn': return memo('urn', () => X.paintUrn());
-        case 'bones': return memo('bones', () => X.paintBones('bones'));
-        case 'skullpile': return memo('skullpile', () => X.paintBones('skull'));
-        case 'coffin': return memo('coffin|' + state, () => X.paintCoffin(!!state));
-        case 'cobweb': return memo('cobweb', () => { const pc = new PC(36, 36); for (let i = 0; i < 6; i++) { const a = i * 0.52 - 0.2; pc.line(0, 0, Math.cos(a) * 34, Math.sin(a) * 34, H('#c8c8d0')); } for (let r = 8; r < 32; r += 7) for (let i = 0; i < 5; i++) { const a0 = i * 0.52 - 0.2, a1 = a0 + 0.52; pc.line(Math.cos(a0) * r, Math.sin(a0) * r, Math.cos(a1) * r, Math.sin(a1) * r, H('#a8a8b4')); } return pc; });
-        case 'pillar': return memo('pillar', () => X.paintPillar());
-        case 'sarcophagus': return memo('sarco', () => X.paintSarcophagus());
-        case 'chains': return memo('chains', () => X.paintChains());
-        case 'fountain': return memo('fountain|' + tf, () => X.paintFountain(tf, false));
-        case 'chandelier': return memo('chandelier', () => X.paintChandelier());
-        case 'brazier': return memo('brazier|' + tf, () => X.paintBrazier(tf * 1.5));
-        default: return memo('pot', () => X.paintPot('pot'));
+        case 'pot': return rp('pot', () => X.paintPot('pot'), 'prop');
+        case 'jar': return rp('jar', () => X.paintPot('jar'), 'prop');
+        case 'crate': return rp('crate', () => X.paintCrate(), 'prop');
+        case 'urn': return rp('urn', () => X.paintUrn(), 'bone');
+        case 'bones': return rp('bones', () => X.paintBones('bones'), 'bone');
+        case 'skullpile': return rp('skullpile', () => X.paintBones('skull'), 'bone');
+        case 'coffin': return rp('coffin|' + state, () => X.paintCoffin(!!state), 'bone');
+        case 'cobweb': return memo('cobweb', () => { const pc = new PC(36, 36); for (let i = 0; i < 6; i++) { const a = i * 0.52 - 0.2; pc.line(0, 0, Math.cos(a) * 34, Math.sin(a) * 34, WEB1); } for (let r = 8; r < 32; r += 7) for (let i = 0; i < 5; i++) { const a0 = i * 0.52 - 0.2, a1 = a0 + 0.52; pc.line(Math.cos(a0) * r, Math.sin(a0) * r, Math.cos(a1) * r, Math.sin(a1) * r, WEB2); } return pc; });
+        case 'pillar': return rp('pillar', () => X.paintPillar(), 'bone');
+        case 'sarcophagus': return rp('sarco', () => X.paintSarcophagus(), 'bone');
+        case 'chains': return rp('chains', () => X.paintChains(), 'prop');
+        case 'fountain': return rp('fountain|' + tf, () => X.paintFountain(tf, false), 'bone');
+        case 'chandelier': return rp('chandelier', () => X.paintChandelier(), 'prop');
+        case 'brazier': return rp('brazier|' + tf, () => X.paintBrazier(tf * 1.5), 'prop');
+        default: return rp('pot', () => X.paintPot('pot'), 'prop');
       }
-    default: return memo('pot', () => X.paintPot('pot'));
+    default: return rp('pot', () => X.paintPot('pot'), 'prop');
   }
 }
 
@@ -125,5 +127,6 @@ export function warm() {
 }
 
 export function gibFrame(kind, seed, variant) { return memo(`gib|${kind}|${seed & 7}|${variant & 7}`, () => paintGib(kind, seed & 7, variant & 7)); }
+export function softShadowFrame() { return memo('softshadow', () => X.paintSoftShadow()); }
 export function shadowFrame() { return memo('shadow', () => X.paintShadow()); }
 export function glowFrame(colorHex) { return memo('glow|' + colorHex, () => X.paintGlow(colorHex)); }

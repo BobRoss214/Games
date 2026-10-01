@@ -169,6 +169,7 @@ export function renderView(view, scene, cam, time) {
   const wTop = view.wTop, wBot = view.wBot, doorZ = view.doorZ, doorBot = view.doorBot;
   const time8 = (time * 8) | 0;
   if (!map.aoBits) map.computeAO();
+  if (!map.grime) map.computeGrime();
   const aoBits = map.aoBits;
 
   buildShadeTabIfNeeded(vlRadius);
@@ -244,6 +245,7 @@ export function renderView(view, scene, cam, time) {
       const lr = (gam(baseR + glow) * (1 - fog) * 256) | 0, lg = (gam(baseG + glow * 0.6) * (1 - fog) * 256) | 0, lb = (gam(baseB + glow * 0.5) * (1 - fog) * 256) | 0;
       const fr = (fogR * fog * 255) | 0, fgc = (fogG * fog * 255) | 0, fb = (fogB * fog * 255) | 0;
       const vx = vigX[x];
+      const wallGrimeMask = map.grime.get(hitCell * 4 + (side === 0 ? (stepX > 0 ? 0 : 1) : (stepY > 0 ? 2 : 3)));
       const wallBloodMask = map.wallBlood ? map.wallBlood.get(hitCell * 4 + (side === 0 ? (stepX > 0 ? 0 : 1) : (stepY > 0 ? 2 : 3))) : null;
       const y0 = top < 0 ? 0 : top, y1 = bot > H ? H : bot;
       const invLine = TW / (bot - top || 1);
@@ -251,6 +253,10 @@ export function renderView(view, scene, cam, time) {
       for (let y = y0; y < y1; y++) {
         const c = tdata[(ty | 0) * TW + tx];
         let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+        if (wallGrimeMask) {
+          const gm = wallGrimeMask[(((ty | 0) >> 2) << 5) + (tx >> 2)];
+          if (gm) { if (gm < 128) { const k = 1 - gm * 0.0042; r *= k; g *= k; b *= k * 1.02; } else { const a = (gm - 128) * 0.0063; r += (34 - r) * a; g += (62 - g) * a; b += (24 - b) * a; } }
+        }
         if (wallBloodMask) {
           const m = wallBloodMask[(((ty | 0) >> 2) << 5) + (tx >> 2)];
           if (m > 22) { const th = m > 200 ? 1 : m / 200, a = th * th * (3 - 2 * th) * 0.93, lm = 0.55 + 0.9 * ((r + g + b) / 765), rim = m < 80 ? 0.55 : 1; r = r + (118 * lm * rim - r) * a; g = g + (9 * lm * rim - g) * a; b = b + (14 * lm * rim - b) * a; }
@@ -429,7 +435,7 @@ function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, am
   const W = view.w, H = view.h, buf = view.buf, zbuf = view.zbuf, doorZ = view.doorZ, doorBot = view.doorBot;
   const ty = s._ty, tx = s._tx;
   let sh = projScale * s.h / ty, sw = projScale * s.w / ty;
-  if (!s.frame && s.w <= 0.3 && s.h <= 0.3) { const cap = W * 0.028; if (sw > cap) sw = cap; if (sh > cap) sh = cap; }
+  if (!s.frame && s.w <= 0.3 && s.h <= 0.3) { const cap = W * 0.018; if (sw > cap) sw = cap; if (sh > cap) sh = cap; }
   const cxs = (W / 2) * (1 + tx / ty);
   const bottom = horizon + (camZ - s.z) * projScale / ty;
   const top = bottom - sh;
@@ -487,6 +493,7 @@ function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, am
       const c = fdata[v * fw + u];
       const ca = c >>> 24;
       if (ca === 0) continue;
+      if (ca < 250 && ((BAYER[(x & 3) | ((y & 3) << 2)] + 0.5) * 16 > ca)) continue; // partial alpha = ordered-dither coverage (soft shadows that stay pixelated)
       if (ty > dz && y < doorBot[x]) continue;
       let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
       let R, G, B;

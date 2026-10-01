@@ -72,6 +72,14 @@ export function realize(base, { seed = 1, kind = 'flesh', wound = 0, gore = 0 } 
     for (let k = 0; k < 3; k++) { let x = rng.int(Math.floor(W * 0.3), Math.floor(W * 0.7)), y = rng.int(Math.floor(Hh * 0.08), Math.floor(Hh * 0.3)); for (let i = 0; i < 6 + rng.int(0, 6); i++) { const o = y * W + x; if (mask[o] && !emis[o] && lum[o] > 0.3) out.d[o] = rgb(40, 30, 24); x += rng.int(-1, 1); y += 1; } }
     for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { const o = y * W + x; if (!mask[o] || emis[o]) continue; const st = Math.sin(x * 0.31 + y * 0.12) * Math.sin(y * 0.23 - x * 0.07); if (st > 0.55) { const c = out.d[o]; out.d[o] = rgb(cr(c) * 0.88, cg(c) * 0.84, cb(c) * 0.72); } }
   }
+  if (kind === 'cloth') { // bandages and robes: a woven texture, fold shadows, stains
+    for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+      const o = y * W + x; if (!mask[o] || emis[o]) continue;
+      const wv = (Math.sin((x + y * 0.35) * 1.9) * Math.sin((y - x * 0.2) * 1.4)) * 0.5 + 0.5, fold = Math.sin(y * 0.55 + Math.sin(x * 0.4) * 2) > 0.7 ? 0.82 : 1;
+      const k = (0.88 + 0.16 * wv) * fold, c = out.d[o]; out.d[o] = rgb(cr(c) * k, cg(c) * k, cb(c) * k);
+    }
+    for (let i = 0; i < W * Hh * 0.004; i++) { const x = rng.int(0, W - 1), y = rng.int(0, Hh - 1), o = y * W + x; if (mask[o] && !emis[o]) for (let q = 0; q < 6; q++) { const xx = x + rng.int(-2, 2), yy = y + rng.int(-2, 2); if (xx >= 0 && yy >= 0 && xx < W && yy < Hh && mask[yy * W + xx] && !emis[yy * W + xx]) { const c = out.d[yy * W + xx]; out.d[yy * W + xx] = rgb(cr(c) * 0.7, cg(c) * 0.62, cb(c) * 0.55); } } }
+  }
   // 4. wounds & gore
   const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < Hh && mask[y * W + x] > 0 && !emis[y * W + x];
   const body = []; for (let y = Math.floor(Hh * 0.22); y < Hh * 0.78; y++) for (let x = 0; x < W; x++) if (solid(x, y) && infl[y * W + x] > 0.55) body.push([x, y]);
@@ -95,7 +103,7 @@ export function realize(base, { seed = 1, kind = 'flesh', wound = 0, gore = 0 } 
         if (kind === 'bone') { paint(x, y, rgb(14, 9, 8)); paint(x + 1, y, rgb(30, 20, 16)); if (mid > 0.5) { paint(x, y + 1, BLOOD[1]); paint(x - 1, y, BLOOD[2]); } }
         else { const wd = mid > 0.6 ? 2 : 1; for (let q = -wd; q <= wd; q++) paint(x, y + q, Math.abs(q) === wd ? BLOOD[3] : q === 0 ? BLOOD[0] : MEAT[1]); }
       }
-      if (kind === 'flesh' && nW >= 2) blob(sx + Math.cos(ang) * len * 0.5, sy + Math.sin(ang) * len * 0.45, 4 + nW, 3 + nW * 0.7);
+      if (kind !== 'bone' && nW >= 2) blob(sx + Math.cos(ang) * len * 0.5, sy + Math.sin(ang) * len * 0.45, 4 + nW, 3 + nW * 0.7);
       else if (kind === 'bone' && nW >= 2) { blob(sx + Math.cos(ang) * len * 0.5, sy + Math.sin(ang) * len * 0.45, 2.5 + nW * 0.5, 2 + nW * 0.5); }
       paint(sx, sy, WET);
       if (rng.next() < 0.9) drip(Math.round(sx + Math.cos(ang) * len * 0.6), Math.round(sy + Math.sin(ang) * len * 0.55), 6 + rng.int(0, 10) + nW * 3);
