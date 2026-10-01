@@ -18,6 +18,7 @@ import { GODS, THEMES, MAX_LEVEL } from './data.js';
 const KEY = 'graveward.settings.v2';
 const DT = 1 / 60;
 
+export const BUILD = '2026-10-01 f3';
 export class Game {
   constructor(canvas, params) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false }); this.params = params || new URLSearchParams();
@@ -84,6 +85,14 @@ export class Game {
     return pn ? kb + ' / ' + pn : kb;
   }
 
+  // F3: what the browser is really sending (to diagnose laptops whose touchpad dies while a key is held)
+  drawInputDiag(ctx, W, H, t) {
+    const i = this.input, ago = i.lastMoveAt ? Math.round(performance.now() - i.lastMoveAt) : -1;
+    const held = [...i.keys].filter((k) => !k.startsWith('Mouse')).map((k) => k.replace('Key', '')).join(' ') || '-';
+    const lines = ['INPUT TEST (F3 CLOSES)', 'MOUSE EVENTS: ' + i.mouseEvents, 'LAST MOVE: ' + i.lastMove[0] + ',' + i.lastMove[1] + (ago >= 0 ? '  ' + ago + ' MS AGO' : '  NEVER'), 'MOUSE CAPTURED: ' + (i.locked ? 'YES' : 'NO' + (i.lockFailed ? ' (BLOCKED)' : '')), 'KEYS HELD: ' + held, 'AUTO-WALK: F   TURN: ARROWS OR J L', 'BUILD ' + BUILD];
+    ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(4, 14, 190, lines.length * 9 + 6);
+    lines.forEach((l, k) => drawText(ctx, l, 8, 17 + k * 9, k === 0 ? '#ffe080' : '#a8ffa8', 1));
+  }
   applyDarkness() { setDarkness(this.settings.darkness); setBloom(this.settings.bloom !== false); }
   saveSettings() { try { const o = Object.assign({}, this.settings); localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* storage unavailable */ } }
   applyQuant() { buildQuantTable(14, this.settings.dither); }
@@ -387,6 +396,9 @@ export class Game {
         if (et) { const a = Math.min(1, Math.abs(et) / 2.8); ctx.globalAlpha = 0.25 + 0.6 * a; drawText(ctx, et < 0 ? '<<' : '>>', et < 0 ? 6 : W - 18, Math.round(H / 2) - 3, '#ffe080', 2, { outline: '#000' }); ctx.globalAlpha = 1; }
       }
     }
+    const v0 = this.viewers[0];
+    if (v0 && v0.input && v0.input.isAuto && v0.input.isAuto() && !this.paused) drawText(ctx, 'AUTO-WALK ON  -  PRESS S TO STOP', W / 2, Math.round(H * 0.7), '#80ff80', 1, { align: 'center', outline: '#000' });
+    if (this.input.diag) this.drawInputDiag(ctx, W, H, t);
     this.ui.draw(ctx, W, H, t);
     if (this.paused && this.pauseMsg) drawText(ctx, this.pauseMsg, W / 2, H / 2 - 64, '#ff8060', 1, { align: 'center' });
   }

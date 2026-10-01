@@ -45,6 +45,16 @@ const dAng = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; wh
   ok(dAng(a1, await fang()) < -0.15, 'and turns left while strafing');
   await page.close();
 }
+{ // 2d) auto-walk (F) keeps walking with no key held, so a touchpad can be used; S stops it
+  const p = await open(''); const pos = () => p.evaluate(() => { const b = window.graveward.match.players[0].body; return [b.x, b.y]; });
+  await p.keyboard.press('KeyF'); await p.waitForTimeout(200); const q0 = await pos(); await p.waitForTimeout(700); const q1 = await pos();
+  ok(Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) > 0.8, 'F auto-walks with no key held');
+  const a0 = await ang(p); await p.keyboard.down('ArrowRight'); await p.waitForTimeout(400); await p.keyboard.up('ArrowRight'); ok(dAng(a0, await ang(p)) > 0.6, 'turning works while auto-walking');
+  await p.keyboard.down('KeyS'); await p.waitForTimeout(100); await p.keyboard.up('KeyS'); await p.waitForTimeout(300);
+  ok(!(await p.evaluate(() => window.graveward.match.players[0].input.isAuto())), 'S stops auto-walk');
+  await p.keyboard.press('F3'); await p.waitForTimeout(150); ok(await p.evaluate(() => window.graveward.input.diag), 'F3 opens the input test'); await p.screenshot({ path: '/tmp/claude-0/shots/diag.png' });
+  await p.close();
+}
 { // 2b) a second player on Keyboard 2 owns the arrow keys: player 1 must not turn with them
   const p = await open(''); await p.evaluate(() => { window.graveward.input.kb2InUse = true; }); const a0 = await ang(p);
   await p.keyboard.down('ArrowRight'); await p.waitForTimeout(500); await p.keyboard.up('ArrowRight');

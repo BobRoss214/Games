@@ -4,11 +4,11 @@ import { clamp } from './util.js';
 export const ACTIONS = [
   ['fwd', 'Move forward'], ['back', 'Move back'], ['strafeL', 'Strafe left'], ['strafeR', 'Strafe right'], ['turnL', 'Turn left'], ['turnR', 'Turn right'],
   ['attack', 'Attack / fire'], ['alt', 'Block / ability 2'], ['dodge', 'Dodge roll'], ['interact', 'Interact / possess'], ['spell', 'Cast spell / ability 3'],
-  ['spellNext', 'Next spell / haunt jump'], ['potion', 'Use potion'], ['potionNext', 'Next potion'], ['swap', 'Swap weapon'], ['sprint', 'Sprint'],
+  ['spellNext', 'Next spell / haunt jump'], ['potion', 'Use potion'], ['potionNext', 'Next potion'], ['swap', 'Swap weapon'], ['sprint', 'Sprint'], ['autorun', 'Auto-walk on/off (laptops)'],
 ];
 export const DEFAULT_BINDINGS = {
-  kbm1: { fwd: ['KeyW'], back: ['KeyS'], strafeL: ['KeyA'], strafeR: ['KeyD'], turnL: ['KeyJ'], turnR: ['KeyL'], attack: ['Mouse0'], alt: ['Mouse2'], dodge: ['Space'], interact: ['KeyE'], spell: ['KeyR'], spellNext: ['KeyT'], potion: ['KeyQ'], potionNext: ['KeyG'], swap: ['KeyX'], sprint: ['ShiftLeft'] },
-  kb2: { fwd: ['ArrowUp'], back: ['ArrowDown'], strafeL: ['Comma'], strafeR: ['Period'], turnL: ['ArrowLeft'], turnR: ['ArrowRight'], attack: ['Enter'], alt: ['ShiftRight'], dodge: ['Slash'], interact: ['Quote'], spell: ['Semicolon'], spellNext: ['BracketLeft'], potion: ['KeyP'], potionNext: ['BracketRight'], swap: ['Backslash'], sprint: ['ControlRight'] },
+  kbm1: { fwd: ['KeyW'], back: ['KeyS'], strafeL: ['KeyA'], strafeR: ['KeyD'], turnL: ['KeyJ'], turnR: ['KeyL'], attack: ['Mouse0'], alt: ['Mouse2'], dodge: ['Space'], interact: ['KeyE'], spell: ['KeyR'], spellNext: ['KeyT'], potion: ['KeyQ'], potionNext: ['KeyG'], swap: ['KeyX'], sprint: ['ShiftLeft'], autorun: ['KeyF'] },
+  kb2: { fwd: ['ArrowUp'], back: ['ArrowDown'], strafeL: ['Comma'], strafeR: ['Period'], turnL: ['ArrowLeft'], turnR: ['ArrowRight'], attack: ['Enter'], alt: ['ShiftRight'], dodge: ['Slash'], interact: ['Quote'], spell: ['Semicolon'], spellNext: ['BracketLeft'], potion: ['KeyP'], potionNext: ['BracketRight'], swap: ['Backslash'], sprint: ['ControlRight'], autorun: ['KeyO'] },
   pad: { attack: [7], alt: [6], dodge: [1], interact: [0], spell: [2], potion: [3], swap: [4], spellNext: [5], sprint: [10], potionNext: [11] },
 };
 export const DEVICE_NAMES = { kbm1: 'KEYBOARD + MOUSE', kb2: 'KEYBOARD 2', pad0: 'GAMEPAD 1', pad1: 'GAMEPAD 2', pad2: 'GAMEPAD 3', pad3: 'GAMEPAD 4' };
@@ -22,7 +22,7 @@ export function keyLabel(code) {
 
 export class Input {
   constructor(settings) {
-    this.s = settings; this.keys = new Set(); this.down = new Set(); this.up = new Set(); this.mouseDX = 0; this.mouseDY = 0; this.locked = false; this.lockFailed = false;
+    this.s = settings; this.keys = new Set(); this.down = new Set(); this.up = new Set(); this.mouseDX = 0; this.mouseDY = 0; this.locked = false; this.lockFailed = false; this.mouseEvents = 0; this.lastMoveAt = 0; this.lastMove = [0, 0]; this.diag = false;
     this.pads = [null, null, null, null]; this.padPrev = [null, null, null, null]; this.padEdges = [new Set(), new Set(), new Set(), new Set()];
     this.listeners = []; this.rebind = null; this.lastAnyKey = null; this.connectMsgs = [];
     this.mx = 0.5; this.my = 0.5; this.mouseIn = false; this.kb2InUse = false; // cursor over the canvas (0..1); arrow keys belong to Keyboard 2 when it is playing
@@ -34,6 +34,7 @@ export class Input {
     this.canvas = canvas;
     const on = (t, e, f, o) => { t.addEventListener(e, f, o); this.listeners.push([t, e, f, o]); };
     on(window, 'keydown', (e) => {
+      if (e.code === 'F3' && !e.repeat) { this.diag = !this.diag; e.preventDefault(); return; }
       if (e.repeat) { if (this.captureKeys(e)) e.preventDefault(); return; }
       if (this.rebind) { this.rebind(e.code); this.rebind = null; e.preventDefault(); return; }
       this.keys.add(e.code); this.down.add(e.code); this.lastAnyKey = e.code; this.lastDevice = 'kbm1';
@@ -43,7 +44,7 @@ export class Input {
     on(window, 'blur', () => { this.keys.clear(); });
     on(canvas, 'mousedown', (e) => {
       if (this.rebind) { this.rebind('Mouse' + e.button); this.rebind = null; e.preventDefault(); return; }
-      this.lastDevice = 'kbm1'; this.keys.add('Mouse' + e.button); this.down.add('Mouse' + e.button); this.lastAnyKey = 'Mouse' + e.button; this.canvas.focus && this.canvas.focus(); e.preventDefault();
+      this.clickedAt = performance.now(); this.lastDevice = 'kbm1'; this.keys.add('Mouse' + e.button); this.down.add('Mouse' + e.button); this.lastAnyKey = 'Mouse' + e.button; this.canvas.focus && this.canvas.focus(); e.preventDefault();
     });
     on(window, 'mouseup', (e) => { this.keys.delete('Mouse' + e.button); this.up.add('Mouse' + e.button); });
     on(canvas, 'contextmenu', (e) => e.preventDefault());
@@ -51,9 +52,9 @@ export class Input {
     on(canvas, 'mouseleave', () => { this.mouseIn = false; });
     // captured mouse: raw movement turns the camera. Not captured (embedded pages often block pointer lock): the cursor still turns the camera
     // while it is over the game, and pushing it into a screen edge keeps turning (see edgeTurn).
-    on(document, 'mousemove', (e) => { if (this.locked) { this.mouseDX += e.movementX; this.mouseDY += e.movementY; } else if (this.mouseIn && this.s.edgeLook) { this.mouseDX += e.movementX * 1.6; } });
+    on(document, 'mousemove', (e) => { this.mouseEvents++; this.lastMoveAt = performance.now(); this.lastMove = [e.movementX, e.movementY]; if (this.locked) { this.mouseDX += e.movementX; this.mouseDY += e.movementY; } else if (this.mouseIn && this.s.edgeLook) { this.mouseDX += e.movementX * 1.6; } });
     on(document, 'pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; if (this.locked) this.lockFailed = false; });
-    on(document, 'pointerlockerror', () => { this.lockFailed = true; });
+    on(document, 'pointerlockerror', () => { if (performance.now() - (this.clickedAt || -1e9) < 1500) this.lockFailed = true; }); // only a refusal right after a click means the page really blocks it
     on(window, 'gamepadconnected', (e) => this.connectMsgs.push('Gamepad ' + (e.gamepad.index + 1) + ' connected'));
     on(window, 'gamepaddisconnected', (e) => this.connectMsgs.push('Gamepad ' + (e.gamepad.index + 1) + ' disconnected'));
   }
@@ -128,9 +129,11 @@ export class Input {
         const edge = (act) => (b[act] || []).some((c) => (isPad ? this.padEdges[pi].has(c) : this.down.has(c)));
         const rel = (act) => (b[act] || []).some((c) => (isPad ? (this.pads[pi] && this.padPrev[pi] && !this.pads[pi].buttons[c] && this.padPrev[pi].buttons[c]) : this.up.has(c)));
         for (const [k, act] of EDGES) if (edge(act)) st.pending[k] = true;
+        if (!isPad && edge('autorun')) st.auto = !st.auto; // laptop touchpads go dead while a key is held: latch walking so the hands can be free
         if (rel('attack')) st.pending.attackReleased = true;
       },
-      clear: () => { st.pending = {}; },
+      clear: () => { st.pending = {}; st.auto = false; },
+      isAuto: () => !!st.auto,
       poll: (dt) => {
         src.take();
         const b = this.bindingsFor(dev);
@@ -143,7 +146,8 @@ export class Input {
           fwd = -ly; strafe = lx; turnRate = rx * 3.4 * stickSens;
           const p = this.pads[pi]; if (p) { if (p.buttons[12]) fwd = 1; if (p.buttons[13]) fwd = -1; if (p.buttons[14]) strafe = -1; if (p.buttons[15]) strafe = 1; }
         } else {
-          fwd = (down('fwd') ? 1 : 0) - (down('back') ? 1 : 0); strafe = (down('strafeR') ? 1 : 0) - (down('strafeL') ? 1 : 0);
+          if (down('back')) st.auto = false;
+          fwd = (down('fwd') ? 1 : 0) - (down('back') ? 1 : 0); if (st.auto && fwd === 0) fwd = 1; strafe = (down('strafeR') ? 1 : 0) - (down('strafeL') ? 1 : 0);
           turnRate = ((down('turnR') ? 1 : 0) - (down('turnL') ? 1 : 0)) * 2.4 * sens;
           if (dev === 'kbm1') {
             turn = Math.max(-300, Math.min(300, this.mouseDX)) * 0.0024 * sens; this.mouseDX = 0; this.mouseDY = 0;
