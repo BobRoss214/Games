@@ -72,6 +72,10 @@ export function shadeBase(base, { seed = 1, kind = 'flesh' } = {}) {
     for (let k = 0; k < 3; k++) { let x = rng.int(Math.floor(W * 0.3), Math.floor(W * 0.7)), y = rng.int(Math.floor(Hh * 0.08), Math.floor(Hh * 0.3)); for (let i = 0; i < 6 + rng.int(0, 6); i++) { const o = y * W + x; if (mask[o] && !emis[o] && lum[o] > 0.3) out.d[o] = rgb(40, 30, 24); x += rng.int(-1, 1); y += 1; } }
     for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { const o = y * W + x; if (!mask[o] || emis[o]) continue; const st = Math.sin(x * 0.31 + y * 0.12) * Math.sin(y * 0.23 - x * 0.07); if (st > 0.55) { const c = out.d[o]; out.d[o] = rgb(cr(c) * 0.88, cg(c) * 0.84, cb(c) * 0.72); } }
   }
+  if (kind === 'flesh') { // living tissue: wet highlights on the lit side and a few dark veins
+    for (let i = 0; i < W * Hh * 0.012; i++) { const x = rng.int(0, W - 1), y = rng.int(0, Hh - 1), o = y * W + x; if (mask[o] && !emis[o] && lum[o] > 0.22 && x > 1 && y > 1 && mask[o - 1] && mask[o - W]) { const c = out.d[o]; out.d[o] = rgb(Math.min(255, cr(c) * 1.45 + 24), Math.min(255, cg(c) * 1.3 + 14), Math.min(255, cb(c) * 1.3 + 14)); } }
+    for (let k = 0; k < 5; k++) { let x = rng.int(0, W - 1), y = rng.int(Math.floor(Hh * 0.2), Math.floor(Hh * 0.8)); for (let i = 0; i < 9; i++) { const o = y * W + x; if (x < 0 || y < 0 || x >= W || y >= Hh) break; if (mask[o] && !emis[o]) { const c = out.d[o]; out.d[o] = rgb(cr(c) * 0.62, cg(c) * 0.5, cb(c) * 0.6); } x += rng.int(-1, 1) + (k & 1 ? 1 : -1) * (i & 1); y += rng.int(0, 1); } }
+  }
   if (kind === 'cloth') { // bandages and robes: a woven texture, fold shadows, stains
     for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
       const o = y * W + x; if (!mask[o] || emis[o]) continue;

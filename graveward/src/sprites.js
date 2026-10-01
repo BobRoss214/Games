@@ -18,7 +18,7 @@ const MON_PAINT = {
   golem: (t, p) => M.paintGolem(p), wisp: (t, p) => M.paintWisp(p),
 };
 
-const KIND = { bone: 'bone', prop: 'flesh', skeleton: 'bone', archer: 'bone', sentinel: 'bone', gargoyle: 'bone', golem: 'bone', slime: 'ooze', wisp: 'ooze', mummy: 'cloth', priest: 'cloth' };
+const KIND = { bone: 'bone', prop: 'plain', hero: 'plain', weapon: 'plain', skeleton: 'bone', archer: 'bone', sentinel: 'bone', gargoyle: 'bone', golem: 'bone', slime: 'ooze', wisp: 'ooze', mummy: 'cloth', priest: 'cloth' };
 export const REALISM = { on: true }; // flip off to see the original flat sprites
 const baseCache = new Map(); // shaded sprite, before wounds: new wound levels only redo the cheap part
 const real = (pc, key, sprite, wound) => {

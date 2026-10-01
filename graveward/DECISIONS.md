@@ -92,3 +92,12 @@ Not done: online multiplayer, damage numbers.
 - Options > LOOK WITHOUT MOUSE CAPTURE turns it off. The banner says when the page blocks capture.
 - Laptop touchpads: many laptops switch the touchpad off while a key is held ("ignore touchpad while typing"). The browser then never receives mouse movement, so no code can fix looking with the touchpad while holding WASD. Arrow keys turn while walking (and are named in the tutorial and the first hint); a gamepad right stick or a USB mouse also avoids it.
 - Hands-free walking for touchpad laptops: F toggles auto-walk (S or pressing it again stops; it also stops on pause). After one tap the keys are free, so the touchpad works while walking. V does the same backwards (W cancels it). F3 opens an input test (mouse events, capture state, keys held) to prove what the browser receives. Both are rebindable (Controls page).
+
+## Look and feel pass (second round)
+- Soft contact shadows under creatures, heroes, props and chests: a dithered soft ellipse sprite. The renderer treats partial pixel alpha (1-249) as ordered-dither coverage, so soft things stay pixelated. Cobwebs use the same trick (see-through).
+- Props, chests, traps, statues and the shop stand go through the same `realize()` shading as creatures (`bone` kind adds pitting/age; `plain` adds nothing extra). `flesh` gets wet highlights and veins, `cloth` (mummy, priest) gets a woven texture and stains.
+- `sprites_real.js` is split in two: `shadeBase()` (slow, cached per frame) and `woundify()` (cheap), so a monster crossing an HP threshold costs about 0.6 ms instead of 10+ ms.
+- Procedural wall dirt (`map.computeGrime`): damp streaks and moss per wall face, from a hash (never the gameplay RNG). Wall blood drips wander and have a wet edge.
+- Torch embers float up from wall torches near a camera. Health bar has a pale damage trail and pulses under 30%.
+- The skeleton (body, ribs, spine, pelvis, knees, skull with teeth) and the hero (mail, helm, boots, cape in player colour) were redrawn; the first-person sword has a bevel, fuller, nicks, rust and a wrapped grip.
+- Slow machines: if the frame rate stays under 40 for 4 s in a match the glow pass switches itself off (not saved).

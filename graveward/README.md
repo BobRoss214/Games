@@ -4,6 +4,9 @@ A first-person, pixelated, bloody dungeon crawler for **1 to 4 local players**, 
 
 It is inspired by the structure of *Crawl* (Powerhoof), translated into a Doom-style first-person view. Every sprite, texture, sound and music track is generated in code. There are no asset files and no dependencies.
 
+## Look
+- Options: DARKNESS (how dark the dungeon is), GLOW (bloom), GORE. Press F3 in a match for an input test. Tap F / V to auto-walk forward / backward (handy on laptop touchpads).
+
 ## Run it
 
 No install and no build step.
