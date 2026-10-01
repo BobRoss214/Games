@@ -427,9 +427,10 @@ export class UI {
       if (s === 'controls') { this.drawControls(ctx, W, H, t); return; }
       if (s === 'howto') { this.drawHowTo(ctx, W, H, t); return; }
       if (!this.pauseMenu) this.buildPause();
-      panel(ctx, W / 2 - 80, H / 2 - 50, 160, 100, C.bg);
-      drawText(ctx, 'PAUSED', W / 2, H / 2 - 42, C.gold, 2, { align: 'center' });
-      this.pauseMenu.draw(ctx, W / 2, H / 2 - 18, t, { lineH: 15, width: 140 });
+      const ph = 44 + this.pauseMenu.items.length * 15, pt = Math.round(H / 2 - ph / 2); // box grows with the menu (the tutorial adds an item)
+      panel(ctx, W / 2 - 80, pt, 160, ph, C.bg);
+      drawText(ctx, 'PAUSED', W / 2, pt + 8, C.gold, 2, { align: 'center' });
+      this.pauseMenu.draw(ctx, W / 2, pt + 32, t, { lineH: 15, width: 140 });
     }
   }
 

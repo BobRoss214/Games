@@ -379,7 +379,9 @@ export function monsterControl(w, a, intent, dt) {
   a.room = (w.roomAt(a.x, a.y) || { id: -1 }).id;
   // release
   if (a.ctl === 'player' && a.player && a.type === 'monster') {
-    if (intent.interactHeld) { a.holdInteract = (a.holdInteract || 0) + dt; if (a.holdInteract > 0.9) { w.match.releaseMonster(a); a.holdInteract = 0; } } else a.holdInteract = 0;
+    // the key that possessed this body may still be down: only count a hold that started after it was released once
+    if (!intent.interactHeld) a.holdArmed = true;
+    if (intent.interactHeld && a.holdArmed) { a.holdInteract = (a.holdInteract || 0) + dt; if (a.holdInteract > 0.9) { w.match.releaseMonster(a); a.holdInteract = 0; } } else a.holdInteract = 0;
   }
   w.unstick(a);
   // separation

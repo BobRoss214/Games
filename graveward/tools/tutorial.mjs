@@ -56,6 +56,16 @@ function act(step) {
   b2.hp = 1; b2.dead = false; m2.onActorDeath(m2.world, b2, null, {});
   ok(!b2.dead && b2.hp > 1, 'learner cannot die');
 }
+// holding the interact key after possessing must not drop the player back out of the monster (the old step-20 loop)
+{
+  const m3 = new Match({ seed, headless: true, players: [{ human: true, godId: 'ossuar' }, { human: false }] });
+  const p3 = m3.players[0]; let K = emptyIntent(); p3.pollIntent = () => K; m3.startTutorial();
+  const t3 = m3.tut; while (t3.step.id !== 'possess') t3.skip();
+  const pe = t3.spec.rooms[6].pentagrams[0]; p3.body.x = pe.x; p3.body.y = pe.y;
+  for (let i = 0; i < 60 * 5; i++) { K = emptyIntent(); K.interact = i === 0; K.interactHeld = true; m3.update(DT); }
+  ok(t3.step && t3.step.id === 'attack', 'holding E after possessing moves on to the attack step (on ' + (t3.step && t3.step.id) + ')');
+  ok(p3.body.type === 'monster', 'still a monster after holding E (is ' + p3.body.type + ')');
+}
 let guardTested = false, ticks = 0, lastId = null, idT = 0;
 while (!t.done && ticks < 60 * 60 * 6) {
   const step = t.step;
