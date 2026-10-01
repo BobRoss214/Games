@@ -155,16 +155,21 @@ export function paintBrute(tier, p) {
   const pc = new PC(64, 72), g = new PC(60, 68);
   const bob = p.bob, cx = 30 + p.lean * 0.5;
   const pal = tier >= 2 ? pal4('#4a3a2a', '#8a7454', '#c8b68c', '#f0e0b0') : BONE;
-  for (const s of [-1, 1]) { const sw = s < 0 ? p.ls : -p.ls; g.limb(cx + s * 6, 46 + bob, cx + s * 8 + sw * 4, 66 - Math.max(0, sw) * 3, 6, pal); g.rect(cx + s * 8 + sw * 4 - 4, 65 - Math.max(0, sw) * 3, 9, 3, pal[0]); }
+  for (const s of [-1, 1]) { const sw = s < 0 ? p.ls : -p.ls; g.limb(cx + s * 6, 46 + bob, cx + s * 7 + sw * 2, 56 - Math.max(0, sw) * 1.5, 6, pal); g.limb(cx + s * 7 + sw * 2, 56 - Math.max(0, sw) * 1.5, cx + s * 8 + sw * 4, 66 - Math.max(0, sw) * 3, 5, pal); g.disc(cx + s * 7 + sw * 2, 56 - Math.max(0, sw) * 1.5, 3.2, pal[3]); g.rect(cx + s * 8 + sw * 4 - 4, 65 - Math.max(0, sw) * 3, 9, 3, pal[0]); }
   g.sell(cx, 32 + bob, 15, 15, pal); // hulking torso
-  for (let i = 0; i < 4; i++) { g.line(cx - 12, 24 + bob + i * 4, cx + 12, 24 + bob + i * 4 + 1, DARK, 1); } // rib gaps
-  g.line(cx, 18 + bob, cx, 46 + bob, pal[0], 2);
+  g.ellipse(cx, 31 + bob, 10.5, 11.5, DARK); // hollow chest
+  for (let i = 0; i < 5; i++) { // thick curved ribs meeting at the sternum
+    const y = 23.5 + bob + i * 3.9, w = 11.4 - Math.abs(i - 1.2) * 1.3;
+    for (const sd of [-1, 1]) { g.line(cx + sd * 2, y, cx + sd * w, y + 2, sd < 0 ? pal[2] : pal[1], 2.1); g.set(cx + sd * (w - 1), y + 0.5, pal[3]); }
+  }
+  g.line(cx, 20 + bob, cx, 46 + bob, pal[1], 2.4); for (let i = 0; i < 12; i++) g.set(cx, 20 + bob + i * 2.2, i & 1 ? pal[3] : pal[0]); // spine
+  g.line(cx - 12, 19 + bob, cx - 2, 21 + bob, pal[3], 2); g.line(cx + 12, 19 + bob, cx + 2, 21 + bob, pal[2], 2); // collar bones
+  g.sell(cx, 47 + bob, 9, 4, pal); g.tri(cx - 10, 44 + bob, cx - 3, 46 + bob, cx - 5, 51 + bob, pal[2]); g.tri(cx + 10, 44 + bob, cx + 3, 46 + bob, cx + 5, 51 + bob, pal[1]); // pelvis
   if (tier >= 2) { g.ellipse(cx, 32 + bob, 6, 8, DARK); g.disc(cx, 32 + bob, 4, GLOW('#ff7020')); g.disc(cx, 32 + bob, 2, GLOW('#ffd060')); }
   // shoulder skulls
-  for (const s of [-1, 1]) { g.sell(cx + s * 17, 20 + bob, 8, 7, pal); g.disc(cx + s * 17 - 2, 19 + bob, 1.8, DARK); g.disc(cx + s * 17 + 2, 19 + bob, 1.8, DARK); if (tier >= 1) g.tri(cx + s * 22, 17 + bob, cx + s * 27, 9 + bob, cx + s * 20, 22 + bob, pal[3]); }
+  for (const s of [-1, 1]) { g.sell(cx + s * 17, 20 + bob, 8, 7, pal); skull(g, cx + s * 17, 20 + bob, 5, { pal, eye: GLOW('#ff5020') }); if (tier >= 1) g.tri(cx + s * 22, 17 + bob, cx + s * 27, 9 + bob, cx + s * 20, 22 + bob, pal[3]); }
   // head
-  g.sell(cx, 14 + bob, 7, 6.5, pal); g.disc(cx - 3, 13 + bob, 2, DARK); g.disc(cx + 3, 13 + bob, 2, DARK); g.set(cx - 3, 13 + bob, GLOW('#ff5020')); g.set(cx + 3, 13 + bob, GLOW('#ff5020'));
-  g.rect(cx - 4, 18 + bob, 9, 2, DARK);
+  skull(g, cx, 14 + bob, 7, { pal, eye: GLOW('#ff5020'), big: true });
   if (tier >= 1) { g.tri(cx - 6, 10 + bob, cx - 10, 1 + bob, cx - 3, 9 + bob, pal[3]); g.tri(cx + 6, 10 + bob, cx + 10, 1 + bob, cx + 3, 9 + bob, pal[3]); }
   // arms with femur club
   const raise = p.raise > 0.5, lunge = p.lunge;
