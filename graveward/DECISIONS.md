@@ -73,3 +73,8 @@ Not done: online multiplayer, damage numbers.
 * Now mouse movement waits in `mouseDX` until a step uses it (capped per step so a stall cannot whip the camera), and each device source latches that frame's presses/releases at the end of every frame. A press is consumed exactly once even when a frame runs several steps.
 * Paused / in menus: pending input is cleared so a menu key cannot fire in the game on resume.
 * Regression tests: `tools/e2e-look.mjs` (fast-monitor emulation).
+
+## Darker, more realistic look (stages 1-2)
+- `setDarkness(d)` in `renderer.js` scales ambient light, contrast curve, fog, lantern power and vignette together. 0 = the old look, 1 = default, 1.6 max. It is the playability safety valve: Options > DARKNESS.
+- Textures are still authored at 64x64 in code, then `realism()` in `textures.js` upscales to 128x128 and adds lit relief, ambient occlusion, mottling, grain, grime and a desaturated/cool-shadow/warm-light grade. Cost: ~200 ms extra at startup, no per-frame cost (60 fps unchanged).
+- Output stays pixelated: internal resolution and the Bayer dither are untouched.

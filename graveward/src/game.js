@@ -1,7 +1,7 @@
 // Game shell: owns the canvas, settings, input, audio, fx, UI and the current match. Runs the fixed-step loop.
 import { RNG, clamp, dist, now } from './util.js';
 import { Match } from './match.js';
-import { View, renderView, buildQuantTable } from './renderer.js';
+import { View, renderView, buildQuantTable, setDarkness } from './renderer.js';
 import { buildTextures } from './textures.js';
 import * as S from './sprites.js';
 import { makeCamera, collectSprites, updateLights } from './scene.js';
@@ -21,7 +21,7 @@ const DT = 1 / 60;
 export class Game {
   constructor(canvas, params) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false }); this.params = params || new URLSearchParams();
-    this.settings = this.loadSettings();
+    this.settings = this.loadSettings(); setDarkness(this.settings.darkness);
     this.input = new Input(this.settings); this.input.attach(canvas);
     this.sound = new Sound(this.settings);
     this.fx = new FX(this.settings);
@@ -84,6 +84,7 @@ export class Game {
     return pn ? kb + ' / ' + pn : kb;
   }
 
+  applyDarkness() { setDarkness(this.settings.darkness); }
   saveSettings() { try { const o = Object.assign({}, this.settings); localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* storage unavailable */ } }
   applyQuant() { buildQuantTable(14, this.settings.dither); }
   applyResolution(first) {

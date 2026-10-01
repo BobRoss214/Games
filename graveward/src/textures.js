@@ -1,7 +1,9 @@
 // Procedural 64x64 pixel textures. Everything is generated in code; no image files.
 import { RNG, hex, rgb, cr, cg, cb, mix, scaleColor, clamp } from './util.js';
 
-export const TEX = 64;
+export const TEX = 64;           // authoring size: every texture is hand-built on a 64x64 canvas
+export const TW = 128;           // size actually used by the renderer: the realism pass below upscales and adds detail
+export const TWM = TW - 1, TSH = 3; // TSH: blood masks are 16x16, so one mask cell = 2^TSH texels
 const M = TEX - 1;
 
 // ---------- noise helpers (tileable value noise) ----------
@@ -403,6 +405,78 @@ export const FLOOR = { flag: 30, flagCrack: 31, sand: 32, water: 33, goldTile: 3
 export const CEIL = { stone: 50, bone: 51, sand: 52, drip: 53, royal: 54, flesh: 55, dark: 56 };
 export const DECAL = { pentagram: 70, pentagramUsed: 71, portal: 72, trapdoor: 73, spikePlate: 74, sigilRed: 75, sigilBlue: 76, sigilGold: 77 };
 
+// ---------- realism pass: 64x64 art -> 128x128 with baked relief, grime and a muted grade ----------
+let FIELDS = null;
+function fields() { // shared tileable noise fields, sampled with a per-texture offset (cheap)
+  if (FIELDS) return FIELDS;
+  const mk = (seed, base, oct) => { const f = new Float32Array(TW * TW); for (let y = 0; y < TW; y++) for (let x = 0; x < TW; x++) f[y * TW + x] = fbm(x * 0.5, y * 0.5, seed, oct, base); return f; };
+  const grain = new Float32Array(TW * TW); { const r = new RNG(777); for (let i = 0; i < grain.length; i++) grain[i] = r.next(); }
+  const streak = new Float32Array(TW); { const r = new RNG(991); let v = 0.5; for (let i = 0; i < TW; i++) { v = v * 0.6 + r.next() * 0.4; streak[i] = v; } }
+  FIELDS = { mottle: mk(31, 6, 3), mottle2: mk(57, 3, 2), fine: mk(83, 16, 2), grain, streak };
+  return FIELDS;
+}
+const KIND = (id) => (id >= 70 && id < 78 ? 'decal' : id >= 50 && id < 60 ? 'ceil' : id >= 30 && id < 50 ? (id === 33 ? 'water' : 'floor') : [11, 12, 13, 16, 18].includes(id) ? 'special' : 'wall');
+function realism(tex, id) {
+  const kind = KIND(id), S = TW, N = S * S, src = tex.data, SW = tex.w;
+  const out = new Uint32Array(N);
+  if (kind === 'decal') { // keep decals crisp: nearest-neighbour, transparency preserved
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) out[y * S + x] = src[((y * SW / S) | 0) * SW + ((x * SW / S) | 0)];
+    return { w: S, h: S, data: out };
+  }
+  const F = fields(), R = new RNG(id * 7919 + 13);
+  const ox = R.int(0, S - 1), oy = R.int(0, S - 1), sOff = R.int(0, S - 1);
+  // 1) bilinear upscale (tileable)
+  const cr_ = new Float32Array(N), cg_ = new Float32Array(N), cb_ = new Float32Array(N), H = new Float32Array(N);
+  for (let y = 0; y < S; y++) {
+    const fy = (y + 0.5) * SW / S - 0.5, y0 = Math.floor(fy), ty = fy - y0;
+    for (let x = 0; x < S; x++) {
+      const fx = (x + 0.5) * SW / S - 0.5, x0 = Math.floor(fx), tx = fx - x0;
+      const a = src[(((y0 % SW) + SW) % SW) * SW + (((x0 % SW) + SW) % SW)], b = src[(((y0 % SW) + SW) % SW) * SW + ((((x0 + 1) % SW) + SW) % SW)];
+      const c = src[((((y0 + 1) % SW) + SW) % SW) * SW + (((x0 % SW) + SW) % SW)], d = src[((((y0 + 1) % SW) + SW) % SW) * SW + ((((x0 + 1) % SW) + SW) % SW)];
+      const lerp2 = (sh) => { const A = (a >> sh) & 255, B = (b >> sh) & 255, C = (c >> sh) & 255, D = (d >> sh) & 255; return (A + (B - A) * tx) * (1 - ty) + (C + (D - C) * tx) * ty; };
+      const i = y * S + x; cr_[i] = lerp2(0); cg_[i] = lerp2(8); cb_[i] = lerp2(16);
+    }
+  }
+  // 2) height estimate: brightness plus fine noise; crisp mortar / carved edges come from the source brightness
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = y * S + x, ni = ((y + oy) & TWM) * S + ((x + ox) & TWM);
+    H[i] = (cr_[i] * 0.3 + cg_[i] * 0.59 + cb_[i] * 0.11) / 255 * 0.78 + (F.fine[ni] - 0.5) * 0.3 + (F.grain[ni] - 0.5) * 0.1;
+  }
+  // 3) blurred height (box, separable r=3) for crevice darkening
+  const T = new Float32Array(N), B = new Float32Array(N), r = 3;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { let a = 0; for (let k = -r; k <= r; k++) a += H[y * S + ((x + k) & TWM)]; T[y * S + x] = a / (2 * r + 1); }
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { let a = 0; for (let k = -r; k <= r; k++) a += T[((y + k) & TWM) * S + x]; B[y * S + x] = a / (2 * r + 1); }
+  const k = kind === 'wall' ? 1.5 : kind === 'floor' ? 1.1 : kind === 'ceil' ? 0.8 : kind === 'water' ? 0.35 : 0.8;
+  const grimeAmt = kind === 'wall' ? 1 : kind === 'ceil' ? 0.7 : kind === 'special' ? 0.35 : kind === 'water' ? 0 : 0.5;
+  for (let y = 0; y < S; y++) {
+    const fy = y / S;
+    for (let x = 0; x < S; x++) {
+      const i = y * S + x, ni = ((y + oy) & TWM) * S + ((x + ox) & TWM), n2 = ((y + sOff) & TWM) * S + ((x * 3 + ox) & TWM);
+      let rr = cr_[i], gg = cg_[i], bb = cb_[i];
+      const relief = 1 + (H[((y - 1) & TWM) * S + ((x - 1) & TWM)] - H[((y + 1) & TWM) * S + ((x + 1) & TWM)]) * k;           // light from the upper left
+      const ao = 1 - Math.min(0.42, Math.max(0, (B[i] - H[i]) * 1.7));                                                         // crevices and mortar sink into shadow
+      const mott = 1 + (F.mottle[ni] - 0.5) * 0.4, grain = 1 + (F.grain[ni] - 0.5) * 0.16;
+      let grime = 1;
+      if (grimeAmt > 0) {
+        if (kind === 'wall' || kind === 'special') {
+          grime *= 1 - 0.3 * grimeAmt * Math.pow(Math.max(0, (fy - 0.55) / 0.45), 1.5);                                       // dirt gathers toward the floor
+          grime *= 1 - 0.18 * grimeAmt * Math.pow(Math.max(0, (0.14 - fy) / 0.14), 1.3);                                      // soot under the ceiling
+          const s = F.streak[(x + sOff) & TWM]; if (s > 0.62) grime *= 1 - Math.min(0.4, (s - 0.62) * 1.6) * grimeAmt * (1 - fy * 0.55); // drip streaks
+        } else grime *= 1 - 0.1 * grimeAmt * F.mottle2[n2];
+        const st = F.mottle2[ni]; if (st > 0.66) { const a = Math.min(1, (st - 0.66) * 4) * 0.35 * grimeAmt; rr = rr * (1 - a) + 70 * a; gg = gg * (1 - a) + 38 * a; bb = bb * (1 - a) + 30 * a; } // old stains
+      }
+      let f = relief * ao * mott * grain * grime; f = Math.max(0.55, Math.min(1.45, f));
+      rr *= f; gg *= f; bb *= f;
+      // muted grade: desaturate a little, cool the shadows, warm the lights
+      const l = rr * 0.3 + gg * 0.59 + bb * 0.11, ds = kind === 'special' ? 0.08 : 0.22;
+      rr += (l - rr) * ds; gg += (l - gg) * ds; bb += (l - bb) * ds;
+      if (l < 70) { const t = 1 - l / 70; rr *= 1 - 0.1 * t; bb *= 1 + 0.06 * t; } else { const t = Math.min(1, (l - 140) / 115); rr *= 1 + 0.05 * t; bb *= 1 - 0.05 * t; }
+      out[i] = (0xff000000 | (Math.min(255, Math.max(0, bb)) << 16) | (Math.min(255, Math.max(0, gg)) << 8) | Math.min(255, Math.max(0, rr))) >>> 0;
+    }
+  }
+  return { w: S, h: S, data: out };
+}
+
 export function buildTextures() {
   const t = new Array(90).fill(null);
   const set = (id, canvas) => { t[id] = canvas.finish(); };
@@ -463,6 +537,7 @@ export function buildTextures() {
     const tx = t[id]; if (!tx) continue;
     for (let i = 0; i < tx.data.length; i++) if (tx.data[i] === 0 || (tx.data[i] & 0xffffff) === 0) tx.data[i] = 0;
   }
+  for (let id = 0; id < t.length; id++) if (t[id]) t[id] = realism(t[id], id); // 64x64 art -> 128x128 with detail
   return t;
 }
 

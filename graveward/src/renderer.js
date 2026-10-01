@@ -1,6 +1,7 @@
 // Software raycaster: textured walls/floors/ceilings, baked + flickering light, billboard sprites,
 // ordered-dither palette quantization. Renders into a per-viewport low-res ImageData buffer.
 import { clamp } from './util.js';
+import { TW, TWM, TSH } from './textures.js';
 
 export const LS = 4; // lightmap subdivisions per cell
 
@@ -34,9 +35,14 @@ export class View {
     this.wBot = new Int16Array(w);
     this.vigX = new Uint16Array(w);
     this.vigY = new Uint16Array(h);
-    for (let x = 0; x < w; x++) { const u = (x / (w - 1)) * 2 - 1; this.vigX[x] = (256 * (1 - 0.34 * u * u * u * u - 0.18 * u * u)) | 0; }
-    for (let y = 0; y < h; y++) { const u = (y / (h - 1)) * 2 - 1; this.vigY[y] = (256 * (1 - 0.30 * u * u * u * u - 0.16 * u * u)) | 0; }
+    this.rebuildVig(1);
     this.spriteList = [];
+  }
+  // corner darkening; k > 1 makes the edges of the screen fall off harder (used by the Darkness setting)
+  rebuildVig(k) {
+    this.vigK = k; const w = this.w, h = this.h;
+    for (let x = 0; x < w; x++) { const u = (x / (w - 1)) * 2 - 1; this.vigX[x] = Math.max(0, 256 * (1 - k * (0.34 * u * u * u * u + 0.18 * u * u))) | 0; }
+    for (let y = 0; y < h; y++) { const u = (y / (h - 1)) * 2 - 1; this.vigY[y] = Math.max(0, 256 * (1 - k * (0.30 * u * u * u * u + 0.16 * u * u))) | 0; }
   }
 }
 
@@ -116,7 +122,16 @@ buildShadeTab(3.2);
 
 // contrast curve: deepens shadows so light pools feel real
 const GAM = new Float32Array(2048);
-for (let i = 0; i < 2048; i++) GAM[i] = Math.pow(i / 512, 1.22);
+// Darkness (0 = the original look, 1 = default, 1.5 = very dark): one number scales ambient light, the contrast curve,
+// fog, lantern power and the corner vignette together, so the dark stays moody but torches still pop.
+let DARK = 0, AMB_MUL = 1, VL_MUL = 1, FOG_MUL = 1, FOGCOL_MUL = 1, VIG_K = 1;
+export function setDarkness(d) {
+  d = Math.max(0, Math.min(1.6, +d || 0)); if (d === DARK && GAM[1024] > 0) return; DARK = d;
+  AMB_MUL = Math.pow(0.62, d); VL_MUL = 1 - 0.12 * d; FOG_MUL = 1 + 0.5 * d; FOGCOL_MUL = Math.pow(0.7, d); VIG_K = 1 + 0.55 * d;
+  const e = 1.22 + 0.38 * d; for (let i = 0; i < 2048; i++) GAM[i] = Math.pow(i / 512, e);
+}
+export function darkness() { return DARK; }
+setDarkness(1);
 const gam = (v) => { const i = (v * 512) | 0; return i >= 2047 ? GAM[2047] : i < 0 ? 0 : GAM[i]; };
 // vertical ambient occlusion along a wall texture (darker at the floor/ceiling joins)
 const AOV = new Uint16Array(64);
@@ -141,11 +156,13 @@ export function renderView(view, scene, cam, time) {
   const mw = map.w, mh = map.h, wallArr = map.wall, floorArr = map.floor, ceilArr = map.ceil, decalArr = map.decal;
   const doorIdx = map.doorIdx, doors = map.doors;
   const light = map.light, lw = mw * LS;
-  const amb = cam.ghost ? [theme.ambient[0] + 0.14, theme.ambient[1] + 0.2, theme.ambient[2] + 0.34] : theme.ambient;
+  const ghostBoost = 1 - 0.3 * Math.min(DARK, 1); // ghosts keep most of their spectral sight in the dark
+  const amb = cam.ghost ? [theme.ambient[0] * AMB_MUL + 0.14 * ghostBoost, theme.ambient[1] * AMB_MUL + 0.2 * ghostBoost, theme.ambient[2] * AMB_MUL + 0.34 * ghostBoost] : [theme.ambient[0] * AMB_MUL, theme.ambient[1] * AMB_MUL, theme.ambient[2] * AMB_MUL];
   const ambR = amb[0], ambG = amb[1], ambB = amb[2];
-  const fogR = theme.fog[0], fogG = theme.fog[1], fogB = theme.fog[2], fogD = theme.fogDensity;
-  const vlR = cam.lightR * cam.lightPower, vlG = cam.lightG * cam.lightPower, vlB = cam.lightB * cam.lightPower;
-  const vlRadius = cam.lightRadius;
+  const fogR = theme.fog[0] * FOGCOL_MUL, fogG = theme.fog[1] * FOGCOL_MUL, fogB = theme.fog[2] * FOGCOL_MUL, fogD = theme.fogDensity * FOG_MUL;
+  const vlR = cam.lightR * cam.lightPower * VL_MUL, vlG = cam.lightG * cam.lightPower * VL_MUL, vlB = cam.lightB * cam.lightPower * VL_MUL;
+  const vlRadius = cam.lightRadius * (1 - 0.08 * DARK);
+  if (view.vigK !== VIG_K) view.rebuildVig(VIG_K);
   const dyn = cam.dynamicGlow || 0;
   const Q = QTAB;
   const vigX = view.vigX, vigY = view.vigY;
@@ -209,9 +226,9 @@ export function renderView(view, scene, cam, time) {
       let wx = side === 0 ? posY + perp * rdy : posX + perp * rdx;
       wx -= Math.floor(wx);
       const tex = textures[hit];
-      let tx = (wx * 64) | 0;
-      if (side === 0 && rdx > 0) tx = 63 - tx;
-      if (side === 1 && rdy < 0) tx = 63 - tx;
+      let tx = (wx * TW) | 0;
+      if (side === 0 && rdx > 0) tx = TWM - tx;
+      if (side === 1 && rdy < 0) tx = TWM - tx;
       const tdata = tex.data;
       // light sample in front of face
       const hx = posX + perp * rdx - (side === 0 ? stepX * 0.03 : 0), hy = posY + perp * rdy - (side === 1 ? stepY * 0.03 : 0);
@@ -229,16 +246,16 @@ export function renderView(view, scene, cam, time) {
       const vx = vigX[x];
       const wallBloodMask = map.wallBlood ? map.wallBlood.get(hitCell * 4 + (side === 0 ? (stepX > 0 ? 0 : 1) : (stepY > 0 ? 2 : 3))) : null;
       const y0 = top < 0 ? 0 : top, y1 = bot > H ? H : bot;
-      const invLine = 64 / (bot - top || 1);
+      const invLine = TW / (bot - top || 1);
       let ty = (y0 - top) * invLine;
       for (let y = y0; y < y1; y++) {
-        const c = tdata[(ty | 0) * 64 + tx];
+        const c = tdata[(ty | 0) * TW + tx];
         let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
         if (wallBloodMask) {
-          const m = wallBloodMask[(((ty | 0) >> 2) << 4) + (tx >> 2)];
+          const m = wallBloodMask[(((ty | 0) >> TSH) << 4) + (tx >> TSH)];
           if (m) { const a = m / 255 * 0.85; r = r + (110 - r) * a; g = g + (10 - g) * a; b = b + (14 - b) * a; }
         }
-        const tq = ty | 0; const vg = (((vx * vigY[y]) >> 8) * AOV[tq > 63 ? 63 : tq]) >> 8;
+        const tq = ty | 0; const vg = (((vx * vigY[y]) >> 8) * AOV[tq >= TW ? 63 : tq >> 1]) >> 8;
         // ambient occlusion: darker toward ceiling & floor joins
         let R = ((r * lr) >> 8) + fr, G = ((g * lg) >> 8) + fgc, B = ((b * lb) >> 8) + fb;
         R = (R * vg) >> 8; G = (G * vg) >> 8; B = (B * vg) >> 8;
@@ -255,7 +272,7 @@ export function renderView(view, scene, cam, time) {
       const dbotFull = (horizon + camZ * dl) | 0;
       const dbot = (dbotFull - dOpen * (dbotFull - dtop)) | 0;
       const tex = textures[dTex];
-      let tx = (dWX * 64) | 0;
+      let tx = (dWX * TW) | 0;
       const tdata = tex.data;
       const hx = posX + dDist * rdx, hy = posY + dDist * rdy;
       let lsx = ((hx - (dSide === 0 ? stepX * 0.03 : 0)) * LS) | 0, lsy = ((hy - (dSide === 1 ? stepY * 0.03 : 0)) * LS) | 0;
@@ -264,10 +281,10 @@ export function renderView(view, scene, cam, time) {
       const vs = shadeAt(dDist), fog = Math.min(0.75, 1 - Math.exp(-dDist * fogD));
       const lr = (gam(ambR + light[lk] + vlR * vs) * (1 - fog) * 256) | 0, lg = (gam(ambG + light[lk + 1] + vlG * vs) * (1 - fog) * 256) | 0, lb = (gam(ambB + light[lk + 2] + vlB * vs) * (1 - fog) * 256) | 0;
       const y0 = Math.max(0, dtop), y1 = Math.min(H, dbot);
-      const invLine = 64 / (dbotFull - dtop || 1);
+      const invLine = TW / (dbotFull - dtop || 1);
       let ty = (y0 - dtop) * invLine;
       for (let y = y0; y < y1; y++) {
-        const c = tdata[(Math.min(63, ty | 0)) * 64 + tx];
+        const c = tdata[(Math.min(TWM, ty | 0)) * TW + tx];
         const bi = ((x & 3) | ((y & 3) << 2));
         let R = ((c & 255) * lr) >> 8, G = (((c >> 8) & 255) * lg) >> 8, B = (((c >> 16) & 255) * lb) >> 8;
         if (R > 255) R = 255; if (G > 255) G = 255; if (B > 255) B = 255;
@@ -306,15 +323,15 @@ export function renderView(view, scene, cam, time) {
       const tid = isFloor ? floorArr[ci] : ceilArr[ci];
       if (tid === 0) continue;
       const tex = textures[tid];
-      let u = ((fx - cx) * 64) | 0, v = ((fy - cy) * 64) | 0;
-      if (tid === waterId && isFloor) { u = (u + ((Math.sin(fy * 5 + time * 2.2) * 2.5) | 0)) & 63; v = (v + ((Math.cos(fx * 5 + time * 1.7) * 2.5) | 0)) & 63; }
-      let c = tex.data[v * 64 + u];
+      let u = ((fx - cx) * TW) | 0, v = ((fy - cy) * TW) | 0;
+      if (tid === waterId && isFloor) { u = (u + ((Math.sin(fy * 5 + time * 2.2) * 5) | 0)) & TWM; v = (v + ((Math.cos(fx * 5 + time * 1.7) * 5) | 0)) & TWM; }
+      let c = tex.data[v * TW + u];
       let r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
       let emissive = 0;
       if (isFloor) {
         const dc = decalArr[ci];
         if (dc) {
-          const dt = textures[dc].data[v * 64 + u];
+          const dt = textures[dc].data[v * TW + u];
           if (dt !== 0) {
             const pulse = 0.65 + 0.35 * Math.sin(time * 3 + ci);
             r = dt & 255; g = (dt >> 8) & 255; b = (dt >> 16) & 255;
@@ -323,7 +340,7 @@ export function renderView(view, scene, cam, time) {
         }
         const bi2 = map.bloodIdx[ci];
         if (bi2) {
-          const m = map.bloodMasks[bi2][((v >> 2) << 4) + (u >> 2)];
+          const m = map.bloodMasks[bi2][((v >> TSH) << 4) + (u >> TSH)];
           if (m) { const a = (m / 255) * 0.88; r = r + (120 - r) * a; g = g + (8 - g) * a; b = b + (14 - b) * a; }
         }
       }
@@ -376,7 +393,7 @@ function drawSprite(view, s, scene, cam, projScale, horizon, camZ, light, lw, am
   const W = view.w, H = view.h, buf = view.buf, zbuf = view.zbuf, doorZ = view.doorZ, doorBot = view.doorBot;
   const ty = s._ty, tx = s._tx;
   let sh = projScale * s.h / ty, sw = projScale * s.w / ty;
-  if (!s.frame && s.w <= 0.3 && s.h <= 0.3) { const cap = W * 0.045; if (sw > cap) sw = cap; if (sh > cap) sh = cap; }
+  if (!s.frame && s.w <= 0.3 && s.h <= 0.3) { const cap = W * 0.028; if (sw > cap) sw = cap; if (sh > cap) sh = cap; }
   const cxs = (W / 2) * (1 + tx / ty);
   const bottom = horizon + (camZ - s.z) * projScale / ty;
   const top = bottom - sh;

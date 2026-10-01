@@ -69,7 +69,7 @@ URL parameters: `?seed=123&players=3&gore=3&skill=hard&floors=6&pixel=fine&debug
 index.html  style.css  game.js        bootstrap
 src/
   util.js            seeded RNG, math, colour packing
-  textures.js        procedural 64x64 wall/floor/ceiling/decal textures
+  textures.js        procedural 64x64 textures, then a realism pass upscales them to 128x128 (relief, AO, grime, colour grade)
   pixart.js          tiny pixel-painting toolkit (ellipse, limb, outline...)
   sprites_mon.js     monsters, statues, hero, wisp  (3 evolution tiers each)
   sprites_misc.js    props, pickups, projectiles, bosses, first-person weapons
