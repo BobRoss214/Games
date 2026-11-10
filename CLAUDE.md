@@ -37,6 +37,10 @@ Read this at the start of every session. Update it when reality changes.
 - `graveward/src/`: `data.js` = all content as data (tune numbers here). `match.js` = game director. `tutorial.js` = scripted tutorial (map + steps). `world.js/combat.js/hero.js/ghost.js/boss.js/ai.js` = simulation (no DOM, runs in Node). `renderer.js/scene.js/hud.js/ui.js/fx.js/audio.js/input.js/game.js` = presentation. `sprites_real.js` (2x shading + HP wounds) and `sprites_gore.js` (gib sprites) sit on top of the hand-drawn sprites. Options has DARKNESS and GLOW (bloom).
 - `graveward/README.md` (player + dev guide) and `DECISIONS.md` (why things are the way they are).
 
+### Postroom (`postroom/`)
+- Not a game: a social media post scheduler (write once, preview per network, send or schedule, history). Plain HTML/CSS/JS, no deps. Run: `cd postroom && python3 -m http.server 8000`.
+- Demo mode only: nothing reaches the real networks. Real posting needs a server + each network's API keys; swap the `Publisher` object at the top of `postroom/app.js`. Never add a form that asks for a social media password (use the network's OAuth sign-in).
+
 ### Style
 - Folders lowercase; JS `camelCase`, `UPPER_SNAKE` constants, `const`/`let` only. Keep sim modules free of DOM/canvas/audio imports.
 - Gameplay randomness goes through the seeded RNG (`match.rng` or `grng`), never `Math.random` (visual FX may use it).
