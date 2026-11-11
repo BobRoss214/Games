@@ -15,6 +15,7 @@ Read this file first in a new session. It is the working memory of the build.
 - NOT STARTED (screens): block list, auto-delete dialogs, burn, "who leaked me" page, stats page, unsubscribe panel, quick jump. Then a last pass: add all new features to Help, "why?" links, tutorial where it fits, SECURITY.md, README.
 - LAST: the "own phone" provider (see the second half of this file).
 - Never tested: real Twilio, real BTCPay, Docker build, a real phone.
+- RENAME by the user (later than the notes below): the feature "made-up details" is now called "Random identifiers generator"; its values are "random identifiers". Internal names (`persona`, key `made-up-details`) stay. Where the notes below say "made-up details", read the new name.
 - Decisions told to the user: recovery key opens the export file; no web-link unsubscribe (only "turn off" and unsubscribe by email); refused counter = one number per alias; per-account domains NOT built (MAIL_DOMAINS is enough for one person); UI name "made-up details"; "identity" = group only.
 - Storage contracts in encrypted extras: alias `senders`, item/identity `username`, identity `colour`, `events`, `burned`.
 

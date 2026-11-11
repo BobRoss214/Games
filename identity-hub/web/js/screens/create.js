@@ -10,6 +10,7 @@ import { bareLayout } from '../ui/shell.js';
 import { toast } from '../ui/toast.js';
 import { prepareSignup, finishSignup, saveKeyForPasskey, isUnlocked } from '../lib/session.js';
 import { passkeysSupported, registerPasskey } from '../lib/webauthn.js';
+import { why } from '../ui/why.js';
 
 function steps(current) {
   const names = ['Make keys', 'Save recovery key', 'Add a passkey'];
@@ -127,6 +128,7 @@ export function createScreen({ scope }) {
       h('div', { class: 'stack stack-3' },
         h('h1', null, 'Save your recovery key'),
         h('p', { class: 'read' }, 'Write it down, or keep it in a password manager. You see it only this one time.'),
+        why('recovery-key'),
       ),
       h('div', { class: 'keycard' },
         h('p', { class: 'keycard-label' }, 'Recovery key'),
@@ -182,6 +184,7 @@ export function createScreen({ scope }) {
       h('div', { class: 'stack stack-3' },
         h('h1', null, 'Add a passkey'),
         h('p', { class: 'read' }, 'A passkey lets you sign in with your fingerprint, your face or your device PIN. It is faster than typing the recovery key. Keep the recovery key anyway.'),
+        why('passkey'),
       ),
       label.el,
       h('div', { class: 'stack stack-3' }, add, skip),
