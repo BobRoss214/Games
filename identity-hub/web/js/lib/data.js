@@ -108,6 +108,11 @@ export async function loadAll() {
   return results.filter((r) => r.status === 'rejected').map((r) => r.reason);
 }
 
+// Paid items renew after this many days (30 unless the server says a different value).
+export const renewDays = () => { const c = store.get('config'); return (c && c.renewDays) || 30; };
+// Days between "paused" and "released" for a number, or 0 if the server does not say.
+export const graceDays = () => { const c = store.get('config'); return (c && Number.isInteger(c.graceDays) && c.graceDays > 0) ? c.graceDays : 0; };
+
 // ---- label helpers ----
 export const mailboxName = (m) => (m ? (m.label || m.address || 'Inbox') : 'Inbox');
 export const phoneName = (p) => (p ? (p.label || p.number || 'Phone') : 'Phone');
@@ -208,10 +213,16 @@ export async function releaseNumber(id) {
   await loadNumbers();
 }
 
-export async function linkPhone({ number, label, via }) {
-  const res = await api.post('/api/phones', { number, enc: await encLabel({ label: label || '' }, 'phone'), via: { numberId: via.id, number: via.number } });
+// method: 'text' (a text with the code) or 'call' (a call that speaks the code).
+export async function linkPhone({ number, label, via, method = 'text' }) {
+  const res = await api.post('/api/phones', { number, method, enc: await encLabel({ label: label || '' }, 'phone'), via: { numberId: via.id, number: via.number } });
   await Promise.allSettled([loadPhones(), loadBalance()]);
   return res.phone;
+}
+// The same request for a phone that is not linked yet sends a new code. The label stays.
+export async function sendPhoneCode(phone, via, method = 'text') {
+  await api.post('/api/phones', { number: phone.number, method, via: { numberId: via.id, number: via.number } });
+  await loadBalance().catch(() => {});
 }
 export async function verifyPhone(id, code) {
   await api.post(`/api/phones/${id}/verify`, { code });

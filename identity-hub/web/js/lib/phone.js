@@ -12,7 +12,7 @@ export async function listTexts(numberId, { before, limit = 100 } = {}) {
   const res = await api.get(`/api/numbers/${numberId}/texts` + query({ before, limit }));
   const texts = await Promise.all((res.texts || []).map(async (t) => {
     const open = await openSealed(t.sealed, 'text');
-    return { id: t.id, direction: t.direction, at: t.at, seen: !!t.seen, peer: open ? String(open.peer || '') : '', body: open ? String(open.body || '') : '', broken: !open };
+    return { id: t.id, direction: t.direction, at: t.at, seen: !!t.seen, status: t.status || null, peer: open ? String(open.peer || '') : '', body: open ? String(open.body || '') : '', broken: !open };
   }));
   return { texts, more: !!res.more };
 }

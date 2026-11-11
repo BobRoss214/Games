@@ -9,6 +9,7 @@ import { allAddresses } from '../lib/data.js';
 import { sendMail, attachmentLimit, personText } from '../lib/mail.js';
 import { openNewInbox } from '../ui/identities.js';
 import { bus } from '../lib/store.js';
+import { htmlToText } from '../lib/sanitize.js';
 
 const quote = (text) => String(text || '').split('\n').map((l) => '> ' + l).join('\n');
 
@@ -46,7 +47,9 @@ export function openCompose({ mailboxId = '', reply = null } = {}) {
     }
     const subj = meta.subject || '';
     subjectValue = /^re:/i.test(subj) ? subj : `Re: ${subj}`;
-    bodyValue = `\n\nOn ${fullTime(reply.at)}, ${personText(meta.from) || 'the sender'} wrote:\n${quote(reply.body.text || '')}`;
+    // A message with HTML only has no text part. The text is made from the HTML here.
+    const original = reply.body.text || (reply.body.html ? htmlToText(reply.body.html) : '');
+    bodyValue = `\n\nOn ${fullTime(reply.at)}, ${personText(meta.from) || 'the sender'} wrote:\n${quote(original)}`;
     inReplyTo = reply.body.messageId || null;
     references = [...(reply.body.references || []), reply.body.messageId].filter(Boolean).slice(-20);
   }

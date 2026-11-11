@@ -34,8 +34,10 @@ async function decodeMessage(m) {
   };
 }
 
-export async function listMessages({ mailboxId, direction, before, beforeId, limit = 50 } = {}) {
-  const res = await api.get('/api/messages' + query({ mailboxId, direction, before, beforeId, limit }));
+// addressIds: optional list of address ids (aliases, inbox addresses). Only mail of these addresses is listed.
+export async function listMessages({ mailboxId, addressIds, direction, before, beforeId, limit = 50 } = {}) {
+  const ids = Array.isArray(addressIds) && addressIds.length ? addressIds.slice(0, 50).join(',') : undefined;
+  const res = await api.get('/api/messages' + query({ mailboxId, addressIds: ids, direction, before, beforeId, limit }));
   const messages = await Promise.all((res.messages || []).map(decodeMessage));
   return { messages, more: !!res.more };
 }
@@ -66,6 +68,15 @@ export async function setSeen(id, seen) {
 export async function deleteMessage(id) {
   await api.del(`/api/messages/${id}`);
   contentKeys.delete(id);
+}
+
+// One-time hand-over from another screen: "open Mail and show only this address".
+let pendingFilter = null; // { mailboxId, addressId }
+export function setMailFilter(filter) { pendingFilter = filter; }
+export function takeMailFilter(mailboxId) {
+  const f = pendingFilter && pendingFilter.mailboxId === mailboxId ? pendingFilter.addressId : '';
+  pendingFilter = null;
+  return f;
 }
 
 export const snippetOf = (text) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
