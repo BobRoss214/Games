@@ -51,16 +51,18 @@ export async function deleteCall(id) {
 // Groups texts by the other party. Returns threads, newest first.
 export function threadsOf(texts) {
   const map = new Map();
-  for (const t of texts) {
+  // The server gives the newest text first. Go through them from old to new, so that
+  // texts of the same second keep the order in which they arrived.
+  for (const t of [...texts].reverse()) {
     const key = t.peer || 'Unknown';
     if (!map.has(key)) map.set(key, { peer: key, texts: [], unread: 0, last: null });
     const th = map.get(key);
     th.texts.push(t);
     if (t.direction === 'in' && !t.seen) th.unread++;
-    if (!th.last || t.at > th.last.at) th.last = t;
+    th.last = t;
   }
   const threads = [...map.values()];
-  for (const th of threads) th.texts.sort((a, b) => a.at - b.at);
-  threads.sort((a, b) => b.last.at - a.last.at);
+  const order = new Map(texts.map((t, i) => [t.id, i]));
+  threads.sort((a, b) => order.get(a.last.id) - order.get(b.last.id));
   return threads;
 }

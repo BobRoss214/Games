@@ -108,7 +108,8 @@ export function smtpTalk(app, lines) {
 }
 
 // Upgrades a plain SMTP connection with STARTTLS and returns the certificate that the server shows.
-export function smtpCertificate(app) {
+// `tlsOptions` are extra options for the TLS client, for example a highest protocol version.
+export function smtpCertificate(app, tlsOptions = {}) {
   return new Promise((resolve, reject) => {
     const socket = connect(app.services.mail.smtpPort, '127.0.0.1');
     let step = 0;
@@ -132,13 +133,14 @@ export function smtpCertificate(app) {
       if (step === 2) {
         step = 3;
         socket.removeAllListeners('data');
-        const secure = tlsConnect({ socket, rejectUnauthorized: false }, () => {
+        const secure = tlsConnect({ socket, rejectUnauthorized: false, ...tlsOptions }, () => {
           const cert = secure.getPeerCertificate();
           const protocol = secure.getProtocol();
           secure.destroy();
           resolve({ subject: cert.subject, fingerprint256: cert.fingerprint256, protocol });
         });
         secure.on('error', reject);
+        secure.on('close', () => reject(new Error('the TLS connection was closed')));
       }
     });
   });

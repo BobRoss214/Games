@@ -4,7 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { connect } from 'node:net';
 import { startTestApp, newAccount, unb64u } from './helpers.js';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { X509Certificate, createPrivateKey } from 'node:crypto';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newMailbox, newAlias, listMessages, smtpSend, openMessage, databaseHas, smtpTalk, smtpCertificate } from './mail-helpers.js';
@@ -281,45 +282,210 @@ test('smtp: suspended mailbox answers 450 and comes back after renewal', async (
   assert.equal((await listMessages(a)).messages.length, 2);
 });
 
-test('smtp: STARTTLS works with the default certificate of the library', async () => {
-  const a = await newAccount(app, { credits: 100 });
-  const { address } = await newMailbox(a);
-  const info = await smtpSend(app, { to: address, subject: 'Over TLS', text: 'encrypted on the way' }, { requireTLS: true, tls: { rejectUnauthorized: false } });
-  assert.deepEqual(info.accepted, [address]);
-  const list = (await listMessages(a)).messages;
-  assert.equal((await openMessage(a, list[0].id)).meta.subject, 'Over TLS');
-  assert.match((await smtpCertificate(app)).protocol, /^TLSv1\.[23]$/);
-});
+// ---- TLS on the mail port ----
 
-// The certificate for this test is made with the openssl program. Without it the test is skipped.
-function makeCertificate(dir) {
+const OVER_TLS = { requireTLS: true, tls: { rejectUnauthorized: false } };
+// A client that offers nothing newer than TLS 1.1 (the security level 0 is needed to offer it at all).
+const OLD_TLS = { minVersion: 'TLSv1', maxVersion: 'TLSv1.1', ciphers: 'DEFAULT@SECLEVEL=0' };
+const certificateIn = (file) => new X509Certificate(readFileSync(file));
+
+// Makes a key and a certificate with the openssl program. Returns false if the program is not there.
+function makeCertificate(dir, commonName) {
   try {
     execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '2',
-      '-subj', '/CN=mx.postern.test', '-keyout', join(dir, 'key.pem'), '-out', join(dir, 'cert.pem')], { stdio: 'ignore' });
+      '-subj', `/CN=${commonName}`, '-keyout', join(dir, 'key.pem'), '-out', join(dir, 'cert.pem')], { stdio: 'ignore' });
     return true;
   } catch {
     return false;
   }
 }
 
+test('smtp: a self-signed certificate is made one time, kept in the data folder, and used for STARTTLS', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'postern-data-'));
+  const keyFile = join(dir, 'smtp-selfsigned.key');
+  const certFile = join(dir, 'smtp-selfsigned.crt');
+  let running;
+  const start = async (hostname) => { running = await startTestApp({ dataDir: dir, mail: { hostname } }); return running; };
+  const stop = async () => { const s = running; running = null; if (s) await s.stop(); };
+  try {
+    const first = await start('mx.generated.test');
+    if (!existsSync(certFile)) return t.skip('the openssl program is not available');
+
+    // The files: a private key that only the server user can read, and a matching certificate for 10 years.
+    assert.equal(statSync(keyFile).mode & 0o777, 0o600);
+    const made = certificateIn(certFile);
+    assert.equal(made.subject, 'CN=mx.generated.test');
+    assert.equal(made.issuer, made.subject, 'self-signed');
+    assert.ok(made.checkPrivateKey(createPrivateKey(readFileSync(keyFile))));
+    const years = (Date.parse(made.validTo) - Date.now()) / (365 * 86400 * 1000);
+    assert.ok(years > 9.9 && years < 10.1, `valid for ${years} years`);
+    assert.deepEqual(readdirSync(dir).filter((f) => f.startsWith('smtp-')).sort(), ['smtp-selfsigned.crt', 'smtp-selfsigned.key']);
+
+    // The server shows this certificate, not the one that ships inside the mail library.
+    const shown = await smtpCertificate(first);
+    assert.equal(shown.fingerprint256, made.fingerprint256);
+    assert.equal(shown.subject.CN, 'mx.generated.test');
+    assert.match(shown.protocol, /^TLSv1\.[23]$/);
+    await assert.rejects(smtpCertificate(first, OLD_TLS), 'TLS 1.1 is refused');
+    assert.equal((await smtpCertificate(first, { maxVersion: 'TLSv1.2' })).protocol, 'TLSv1.2');
+
+    // A complete delivery through STARTTLS.
+    const a = await newAccount(first, { credits: 100 });
+    const { address } = await newMailbox(a);
+    const info = await smtpSend(first, { to: address, subject: 'Over TLS', text: 'encrypted on the way' }, OVER_TLS);
+    assert.deepEqual(info.accepted, [address]);
+    assert.equal((await openMessage(a, (await listMessages(a)).messages[0].id)).meta.subject, 'Over TLS');
+    // Nothing changed on disk, so there is nothing to load again.
+    assert.equal(first.services.mail.checkTls(), false);
+
+    // The next start uses the same files. It makes no new key.
+    const before = { key: readFileSync(keyFile), cert: readFileSync(certFile), time: statSync(certFile).mtimeMs };
+    await stop();
+    const second = await start('mx.generated.test');
+    assert.deepEqual(readFileSync(keyFile), before.key);
+    assert.deepEqual(readFileSync(certFile), before.cert);
+    assert.equal(statSync(certFile).mtimeMs, before.time);
+    assert.equal((await smtpCertificate(second)).fingerprint256, made.fingerprint256);
+
+    // A broken file, or a different host name, gets a new pair.
+    await stop();
+    writeFileSync(certFile, 'not a certificate');
+    const third = await start('mx.generated.test');
+    const repaired = certificateIn(certFile);
+    assert.notEqual(repaired.fingerprint256, made.fingerprint256);
+    assert.equal((await smtpCertificate(third)).fingerprint256, repaired.fingerprint256);
+    await stop();
+    const fourth = await start('mx.renamed.test');
+    assert.equal(certificateIn(certFile).subject, 'CN=mx.renamed.test');
+    assert.equal((await smtpCertificate(fourth)).subject.CN, 'mx.renamed.test');
+    assert.equal(statSync(keyFile).mode & 0o777, 0o600);
+  } finally {
+    await stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('smtp: without the openssl program the server uses the library certificate and says how to fix it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'postern-data-'));
+  const lines = [];
+  const path = process.env.PATH;
+  const print = console.error;
+  let fallback;
+  try {
+    // An empty folder as the search path: the program cannot be found.
+    process.env.PATH = dir;
+    console.error = (...args) => lines.push(args.join(' '));
+    try {
+      fallback = await startTestApp({ dataDir: dir, logLevel: 'warn', mail: { hostname: 'mx.fallback.test' } });
+    } finally {
+      process.env.PATH = path;
+      console.error = print;
+    }
+    assert.deepEqual(readdirSync(dir).filter((f) => f.startsWith('smtp-')), [], 'no key or certificate file was left behind');
+    const warning = lines.find((l) => l.includes('test certificate'));
+    assert.ok(warning, 'the log has a warning');
+    assert.match(warning, / WARN /);
+    assert.match(warning, /install the "openssl" program/);
+    assert.match(warning, /SMTP_TLS_KEY and SMTP_TLS_CERT/);
+
+    // Mail still arrives, also over STARTTLS. The certificate is the one from the library (made for "localhost").
+    assert.equal((await smtpCertificate(fallback)).subject.CN, 'localhost');
+    assert.equal(fallback.services.mail.checkTls(), false);
+    const a = await newAccount(fallback, { credits: 100 });
+    const { address } = await newMailbox(a);
+    await smtpSend(fallback, { to: address, subject: 'Fallback', text: 'x' }, OVER_TLS);
+    assert.equal((await listMessages(a)).messages.length, 1);
+  } finally {
+    if (fallback) await fallback.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('smtp: STARTTLS uses the configured key and certificate', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'postern-tls-'));
   let secured;
   try {
-    if (!makeCertificate(dir)) return t.skip('the openssl program is not available');
+    if (!makeCertificate(dir, 'mx.postern.test')) return t.skip('the openssl program is not available');
     secured = await startTestApp({ mail: { tlsKeyFile: join(dir, 'key.pem'), tlsCertFile: join(dir, 'cert.pem') } });
     const shown = await smtpCertificate(secured);
     assert.equal(shown.subject.CN, 'mx.postern.test');
-    // The default server shows a different certificate.
-    assert.notEqual((await smtpCertificate(app)).fingerprint256, shown.fingerprint256);
+    assert.equal(shown.fingerprint256, certificateIn(join(dir, 'cert.pem')).fingerprint256);
+    // No self-signed pair is made when the operator gave a certificate.
+    assert.equal(existsSync(join(secured.config.dataDir, 'smtp-selfsigned.crt')), false);
+    await assert.rejects(smtpCertificate(secured, OLD_TLS), 'TLS 1.1 is refused');
 
     const a = await newAccount(secured, { credits: 100 });
     const { address } = await newMailbox(a);
-    await smtpSend(secured, { to: address, subject: 'Own certificate', text: 'x' }, { requireTLS: true, tls: { rejectUnauthorized: false } });
+    await smtpSend(secured, { to: address, subject: 'Own certificate', text: 'x' }, OVER_TLS);
     assert.equal((await listMessages(a)).messages.length, 1);
   } finally {
     if (secured) await secured.stop();
     rmSync(dir, { recursive: true, force: true });
+  }
+
+  // Configured files that do not belong together stop the start. The server does not fall back in silence.
+  const bad = mkdtempSync(join(tmpdir(), 'postern-tls-'));
+  const other = mkdtempSync(join(tmpdir(), 'postern-tls-'));
+  try {
+    makeCertificate(bad, 'mx.one.test');
+    makeCertificate(other, 'mx.two.test');
+    await assert.rejects(startTestApp({ mail: { tlsKeyFile: join(other, 'key.pem'), tlsCertFile: join(bad, 'cert.pem') } }), /does not belong/);
+    await assert.rejects(startTestApp({ mail: { tlsKeyFile: join(bad, 'missing.pem'), tlsCertFile: join(bad, 'cert.pem') } }), /ENOENT/);
+  } finally {
+    rmSync(bad, { recursive: true, force: true });
+    rmSync(other, { recursive: true, force: true });
+  }
+});
+
+test('smtp: a renewed certificate is loaded without a restart', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'postern-tls-'));
+  const next = mkdtempSync(join(tmpdir(), 'postern-tls-'));
+  const keyFile = join(dir, 'key.pem');
+  const certFile = join(dir, 'cert.pem');
+  let renewed;
+  // Each change gets a clearly different file time, like a renewal on a later day.
+  let clock = Date.now() / 1000;
+  const replace = (from, to) => { copyFileSync(from, to); clock += 60; utimesSync(to, clock, clock); };
+  try {
+    if (!makeCertificate(dir, 'mx.first.test') || !makeCertificate(next, 'mx.second.test')) return t.skip('the openssl program is not available');
+    renewed = await startTestApp({ mail: { tlsKeyFile: keyFile, tlsCertFile: certFile } });
+    const check = () => renewed.services.mail.checkTls();
+    const shownName = async () => (await smtpCertificate(renewed)).subject.CN;
+    assert.equal(await shownName(), 'mx.first.test');
+    assert.equal(check(), false, 'nothing changed');
+
+    // The renewal tool writes the certificate first. Key and certificate do not match for a moment: the old pair stays.
+    replace(join(next, 'cert.pem'), certFile);
+    assert.equal(check(), false);
+    assert.equal(await shownName(), 'mx.first.test');
+    assert.equal(check(), false);
+
+    // Now the key is there too. The new pair is loaded, for new connections, with no restart.
+    replace(join(next, 'key.pem'), keyFile);
+    assert.equal(check(), true);
+    assert.equal(await shownName(), 'mx.second.test');
+    assert.equal((await smtpCertificate(renewed)).fingerprint256, certificateIn(join(next, 'cert.pem')).fingerprint256);
+    assert.equal(check(), false, 'loaded one time only');
+    await assert.rejects(smtpCertificate(renewed, OLD_TLS), 'TLS 1.2 is still the lowest version after a reload');
+
+    // A file that is gone for a moment, or holds nonsense, changes nothing.
+    rmSync(certFile);
+    assert.equal(check(), false);
+    writeFileSync(certFile, 'half written');
+    assert.equal(check(), false);
+    assert.equal(await shownName(), 'mx.second.test');
+
+    // Mail still arrives over STARTTLS after all that.
+    const a = await newAccount(renewed, { credits: 100 });
+    const { address } = await newMailbox(a);
+    await smtpSend(renewed, { to: address, subject: 'After renewal', text: 'x' }, OVER_TLS);
+    assert.equal((await listMessages(a)).messages.length, 1);
+  } finally {
+    if (renewed) await renewed.stop();
+    // After the stop the check does nothing.
+    if (renewed) assert.equal(renewed.services.mail.checkTls(), false);
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(next, { recursive: true, force: true });
   }
 });
 
