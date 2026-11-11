@@ -599,7 +599,7 @@ The provider is `config.pay.provider`: `mock`, `btcpay`, or `off`.
 | `GET /api/pay/invoices/:id` | — | `{ invoice: { id, status: "pending"\|"paid"\|"expired", units, amountUsd, method, checkoutUrl, expiresAt, keyId, signed: [b64u × units] \| null } }`. 404 `not_found`. |
 | `POST /api/hooks/btcpay` | BTCPay webhook, raw body, header `BTCPay-Sig` | 200 `{}`. 403 `bad_signature`. The server then asks BTCPay for the invoice state. It does not trust the webhook body. The route exists only with provider `btcpay`. |
 | `POST /api/billing/redeem` **(auth)** | `{ keyId, tokens: [{ token, sig }] }` (1 to 200) | `{ credited, balance }`. 400 `bad_token`, 400 `bad_request`, 409 `token_spent`. Rate limit 30/minute. See "Redeem". |
-| `GET /api/billing` **(auth)** | — | `{ balance, prices, ledger: [{ delta, kind, day }] }`, newest first, 100 lines at most (ledger kinds: `topup`, `mailbox`, `number`, `text`, `call`, `refund`) |
+| `GET /api/billing` **(auth)** | — | `{ balance, prices, ledger: [{ delta, kind, day }] }`, newest first, 100 lines at most (ledger kinds: `topup`, `mailbox`, `number`, `text`, `call`, `voicemail`, `refund`) |
 
 - `methods` ids: `BTC-LN` ("Bitcoin Lightning"), `XMR-CHAIN` ("Monero"), `BTC-CHAIN` ("Bitcoin on-chain"). The mock provider offers all three. BTCPay offers the ids in `config.pay.btcpay.methods`; an id with no known label uses the id as its label.
 - `invoice.id` is 22 random characters. It is the only way to read the invoice. Signed values are useless without the secret blinding values in the browser.

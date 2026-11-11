@@ -511,7 +511,8 @@ Postern reads changed certificate files again without a restart. This takes a ma
 2. Put this text in the file. Replace `mail.example.com` in the line `NAME=`.
    ```
    #!/bin/sh
-   # Copies the certificate from Caddy to Postern. Restarts Postern only if the certificate is new.
+   # Copies the certificate from Caddy to Postern.
+   # Postern reads the new files in 10 minutes or less. A restart is not necessary.
    set -eu
    NAME=mail.example.com
    cd /opt/postern/deploy
@@ -526,9 +527,8 @@ Postern reads changed certificate files again without a restart. This takes a ma
      rm keys/smtp.crt.new keys/smtp.key.new
      exit 0
    fi
-   mv keys/smtp.crt.new keys/smtp.crt
    mv keys/smtp.key.new keys/smtp.key
-   docker compose restart app
+   mv keys/smtp.crt.new keys/smtp.crt
    ```
 3. Save the file: press Ctrl+O, then press Enter.
 4. Close the editor: press Ctrl+X.
@@ -550,6 +550,12 @@ Postern reads changed certificate files again without a restart. This takes a ma
    echo '20 4 * * * root /usr/local/sbin/postern-smtp-cert' > /etc/cron.d/postern-smtp-cert
    ```
 
+Notes:
+
+- Postern looks at the two files one time each 10 minutes. It reads changed files without a restart.
+- Set the two settings together. If only one of them has a value, Postern uses its own certificate and writes a warning in its log.
+- If Postern cannot read the two files at a start, it does not start. See Part J, "The line for `app` shows `Restarting`".
+
 **Check:** this command shows the certificate that your mail port offers. The result must contain `mail.example.com` and `Verify return code: 0 (ok)`.
 
 ```
@@ -560,7 +566,9 @@ openssl s_client -starttls smtp -connect mail.example.com:25 -servername mail.ex
 
 ## Part E. Payments with BTCPay Server (optional)
 
-Without this part, set `PAY_PROVIDER=off` and set the four `PRICE_` settings to `0`. Then continue with Part F.
+Without this part, set `PAY_PROVIDER=off` and set the five `PRICE_` settings to `0`. Then continue with Part F.
+The five settings are `PRICE_MAILBOX_MONTH`, `PRICE_NUMBER_MONTH`, `PRICE_TEXT_OUT`, `PRICE_CALL_MINUTE` and `PRICE_VOICEMAIL`.
+Postern writes a warning in its log if payments are off and a price is not `0`.
 
 ### E1. Select where BTCPay Server runs
 
@@ -747,6 +755,7 @@ Notes:
 ### F3. Optional: registration to send texts to US phones (A2P 10DLC)
 
 Without this registration, US numbers in Postern can receive texts but cannot send texts to US phones (section 2, facts 7 to 12).
+A user can then link a real phone only with the call that says the code.
 
 **Check this:** the menu names in the Twilio Console can change. Twilio describes the procedure in source `[T2]`.
 
@@ -759,7 +768,7 @@ Without this registration, US numbers in Postern can receive texts but cannot se
 
 Postern then adds each new number to this Messaging Service automatically. Numbers that users bought before this setting are not added: add those numbers by hand in the Twilio console.
 
-**Check this:** A "sole proprietor" brand can have only one number `[R2]`. This automatic step was tested with a simulated Twilio only.
+**Check this:** A "sole proprietor" brand can have only one number `[R2]`. The authors tested this automatic step with a simulated Twilio only.
 
 **Check:** send a text from a Postern number to a US phone. The text arrives.
 
@@ -768,6 +777,92 @@ Postern then adds each new number to this Messaging Service automatically. Numbe
 1. In the Twilio Console, open the general settings for "Messaging".
 2. Find the setting for message records. Select the shortest period that Twilio offers `[W14]`. **Check this:** the name of the setting.
 3. To remove message text from all records, ask Twilio support to enable "Message Redaction" `[W13]`.
+
+### F5. Optional: countries that need identity documents
+
+Twilio does not sell numbers of some countries before it has your identity documents `[R9][R10]`. The United Kingdom is an example.
+Twilio keeps the documents as a "regulatory bundle" and an "address". Postern can send their IDs with each purchase.
+
+**Check this:** the authors tested this part with a simulated Twilio only. The menu names in the Twilio Console can change.
+
+1. In the Twilio Console, open "Phone Numbers", then "Regulatory Compliance".
+2. Make a bundle for the country and for the type of number. Twilio asks for your documents.
+3. Make an address if Twilio asks for one.
+4. Wait until Twilio approves the bundle.
+5. Copy the ID of the bundle. It starts with `BU`.
+6. Copy the ID of the address. It starts with `AD`.
+7. Change these settings and apply the change (see "How to change a setting"). Use your values.
+   ```
+   TWILIO_BUNDLE_SID=BUxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   TWILIO_ADDRESS_SID=ADxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   PHONE_COUNTRIES=US,CA,GB
+   ```
+
+**Check:** in Postern, search for a number of the new country and buy it. The purchase is successful.
+
+Notes:
+
+- Postern sends the same two IDs with each purchase, in each country of `PHONE_COUNTRIES`.
+- **Check this:** a bundle at Twilio is for one country. The authors did not test a server with a bundle and with numbers of a second country.
+
+### F6. Limit the numbers that users can text and call
+
+You pay Twilio for each text and for each call of your users. Some destinations cost much more than others.
+Thus Postern permits only some destinations. Postern examines these three things:
+
+- the destination of each text that a user sends,
+- the destination of each call that a user starts,
+- the number of each real phone that a user links.
+
+Postern does not limit incoming texts and incoming calls.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PHONE_ALLOWED_PREFIXES` | `+1` | A destination must start with one of these prefixes. `+1` is the United States and Canada. |
+| `PHONE_BLOCKED_PREFIXES` | The built-in list | A destination must not start with one of these prefixes. |
+
+The built-in list has the premium numbers `+1900` and `+1976`. It also has 21 area codes that start with `+1` but are not in the United States or Canada. Most of them are in the Caribbean.
+
+To change the limits:
+
+1. Open the `.env` file (see "How to change a setting").
+2. To permit one more country, add its prefix to `PHONE_ALLOWED_PREFIXES`. Example for the United Kingdom: `PHONE_ALLOWED_PREFIXES=+1,+44`
+3. To block more numbers, write your complete list in `PHONE_BLOCKED_PREFIXES`. Your list replaces the built-in list. Start with this line and add your prefixes:
+   ```
+   PHONE_BLOCKED_PREFIXES=+1900,+1976,+1242,+1246,+1264,+1268,+1284,+1345,+1441,+1473,+1649,+1658,+1664,+1721,+1758,+1767,+1784,+1809,+1829,+1849,+1868,+1869,+1876
+   ```
+4. Save the file and apply the change.
+5. In the Twilio Console, find the settings with the name "Geo permissions". There is one page for calls and one page for texts.
+6. Permit only the countries that you permit in Postern.
+
+**Check:** in Postern, try to send a text to a number that is not permitted. Postern must show "You cannot text or call this number from here."
+
+Notes:
+
+- An empty value means the default. You cannot make a list empty.
+- `PHONE_ALLOWED_PREFIXES=+` permits all countries. Do this only if you know the prices of Twilio for each country.
+- The geo permissions at Twilio are a second protection. Twilio then refuses a destination also if a setting of Postern is wrong.
+- **Check this:** the names of the pages in the Twilio Console.
+
+### F7. Voicemail
+
+A caller who does not get an answer can leave a voicemail. Each user decides if a number has voicemail.
+
+**Check this:** the voicemail function was not complete when the authors wrote this part. The API document did not describe it. Test it before you tell your users about it.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PRICE_VOICEMAIL` | `5` | The price of each recorded voicemail, in credits. `5` is 0.05 USD. The user pays it. `0` = free. |
+| `VOICEMAIL_MAX_SECONDS` | `120` | The longest voicemail, in seconds. |
+
+What the phone provider hears and keeps:
+
+- The phone provider makes the recording. Thus the provider hears the complete message. Postern cannot prevent this.
+- **Check this:** by design, Postern copies each recording, encrypts it for the user, and then deletes it at the provider. The authors did not test this.
+- **Check this:** Twilio can charge you for recordings. Set `PRICE_VOICEMAIL` higher than your cost.
+
+**Check:** call a number that has voicemail on and leave a message. The message must appear in Postern.
+Some minutes later, look at the list of call recordings in the Twilio Console. The recording must not be there.
 
 ---
 
@@ -782,18 +877,18 @@ Postern then adds each new number to this Messaging Service automatically. Numbe
 
 ### G2. Test payments (if Part E is done)
 
-1. In Postern, open the page to add funds.
+1. In Postern, open the page "Funds".
 2. Select the smallest amount and one payment method.
 3. Pay the payment request from your own wallet. The money goes to your own BTCPay Server.
 4. Wait until Postern shows the new balance.
 
 **Check:** the balance in Postern is higher. In BTCPay Server, the invoice has the state "Settled".
 
-If you did not do Part E, make sure that the four `PRICE_` settings are `0`.
+If you did not do Part E, make sure that the five `PRICE_` settings are `0`.
 
 ### G3. Test mail
 
-1. In Postern, make a mailbox. Write down its address.
+1. In Postern, make an inbox: open the page "Mail" and select "New inbox". Write down its address.
 2. From a different email account that you have, send a message to the new address.
 3. Make sure that the message appears in Postern. This tests incoming mail.
 4. In Postern, send a message from the new address to your different email account.
@@ -807,7 +902,7 @@ After a successful check, change DNS record 7 to `v=DMARC1; p=quarantine`.
 
 ### G4. Test phone numbers (if Part F is done)
 
-1. In Postern, search for a number and buy it.
+1. In Postern, open the page "Numbers" and select "Get a number". Search for a number and buy it.
 2. From your own phone, send a text to the new number.
 3. Make sure that the text appears in Postern.
 4. From your own phone, call the new number. Postern must show the call.
@@ -830,6 +925,26 @@ curl -s https://mail.example.com/api/config
 ```
 
 To let a new person in later, set `SIGNUP=open`, let the person sign up, then close it again.
+
+### G6. What users can set themselves
+
+You do not operate these functions. Each user sets them in the app. This table tells you what the server does and what you can change.
+
+| Function of the user | What the server does | What you can change |
+|---|---|---|
+| Automatic deletion for an inbox (1 to 3650 days) | One time each hour, Postern deletes the mail of that inbox that is older. This includes sent mail and attachments. | Nothing. The user decides. |
+| Automatic deletion of texts for a number (1 to 3650 days) | One time each hour, Postern deletes the texts of that number that are older. The list of calls stays. | Nothing. The user decides. |
+| End date for an alias | After the date, the alias gets no mail and cannot send mail. The alias stays in the list. | Nothing. The user decides. |
+| Blocked senders for an address | Postern refuses mail from a blocked sender to that address. Other addresses still get mail from the sender. | `LIMIT_ADDRESS_BLOCKS`: the largest number of blocked senders for one address. The default is `200`. |
+| A real phone for a number | Postern sends calls and texts on to the real phone. The server can read the number of the real phone. | `LIMIT_PHONES` and the destination limits (Part F6). |
+
+Facts for you as the operator:
+
+- The automatic deletion works when the app of the user is closed. It also works for a paused inbox and for a paused number.
+- The deletion is final. The database writes zeros over deleted data. You cannot bring the data back from the server.
+- A backup that you made before the deletion still contains the data. Part I7 tells you how long backups stay.
+- Postern keeps a blocked sender only in encrypted form. You cannot read the block lists of your users.
+- Postern does not write a refused sender to its log.
 
 ---
 
@@ -1035,7 +1150,8 @@ If you want a domain for yourself only, operate the server for yourself only: se
 | The server secret | `SECRET_KEY` in the `.env` file | Offline copy from Part C, step 11. **Not** together with the database backups. |
 | The `.env` file | `/opt/postern/deploy/.env` | Offline copy. It contains your provider keys. |
 | The DKIM key of the built-in relay | Docker volumes `postern_relay_rspamd` and `postern_relay_opendkim` | Optional. If you lose it, do Part D1 steps 3 to 6 again. |
-| The certificates | Docker volume `postern_caddy_data` | Not necessary. Caddy gets new certificates. |
+| The certificates of the web address | Docker volume `postern_caddy_data` | Not necessary. Caddy gets new certificates. |
+| The certificate that Postern makes for incoming mail (`smtp-selfsigned.key`, `smtp-selfsigned.crt`) | Docker volume `postern_data` | Not necessary. `backup.sh` does not copy the two files. Postern makes them again at the next start. |
 
 If `SECRET_KEY` is empty in your `.env` file, the server secret is the file `secret.key` in the data volume. This command shows it:
 
@@ -1149,6 +1265,32 @@ Notes:
 - Compare the new `.env.example` with your `.env` file after an update. A new version can have new settings.
 - BTCPay Server has its own update program on its server. The BTCPay Server documents tell you how to use it.
 
+### I7. How long deleted data stays in backups
+
+A user can delete data. The automatic deletion can delete data (Part G6). After that, the server has no copy.
+But each backup that you made before the deletion still contains the data.
+
+- `backup.sh` keeps the 7 newest backups. It deletes older backups.
+- With one backup each night (I3), deleted data stays in the backups on the server for 7 days.
+- Each copy on your own computer (I4) contains the data until you delete that copy.
+
+To keep fewer backups on the server:
+
+1. Write the cron line again with a `KEEP` value. This example keeps 3 backups:
+   ```
+   echo '30 3 * * * root KEEP=3 sh /opt/postern/deploy/backup.sh > /var/log/postern-backup.log 2>&1' > /etc/cron.d/postern-backup
+   ```
+2. Delete old copies on your own computer at regular intervals.
+3. Tell your users how long you keep backups.
+
+**Check:** after the next backup, this command shows 3 folders or fewer.
+
+```
+ls /opt/postern/deploy/backups
+```
+
+Fewer backups also give you fewer days to repair a fault. Select a number that is correct for your service.
+
 ---
 
 ## Part J. Troubleshooting
@@ -1165,8 +1307,8 @@ docker compose logs --tail 50 app
 |---|---|---|
 | **The web page does not open, or the browser shows a certificate warning.** | DNS record 1 is wrong or not active. Ports 80 and 443 are closed. `PUBLIC_URL` is wrong. | Run `dig +short A mail.example.com`. Permit ports 80 and 443 in the firewall page of the host. Run `docker compose logs --tail 50 caddy` and look for the word `error`. Correct the cause. Then run `docker compose restart caddy`. |
 | **`docker compose up` shows `address already in use`.** | A different program on the server uses port 25, 80 or 443. Some Debian systems have the mail program `exim4` on port 25. | Run `ss -ltnp \| grep -E ':(25\|80\|443) '`. The end of each line shows the name of the program. Stop the program and disable it. Example for `exim4`: run `systemctl disable --now exim4`. Then run `docker compose up -d` again. |
-| **The line for `app` shows `Restarting`.** | A setting is wrong. | Run `docker compose logs --tail 20 app`. The last lines name the setting. Examples: `PUBLIC_URL must start with https://`, `SECRET_KEY must be 64 hex characters`, `BTCPAY_URL, BTCPAY_API_KEY, BTCPAY_STORE_ID and BTCPAY_WEBHOOK_SECRET must be set`, `TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must be set`. |
-| **Mail from outside does not arrive.** | DNS record 3 (MX) is wrong. Incoming port 25 is closed at the host. The address does not exist, or the alias is off. The mailbox is suspended or full. The message is too large. | Run `dig +short MX example.com`. Ask the host if incoming port 25 is open. Read the error message that the sender got: `550` = no such address, `450` = mailbox suspended, `452` = mailbox full, `552` = too large. |
+| **The line for `app` shows `Restarting`.** | A setting is wrong. | Run `docker compose logs --tail 20 app`. The last lines name the setting. Examples: `PUBLIC_URL must start with https://`, `SECRET_KEY must be 64 hex characters`, `BTCPAY_URL, BTCPAY_API_KEY, BTCPAY_STORE_ID and BTCPAY_WEBHOOK_SECRET must be set`, `TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must be set`. If you did Part D3: make sure that the two files of `SMTP_TLS_KEY` and `SMTP_TLS_CERT` are in `/opt/postern/deploy/keys`. Run `/usr/local/sbin/postern-smtp-cert` again. |
+| **Mail from outside does not arrive.** | DNS record 3 (MX) is wrong. Incoming port 25 is closed at the host. The address does not exist. The alias is off, or its end date is past. The user blocked the sender. The inbox is paused or full. The message is too large. | Run `dig +short MX example.com`. Ask the host if incoming port 25 is open. Read the error message that the sender got. `550 5.1.1`: no such address, alias off, or alias after its end date. `550 5.7.1`: the user blocked this sender. `450`: the inbox is paused. `452`: the inbox is full. `552`: the message is too large. `421`: too many connections from one address. |
 | **Mail from Postern does not arrive.** | `SMTP_RELAY_URL` is empty. Outgoing port 25 is blocked. The PTR record is missing. The sender domain is not in `RELAY_DOMAINS`. The other server refused the message. | Make sure that `/api/config` shows `"mockMail":false`. Do Check 4 of Part D1. Run `dig +short -x 203.0.113.10`. Then enable the relay log: set `RELAY_LOG_DRIVER=local`, run `docker compose up -d`, send one test message, and run `docker compose logs --tail 50 relay`. Look for `status=` and the reason after it. Set `RELAY_LOG_DRIVER=none` again after the test. |
 | **Mail from Postern goes to the spam folder.** | Your server address is new. SPF, DKIM or DMARC is not `pass`. The PTR record is not the same as `MAIL_HOSTNAME`. Your server address is on a block list. | Do Part G3, steps 5 to 7. Correct each result that is not `pass`. Search the web for "IP blocklist check" and test your address. Ask recipients to mark the message as "not spam". Send normal mail for some weeks. If nothing helps, use a relay company (Part D2) or a different server address. |
 | **A website refuses my alias address.** | The website has a list of alias domains that are well known. Your domain is on that list. | Do Part H: add a domain that only you use, and make the alias on that domain. Read the warning in Part H1 first. Use this alias only for that website. |
@@ -1174,7 +1316,9 @@ docker compose logs --tail 50 app
 | **The list "Domain" does not show the new domain.** | The new domain is not in `MAIL_DOMAINS`. You did not apply the change. The browser shows an old page. | Do the check of Part H3. Run `docker compose up -d`. Load the page again in the browser. |
 | **A payment stays "waiting".** | The payment is not confirmed. On-chain Bitcoin and Monero need many minutes. The Lightning node has no incoming capacity. BTCPay Server is not ready. A BTCPay setting in the `.env` file is wrong. | Open the invoice in BTCPay Server. If the state is not "Settled", wait, or look at the wallet of the payer. If the state is "Settled" and Postern still waits after two minutes: look at the `app` log, then compare `BTCPAY_URL`, `BTCPAY_STORE_ID` and `BTCPAY_API_KEY` with BTCPay Server. In BTCPay Server, open the webhook and look at the list of deliveries. |
 | **Postern cannot make a payment request.** | A name in `BTCPAY_METHODS` is not a method of your store. The API key has the wrong permissions or the wrong store. | Do Part E6 again. Make a new API key as in Part E4. |
-| **A number purchase fails.** | The Twilio account is a trial account or has no money. The country needs identity documents (example: `GB`). A different customer bought the number. The Account SID or the Auth Token is wrong. | In the Twilio Console, open "Monitor", then "Logs", then "Errors". Add money. Remove the country from `PHONE_COUNTRIES`. Select a different number. Compare the two Twilio values in the `.env` file with the Twilio Console. Postern gives the credits back to the user after a failed purchase. |
+| **A number purchase fails.** | The Twilio account is a trial account or has no money. The country needs identity documents (example: `GB`). A different customer bought the number. The user searched more than 30 minutes ago, or Postern started again after the search. The Account SID or the Auth Token is wrong. | Tell the user to search again. In the Twilio Console, open "Monitor", then "Logs", then "Errors". Add money. For a country with identity documents, do Part F5 or remove the country from `PHONE_COUNTRIES`. Compare the two Twilio values in the `.env` file with the Twilio Console. Postern gives the credit back to the user after a failed purchase. |
+| **A user cannot text or call a number. The app shows "You cannot text or call this number from here."** | The destination is not permitted. By default, Postern permits only `+1` numbers and blocks premium numbers. | This is the protection of Part F6. Change `PHONE_ALLOWED_PREFIXES` only if you accept the cost of that destination. |
+| **A user cannot link a real phone.** | The number of the user is a US number without 10DLC registration, so the text with the code does not arrive. The real phone is not a permitted destination. | Tell the user to select "Call me with the code". For a phone outside `+1`, see Part F6. |
 | **Texts fail with error 30034.** | The number is a US local number that is not registered for A2P 10DLC `[R2]`. `TWILIO_MESSAGING_SERVICE_SID` is empty. A user bought the number before you set `TWILIO_MESSAGING_SERVICE_SID`. | Do Part F3. Make sure that `TWILIO_MESSAGING_SERVICE_SID` has a value. In the Twilio Console, add each older number to the Messaging Service by hand. Without registration, a number can only receive texts. Tell your users. |
 | **Incoming texts or calls do not appear in Postern.** | Twilio cannot reach your server. `PUBLIC_URL` is not the address that Twilio uses, so the signature check fails. | In the Twilio Console, open "Monitor", then "Logs", then "Errors". An error with the status `403` means: `PUBLIC_URL` is wrong. A connection error means: the web page or the certificate has a problem. |
 | **The page does not update itself. You must load it again to see new mail.** | Caddy is older than version 2.11.7 `[N6]`, or a different proxy is in front of Caddy. | Run `docker compose exec caddy caddy version`. Run `docker compose pull --ignore-buildable`, then `docker compose up -d`. |

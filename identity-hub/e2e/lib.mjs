@@ -175,3 +175,45 @@ export async function lastPhoneCode(page) {
 export function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
+
+// Makes a filled account for layout and keyboard tests: two inboxes, aliases (one off,
+// one very long), mail, two numbers with texts, a linked real phone with forwarding, calls.
+// The page must be signed in. Returns ids that tests use in addresses.
+export async function seedAccount(page) {
+  await addCredit(page, 40);
+  return inApp(page, async ({ data, phone, api }) => {
+    const personal = await data.createMailbox({ label: 'Personal', localPart: 'anna.reed' + Math.floor(Math.random() * 9000 + 1000) });
+    const side = await data.createMailbox({ label: 'Side project' });
+    const shop = await data.createAlias({ mailboxId: personal.mailbox.id, label: 'Maple Shop' });
+    const news = await data.createAlias({ mailboxId: personal.mailbox.id, label: 'Weekly newsletter' });
+    const reg = await data.createAlias({ mailboxId: side.mailbox.id, label: 'Domain registrar' });
+    const long = await data.createAlias({ mailboxId: personal.mailbox.id, label: 'A very long label that someone typed to see what happens', localPart: 'this.is.a-very-long_address.that.goes.on.and.on.for.testing' + Math.floor(Math.random() * 900 + 100) });
+    await data.createAlias({ mailboxId: personal.mailbox.id, label: '' });
+    const mail = (to, from, fromName, subject, text, extra = {}) => api.post('/api/dev/inbound-mail', { to, from, fromName, subject, text, ...extra });
+    await mail(personal.address, 'lena@friends.example', 'Lena Fischer', 'Dinner on Friday?', 'Hi Anna,\n\nAre you free on Friday at seven?\n\nLena');
+    await mail(reg.address, 'billing@registrar.example', 'Northwind Domains', 'Your domain renews in 30 days', 'Your domain renews on December 11.');
+    await mail(long.address, 'no-reply@forum.example', 'Forum', 'Confirm your address', 'Open this link to confirm: https://forum.example/confirm/abc123');
+    await mail(shop.address, 'orders@shop.example', 'Maple Shop', 'Your order 1042 is on its way', 'Thank you for your order.\nSee your order: https://example.com/orders/1042', {
+      html: '<div style="font-family:Georgia,serif"><h1 style="color:#1f5e4b">Your order 1042 is on its way</h1><p>Thank you for your order.</p><p><a href="https://example.com/orders/1042">See your order</a></p><p><img src="https://example.com/banner.png" alt="Shop banner" width="300" height="60"></p></div>',
+      attachments: [{ filename: 'a-file-with-a-very-long-name-that-must-truncate-gracefully-in-the-list.txt', contentType: 'text/plain', content: 'aGVsbG8' }],
+    });
+    await data.updateAlias(news.alias.id, { enabled: false });
+    const n1 = await data.buyNumber({ number: (await phone.searchNumbers('US', '415'))[0].number, label: 'Selling the bike' });
+    const n2 = await data.buyNumber({ number: (await phone.searchNumbers('US', '212'))[0].number, label: 'Deliveries' });
+    const text = (n, from, body) => api.post('/api/dev/inbound-text', { numberId: n.number.id, number: n.plain, from, body });
+    await text(n1, '+14155550142', 'Hi, is the bike still for sale?');
+    await api.post(`/api/numbers/${n1.number.id}/texts`, { number: n1.plain, to: '+14155550142', body: 'Yes. You can see it on Saturday.' });
+    await text(n1, '+14155550142', 'Great. Is 10 in the morning OK? I can bring cash.');
+    await text(n1, '+12125550188', 'Your code is 448 201. Do not share it.');
+    await text(n2, '+16465550111', 'Your parcel arrives today between 2 and 4.');
+    const real = await data.linkPhone({ number: '+14155550199', label: 'My mobile', via: { id: n1.number.id, number: n1.plain } });
+    const out = await api.get('/api/dev/phone-outbox');
+    const code = out.texts.map((x) => x.body).reverse().find((b) => /\b\d{6}\b/.test(b)).match(/\b(\d{6})\b/)[1];
+    await data.verifyPhone(real.id, code);
+    await data.updateNumber(n1.number.id, { forwardPhoneId: real.id, forwardTexts: true, forwardCalls: true });
+    await api.post('/api/dev/inbound-call', { numberId: n1.number.id, number: n1.plain, from: '+14155550142', seconds: 95 });
+    await data.setPref('hideChecklist', true);
+    await data.loadAll();
+    return { personal: personal.mailbox.id, side: side.mailbox.id, n1: n1.number.id, n2: n2.number.id, shop: shop.alias.id, shopAddress: shop.address, reg: reg.alias.id, phone: real.id };
+  });
+}
