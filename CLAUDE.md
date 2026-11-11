@@ -12,6 +12,13 @@ Read this at the start of every session. Update it when reality changes.
 - Test (Node 22, no deps): `cd graveward && npm test` (252 content checks + physics checks + tutorial autopilot + 6 headless bot matches).
 - Browser tests need Playwright: `npm run test:browser` (menus, mouse clicks, turning, two keyboards, fake gamepad, tutorial, audio). Always read their output for console errors, not just PASS/FAIL.
 
+### Second project: `identity-hub/` (working name "Postern")
+- Not a game. A privacy-first web app: email aliases, real inboxes, VoIP numbers, crypto payments. It lives here only because this repo was the one available; it can move to its own repo.
+- Stack: Node 22 server (built-in SQLite, no web framework), plain HTML/CSS/JS web app (no build step). It has 4 npm packages (`@simplewebauthn/server`, `smtp-server`, `mailparser`, `nodemailer`); the "no npm dependencies" rule above is for the games only.
+- Run: `cd identity-hub && npm install && npm start` then open `http://localhost:8080` (test mode with simulated providers). Test: `npm test`.
+- Read `identity-hub/README.md` first, then `docs/API.md` (the contract between server and web app) and `docs/SECURITY.md`.
+- Rules there: the server must never store a plain alias address or VoIP number, never log user data, and every query is scoped by `account_id`. The payment database must never hold an account id.
+
 ## 2. How to work with me
 
 - Explain in plain language. If you must use a jargon word, define it in a few words.
