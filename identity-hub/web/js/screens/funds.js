@@ -74,7 +74,7 @@ export function fundsScreen({ scope }) {
   }
 
   // ---- waiting payments ----
-  const purchasesSlot = h('div', null);
+  const purchasesSlot = h('div', { class: 'section-slot' });
   function purchaseRow(p) {
     const label = methodLabels[p.method] || p.method;
     let state;
@@ -159,11 +159,11 @@ export function fundsScreen({ scope }) {
   const prices = h('table', { class: 'ledger prices' },
     h('caption', { class: 'sr-only' }, 'Prices'),
     h('tbody', null,
-      priceRow('Inbox', p.mailboxMonth, 'for each 30 days'),
+      priceRow('Inbox', p.mailboxMonth, 'per 30 days'),
       h('tr', null, h('td', null, 'Alias'), h('td', { class: 'right mono' }, 'Free'), h('td', { class: 'muted' }, config.limits.aliases ? `up to ${config.limits.aliases}` : 'no limit')),
-      config.features.phone ? priceRow('Number', p.numberMonth, 'for each 30 days') : null,
-      config.features.phone ? priceRow('Text you send', p.textOut, 'for each text') : null,
-      config.features.phone ? priceRow('Call', p.callMinute, 'for each minute') : null,
+      config.features.phone ? priceRow('Number', p.numberMonth, 'per 30 days') : null,
+      config.features.phone ? priceRow('Text you send', p.textOut, 'per text') : null,
+      config.features.phone ? priceRow('Call', p.callMinute, 'per minute') : null,
     ),
   );
 

@@ -19,7 +19,7 @@ const secrets = [];
 
 before(async () => {
   // mockAutoAnswer off: the tests decide when a simulated phone answers.
-  app = await startTestApp({ phone: { provider: 'mock', mockAutoAnswer: false } });
+  app = await startTestApp({ phone: { provider: 'mock', mockAutoAnswer: false, countries: ['US', 'CA', 'GB'] } });
   mock = app.services.phone.mock;
 });
 after(async () => { await app.stop(); });
@@ -311,6 +311,13 @@ test('webhook: incoming text with a valid signature; 403 with a bad one', async 
   assert.deepEqual(unknown.data, ok.data);
   assert.equal(app.db.get('SELECT COUNT(*) AS n FROM texts').n, total);
 
+  // The provider delivers one message two times (same message id): it is stored one time.
+  const twice = { to: num.plain, from, body: 'Only once, please', id: 'msg-777' };
+  assert.equal((await hook('text', twice)).status, 200);
+  assert.equal((await hook('text', twice)).status, 200);
+  assert.equal((await texts(a, num)).texts.length, 2);
+  assert.equal((await a.api.del(`/api/texts/${(await texts(a, num)).texts[0].id}`)).status, 204);
+
   // Mark as seen, then delete.
   assert.equal((await a.api.post(`/api/numbers/${num.id}/texts/seen`)).status, 204);
   assert.equal(await unread(a, num), 0);
@@ -524,29 +531,39 @@ test('forwarding: texts go to the verified phone and are charged; not when the b
   assert.equal(app.store.balance(a.id), 0);
   assert.equal(ledger(a)[0], 'text:-3');
 
+  // The provider repeats a webhook (same message id): no second copy, no second forward, no second charge.
+  app.store.credit(a.id, 3, 'topup');
+  const repeat = { to: num.plain, from, body: remember('Repeated message 7c7c'), id: 'msg-fwd-1' };
+  await hook('text', repeat);
+  await hook('text', repeat);
+  assert.equal(mock.outbox.texts.length, sent + 2);
+  assert.equal((await texts(a, num)).texts.length, 2);
+  assert.equal(app.store.balance(a.id), 0);
+
   // The balance is 0 now: the text is stored but not forwarded.
   const second = remember('Second message 6b6b');
   assert.equal((await hook('text', { to: num.plain, from, body: second })).status, 200);
-  assert.equal(mock.outbox.texts.length, sent + 1);
-  assert.equal((await texts(a, num)).texts.length, 2);
-  assert.equal(await unread(a, num), 2);
+  assert.equal(mock.outbox.texts.length, sent + 2);
+  assert.equal((await texts(a, num)).texts.length, 3);
+  assert.equal(await unread(a, num), 3);
 
   // A text from the linked phone itself is not sent back to it.
   app.store.credit(a.id, 100, 'topup');
   assert.equal((await hook('text', { to: num.plain, from: phone.plain, body: 'from my own phone' })).status, 200);
-  assert.equal(mock.outbox.texts.length, sent + 1);
+  assert.equal(mock.outbox.texts.length, sent + 2);
   assert.equal(app.store.balance(a.id), 100);
 
   // The provider refuses the forward: the text stays and the charge comes back.
   mock.failNext('sendText');
   assert.equal((await hook('text', { to: num.plain, from, body: 'third' })).status, 200);
   assert.equal(app.store.balance(a.id), 100);
-  assert.equal((await texts(a, num)).texts.length, 4);
+  assert.equal((await texts(a, num)).texts.length, 5);
+  assert.deepEqual(ledger(a).slice(0, 2), ['refund:3', 'text:-3']);
 
   // Forwarding off: nothing goes out.
   assert.equal((await a.api.patch(`/api/numbers/${num.id}`, { forwardTexts: false })).data.number.forwardTexts, false);
   await hook('text', { to: num.plain, from, body: 'fourth' });
-  assert.equal(mock.outbox.texts.length, sent + 1);
+  assert.equal(mock.outbox.texts.length, sent + 2);
 
   // Clearing the phone also clears the switches.
   await a.api.patch(`/api/numbers/${num.id}`, { forwardTexts: true, forwardCalls: true });
@@ -571,8 +588,10 @@ test('forwarding: an incoming call rings the verified phone; the status webhook 
   assert.equal(log.length, 1);
   assert.deepEqual({ direction: log[0].direction, seconds: log[0].seconds, status: log[0].status }, { direction: 'in', seconds: 0, status: 'missed' });
   assert.deepEqual(await openCall(a, log[0]), { peer: caller });
-  // A late status report for that call changes nothing.
+  // A late status report for that call changes nothing. A repeated webhook adds no second line.
   await hook('status', { callId: 'call-0', status: 'answered', seconds: 500 });
+  assert.deepEqual((await hook('voice', { to: num.plain, from: caller, callId: 'call-0' })).data.actions, NOT_AVAILABLE);
+  assert.equal((await calls(a, num)).length, 1);
   assert.equal(app.store.balance(a.id), 10);
 
   await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardCalls: true });
@@ -597,6 +616,12 @@ test('forwarding: an incoming call rings the verified phone; the status webhook 
   await hook('status', { callId: 'call-1', status: 'answered', seconds: 600 });
   assert.equal(app.store.balance(a.id), 4);
   assert.equal((await calls(a, num)).length, 2);
+  // The voice webhook of a call that is finished comes again: no new ringing, no new line.
+  assert.deepEqual((await hook('voice', { to: num.plain, from: caller, callId: 'call-1' })).data.actions, NOT_AVAILABLE);
+  await hook('status', { callId: 'call-1', status: 'answered', seconds: 600 });
+  assert.equal((await calls(a, num)).length, 2);
+  assert.equal(app.store.balance(a.id), 4);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM live_calls').n, 0);
   // A status for a call that never started does nothing.
   await hook('status', { callId: 'call-unknown', status: 'answered', seconds: 600 });
   assert.equal(app.store.balance(a.id), 4);

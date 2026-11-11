@@ -26,7 +26,7 @@ export async function payInfo({ fresh = false } = {}) {
 // Entry: { localId, keyId, key: { id, n, e }, units, method, tokens: [{ token, r }], invoiceId?, createdAt }
 // View state (not saved): status = starting | waiting | paid | redeeming | done | expired | failed | orphan
 async function readList() {
-  const v = await vaultGet(VAULT_KEY);
+  const v = await vaultGet(VAULT_KEY, { fresh: true });
   return Array.isArray(v) ? v.filter((e) => e && typeof e === 'object' && Array.isArray(e.tokens)) : [];
 }
 

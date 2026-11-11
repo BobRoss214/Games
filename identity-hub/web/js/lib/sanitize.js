@@ -90,13 +90,20 @@ export function sanitizeEmail(html, inlineImages = new Map()) {
       el.setAttribute('rel', 'noopener noreferrer');
       el.removeAttribute('download');
     }
-    if (el.localName === 'img') {
-      el.removeAttribute('loading');
-      if (!el.hasAttribute('src')) {
-        // Show the alt text in place of a blocked image.
-        el.setAttribute('alt', el.getAttribute('alt') || '');
-      }
-    }
+  }
+
+  // A blocked image becomes a small text mark with its alt text. A tracking pixel
+  // (a tiny image) is removed with no mark.
+  for (const img of [...doc.querySelectorAll('img')]) {
+    if (img.hasAttribute('src')) { img.removeAttribute('loading'); continue; }
+    const w = Number.parseInt(img.getAttribute('width') || '', 10);
+    const ht = Number.parseInt(img.getAttribute('height') || '', 10);
+    const alt = (img.getAttribute('alt') || '').trim();
+    if ((w > 0 && w <= 3) || (ht > 0 && ht <= 3)) { img.remove(); continue; }
+    const mark = doc.createElement('span');
+    mark.setAttribute('data-blocked-image', '');
+    mark.textContent = alt ? `Image: ${alt}` : 'Image';
+    img.replaceWith(mark);
   }
 
   // Our own head: a strict policy for the frame and calm default type.
@@ -111,7 +118,7 @@ export function sanitizeEmail(html, inlineImages = new Map()) {
     'html{color-scheme:light;background:#fff}',
     'body{margin:16px;font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1b1d1a;background:#fff;overflow-wrap:anywhere}',
     'img{max-width:100%;height:auto}',
-    'img[data-blocked],img[data-inline-missing]{display:inline-block;min-width:24px;min-height:24px;border:1px dashed #b9b2a0;border-radius:3px;font-size:12px;color:#666960;padding:2px 4px}',
+    'span[data-blocked-image]{display:inline-block;border:1px dashed #b9b2a0;border-radius:3px;font:12px/1.4 system-ui,sans-serif;color:#666960;padding:2px 6px;margin:2px 0}',
     'table{max-width:100%}',
     'pre{white-space:pre-wrap}',
     'a{color:#1f5e4b}',

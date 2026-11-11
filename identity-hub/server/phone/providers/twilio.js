@@ -47,9 +47,18 @@ export function twiml(actions = []) {
   return '<?xml version="1.0" encoding="UTF-8"?>' + (inner ? `<Response>${inner}</Response>` : '<Response/>');
 }
 
-export function createTwilioProvider({ accountSid, authToken, baseUrl } = {}) {
+// Optional settings:
+//   messagingServiceSid  the Messaging Service of an approved US 10DLC campaign. Each new number
+//                        is added to it, and texts are sent through it. Without it, US carriers
+//                        block texts from US local numbers (Twilio error 30034).
+//   bundleSid, addressSid  regulatory bundle and address. Some countries need them for a purchase.
+// warn(message): tells the operator about a problem that does not stop the request.
+export function createTwilioProvider({ accountSid, authToken, baseUrl, messagingServiceSid = '', bundleSid = '', addressSid = '' } = {}, { warn = () => {} } = {}) {
   if (!accountSid || !authToken) throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must be set when PHONE_PROVIDER is twilio');
-  const base = (baseUrl || 'https://api.twilio.com').replace(/\/+$/, '') + '/2010-04-01/Accounts/' + encodeURIComponent(accountSid);
+  const root = (baseUrl || 'https://api.twilio.com').replace(/\/+$/, '');
+  const base = root + '/2010-04-01/Accounts/' + encodeURIComponent(accountSid);
+  // Twilio has the Messaging Services API on a different host. A test server has both on one address.
+  const messagingRoot = root === 'https://api.twilio.com' ? 'https://messaging.twilio.com' : root;
   const auth = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
   const str = (v) => (typeof v === 'string' ? v : '');
 
@@ -62,8 +71,9 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl } = {}) {
   }
 
   // One REST request. `form` makes a form-encoded POST body. Returns the parsed JSON (null for 204).
+  // path: below the account address, or a full address.
   async function call(op, method, path, { query, form } = {}) {
-    const url = new URL(base + path);
+    const url = new URL(path.startsWith('http') ? path : base + path);
     for (const [k, v] of Object.entries(query || {})) if (v !== undefined && v !== '') url.searchParams.set(k, v);
     const init = { method, headers: { authorization: auth, accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) };
     if (form) {
@@ -109,13 +119,23 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl } = {}) {
     },
 
     async buy(number, { textUrl, voiceUrl, statusUrl }) {
-      const data = await call('buy', 'POST', '/IncomingPhoneNumbers.json', {
-        form: {
-          PhoneNumber: number, SmsUrl: textUrl, SmsMethod: 'POST', VoiceUrl: voiceUrl, VoiceMethod: 'POST',
-          StatusCallback: statusUrl, StatusCallbackMethod: 'POST',
-        },
-      });
+      const form = {
+        PhoneNumber: number, SmsUrl: textUrl, SmsMethod: 'POST', VoiceUrl: voiceUrl, VoiceMethod: 'POST',
+        StatusCallback: statusUrl, StatusCallbackMethod: 'POST',
+      };
+      if (bundleSid) form.BundleSid = bundleSid;
+      if (addressSid) form.AddressSid = addressSid;
+      const data = await call('buy', 'POST', '/IncomingPhoneNumbers.json', { form });
       if (!data || typeof data.sid !== 'string' || !data.sid) throw new ProviderError(REFUSED.buy);
+      if (messagingServiceSid) {
+        // The number is ours now. If this step fails, it still receives texts and calls,
+        // so the purchase stands. The operator must add the number to the service by hand.
+        try {
+          await call('buy', 'POST', `${messagingRoot}/v1/Services/${encodeURIComponent(messagingServiceSid)}/PhoneNumbers`, { form: { PhoneNumberSid: data.sid } });
+        } catch {
+          warn('a new number could not be added to the Twilio Messaging Service; it cannot send texts until it is added');
+        }
+      }
       return { ref: data.sid };
     },
 
@@ -124,7 +144,10 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl } = {}) {
     },
 
     async sendText({ from, to, body }) {
-      const data = await call('sendText', 'POST', '/Messages.json', { form: { From: from, To: to, Body: body } });
+      const form = { From: from, To: to, Body: body };
+      // With both values Twilio sends from this number as a member of the service (the registered campaign).
+      if (messagingServiceSid) form.MessagingServiceSid = messagingServiceSid;
+      const data = await call('sendText', 'POST', '/Messages.json', { form });
       // Twilio can accept the request and report the refusal in the answer.
       if (!data || typeof data.sid !== 'string' || data.error_code || data.status === 'failed' || data.status === 'undelivered') {
         throw new ProviderError(REFUSED.sendText, { code: data && Number.isInteger(data.error_code) ? data.error_code : 0 });

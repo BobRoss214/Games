@@ -81,7 +81,7 @@ function phoneRow(p) {
       h('div', { class: 'id-sub' },
         p.label ? h('span', { class: 'id-label' }, p.label) : h('span', { class: 'id-label is-empty' }, 'No label'),
         p.verified ? tag('Linked', 'ok') : tag('Waiting for code', 'warn'),
-        h('span', { class: 'small faint' }, `Added ${dayText(p.createdDay)}`),
+        h('span', { class: 'small faint' }, `Added on ${dayText(p.createdDay)}`),
       ),
     ),
     h('div', { class: 'id-actions' },

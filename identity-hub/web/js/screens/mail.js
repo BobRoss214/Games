@@ -99,7 +99,11 @@ export function mailScreen({ params, scope }) {
         copyButton(() => box.address, 'Copy address', { what: 'Address copied', cls: 'icon-btn-sm' }),
       ),
       box.status !== 'active' ? h('p', { class: 'mail-paused small' }, icon('warning', { size: 14 }), h('span', null, 'This inbox is paused. It receives no mail. '), h('a', { href: '/funds', 'data-link': true }, 'Add funds')) : null,
-      segmented({ label: 'Folder', value: direction, options: [{ value: 'in', label: 'Inbox' }, { value: 'out', label: 'Sent' }], onChange: (v) => { direction = v; list = null; paintList(); loadList(); } }),
+      segmented({ label: 'Folder', value: direction, options: [{ value: 'in', label: 'Inbox' }, { value: 'out', label: 'Sent' }], onChange: (v) => {
+        direction = v; list = null; paintList(); loadList();
+        // An open message of the other folder is closed.
+        if (messageId && (!currentMsg || currentMsg.direction !== v)) navigate(`/mail/${mailboxId}`);
+      } }),
     );
   }
 

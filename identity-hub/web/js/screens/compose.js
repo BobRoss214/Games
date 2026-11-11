@@ -85,7 +85,12 @@ export function openCompose({ mailboxId = '', reply = null } = {}) {
       const total = files.reduce((n, x) => n + x.bytes.length, 0);
       if (total + f.size > limit) { fileError.textContent = `Attachments can be ${bytesText(limit)} in total. "${f.name}" is too large.`; fileError.hidden = false; continue; }
       const bytes = new Uint8Array(await f.arrayBuffer());
-      files.push({ filename: f.name.slice(0, 200) || 'file', contentType: f.type || 'application/octet-stream', bytes });
+      const type = String(f.type || '').toLowerCase();
+      files.push({
+        filename: f.name.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 200) || 'file',
+        contentType: /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/.test(type) ? type : 'application/octet-stream',
+        bytes,
+      });
     }
     fileInput.value = '';
     paintFiles();

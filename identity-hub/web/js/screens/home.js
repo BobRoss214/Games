@@ -58,7 +58,7 @@ function checklist(state) {
     ),
     h('ol', { class: 'firststeps-list' }, steps.map((s, i) => h('li', { class: `firststep ${s.done ? 'is-done' : ''} ${i === next ? 'is-next' : ''}`.trim() },
       h('span', { class: 'firststep-mark mono', 'aria-hidden': 'true' }, s.done ? icon('check', { size: 14 }) : String(i + 1)),
-      h('div', { class: 'grow' }, h('p', { class: 'firststep-title' }, s.title, s.done ? h('span', { class: 'sr-only' }, ' (done)') : null), h('p', { class: 'small muted' }, s.text)),
+      h('div', { class: 'grow' }, h('p', { class: 'firststep-title' }, s.title, s.done ? h('span', { class: 'sr-only' }, ' (done)') : null), h('p', { class: 'small muted firststep-text' }, s.text)),
       !s.done && i === next ? s.action : null,
     ))),
   );

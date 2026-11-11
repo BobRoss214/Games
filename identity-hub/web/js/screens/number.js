@@ -322,7 +322,7 @@ export function numberScreen({ params, scope }) {
     );
 
     replace(settingsPane,
-      h('section', { class: 'stack stack-3' }, h('h2', { class: 'section-title' }, 'Label'), labelForm),
+      h('section', null, labelForm),
       h('section', { class: 'stack stack-3' },
         h('div', null,
           h('h2', { class: 'section-title' }, 'Forwarding'),

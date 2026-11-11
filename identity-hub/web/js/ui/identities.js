@@ -130,8 +130,26 @@ export function openGetNumber() {
   const countries = c.phoneCountries && c.phoneCountries.length ? c.phoneCountries : ['US'];
   const country = selectField({ label: 'Country', options: countries.map((code) => ({ value: code, label: countryName(code) })), value: countries[0] });
   const area = field({ label: 'Area code', optional: true, inputmode: 'numeric', maxlength: 6, placeholder: '415', mono: true });
-  const label = field({ label: 'Label', optional: true, placeholder: 'for example: Selling the bike', maxlength: 60, hint: 'Only you see this.' });
   const results = h('div', { class: 'number-results', 'aria-live': 'polite' });
+
+  // Step 2: a label and the price, then the purchase.
+  async function buy(n, api) {
+    const label = field({ label: 'Label', optional: true, placeholder: 'for example: Selling the bike', maxlength: 60, hint: 'What you use it for. Only you see this.' });
+    const res = await formDialog({
+      title: `Buy ${phoneText(n.number)}?`, size: 'sm',
+      submitLabel: price ? `Buy for ${money(price)}` : 'Get number',
+      build: () => h('div', { class: 'stack' },
+        label.el,
+        price ? h('p', { class: 'price-note' }, icon('funds', { size: 16 }), h('span', null, `You pay ${money(price)} now, then ${money(price)} every 30 days while you keep the number.`)) : null,
+      ),
+      onSubmit: async () => buyNumber({ number: n.number, label: label.value.trim() }),
+      onError: (err, inner) => { if (err.status === 402) { inner.close(); api.close(); needFunds(err); return true; } return false; },
+    });
+    if (!res || !res.number) return;
+    api.close();
+    toast('Number added', { kind: 'ok' });
+    if (res.number.id) navigate(`/numbers/${res.number.id}`);
+  }
 
   openDialog({
     title: 'Get a number', size: 'lg',
@@ -151,19 +169,11 @@ export function openGetNumber() {
             h('p', { class: 'small muted' }, [n.locality, n.region, countryName(n.country)].filter(Boolean).join(', ')),
           ),
           h('div', { class: 'row row-2 no-shrink' }, n.sms ? tag('Texts') : null, n.voice ? tag('Calls') : null),
-          button('Buy', { size: 'sm', onClick: (e, btn) => runBusy(btn, async () => {
-            const ok = await confirmDialog({ title: `Buy ${phoneText(n.number)}?`, message: price ? `You pay ${money(price)} now, then ${money(price)} every 30 days while you keep the number.` : 'This number is free on this server.', confirmLabel: price ? `Buy for ${money(price)}` : 'Get number', danger: false });
-            if (!ok) return;
-            const res = await buyNumber({ number: n.number, label: label.value.trim() });
-            api.close();
-            toast('Number added', { kind: 'ok' });
-            if (res && res.number && res.number.id) navigate(`/numbers/${res.number.id}`);
-          }, { onError: (err) => { if (err.status === 402) { api.close(); needFunds(err); return true; } return false; } }) }),
+          button('Buy', { size: 'sm', attrs: { 'aria-label': `Buy ${phoneText(n.number)}` }, onClick: () => buy(n, api) }),
         ))));
       });
       const form = h('form', { class: 'stack', novalidate: true, onSubmit: (e) => { e.preventDefault(); run(); } },
         h('div', { class: 'number-search' }, country.el, area.el, searchBtn),
-        label.el,
         results,
       );
       queueMicrotask(run);

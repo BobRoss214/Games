@@ -43,6 +43,7 @@ function forget() {
   keys = null;
   pendingPrf = null;
   lockReason = null;
+  vaultKeyList = null;
   sealedCache.clear();
   try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* nothing to remove */ }
 }
@@ -242,8 +243,16 @@ export async function openSealed(sealed, aad) {
   } catch { return null; }
 }
 
-// The encrypted key-value vault.
-export async function vaultGet(key) {
+// The encrypted key-value vault. The list of keys is asked first, so that the
+// browser does not log a "404" for a value that was never saved.
+let vaultKeyList = null;
+async function vaultHas(key, fresh) {
+  if (!vaultKeyList || fresh) vaultKeyList = ((await api.get('/api/vault')) || {}).keys || [];
+  return vaultKeyList.includes(key);
+}
+// fresh: ask the server for the key list again (another tab may have saved a value).
+export async function vaultGet(key, { fresh = false } = {}) {
+  if (!(await vaultHas(key, fresh))) return null;
   let res;
   try { res = await api.get(`/api/vault/${key}`); } catch (err) { if (err.status === 404) return null; throw err; }
   if (!res || !res.value) return null;
@@ -252,10 +261,13 @@ export async function vaultGet(key) {
 export async function vaultPut(key, value) {
   const blob = b64u(await encryptJson(need().vaultKey, value, `vault:${key}`));
   await api.put(`/api/vault/${key}`, { value: blob });
+  if (vaultKeyList && !vaultKeyList.includes(key)) vaultKeyList.push(key);
   return blob.length;
 }
 export async function vaultDelete(key) {
+  if (!(await vaultHas(key, true))) return;
   try { await api.del(`/api/vault/${key}`); } catch (err) { if (err.status !== 404) throw err; }
+  vaultKeyList = (vaultKeyList || []).filter((k) => k !== key);
 }
 
 export { sealJson };

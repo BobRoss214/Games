@@ -23,8 +23,9 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 FROM node:22-alpine
 
 # sqlite: the command-line tool that deploy/backup.sh uses.
+# openssl: makes the self-signed certificate for incoming mail on the first start.
 # The application itself uses the SQLite that is built into Node.js.
-RUN apk add --no-cache sqlite \
+RUN apk add --no-cache sqlite openssl \
  && addgroup -S -g 10001 postern \
  && adduser -S -D -H -u 10001 -G postern -s /sbin/nologin postern \
  && mkdir -p /data \

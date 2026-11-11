@@ -128,7 +128,7 @@ export async function register(app) {
       autoAnswerMs: !config.dev || auto === false ? null : (Number.isInteger(auto) ? auto : 800),
     });
   } else if (name === 'twilio') {
-    provider = createTwilioProvider(config.phone.twilio);
+    provider = createTwilioProvider(config.phone.twilio, { warn: (message) => log.warn(message) });
   } else if (!off) {
     throw new Error('PHONE_PROVIDER must be mock, twilio, or off');
   }

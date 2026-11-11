@@ -39,9 +39,13 @@ function startFakeTwilio() {
       };
       const plan = (planned.get(`${req.method} ${path}`) || []).shift();
       if (plan) return send(plan.status, plan.body);
+      let m;
+      // The Messaging Services API (another host at the real Twilio).
+      if (req.method === 'POST' && (m = /^\/v1\/Services\/(MG[0-9a-f]{32})\/PhoneNumbers$/.exec(url.pathname))) {
+        return send(201, { sid: rec.form.PhoneNumberSid, service_sid: m[1] });
+      }
       if (!url.pathname.startsWith(API)) return send(404, { code: 20404, message: 'not found', status: 404 });
 
-      let m;
       if (req.method === 'GET' && (m = /^\/AvailablePhoneNumbers\/([A-Z]{2})\/Local\.json$/.exec(path))) {
         if (m[1] === 'ZZ') return send(404, { code: 20404, message: 'The requested resource was not found', status: 404 });
         const area = rec.query.AreaCode || '415';
@@ -230,6 +234,48 @@ test('adapter: exact REST requests (path, fields, auth header)', async () => {
   assert.equal(req.raw, '');
 });
 
+test('adapter: optional Messaging Service, regulatory bundle, and address', async () => {
+  const MG = 'MG' + 'a'.repeat(32);
+  const warnings = [];
+  const twilio = createTwilioProvider(
+    { accountSid: SID, authToken: TOKEN, baseUrl: fake.url, messagingServiceSid: MG, bundleSid: 'BU' + 'b'.repeat(32), addressSid: 'AD' + 'c'.repeat(32) },
+    { warn: (m) => warnings.push(m) },
+  );
+  const auth = 'Basic ' + Buffer.from(`${SID}:${TOKEN}`).toString('base64');
+  const urls = { textUrl: PUBLIC + HOOK.text, voiceUrl: PUBLIC + HOOK.voice, statusUrl: PUBLIC + HOOK.status };
+
+  const count = fake.requests.length;
+  const { ref } = await twilio.buy('+12125551001', urls);
+  assert.equal(fake.requests.length, count + 2);
+  // 1. The purchase carries the bundle and the address.
+  const buy = fake.requests.at(-2);
+  assert.equal(buy.fullPath, `${API}/IncomingPhoneNumbers.json`);
+  assert.deepEqual(buy.form, {
+    PhoneNumber: '+12125551001', SmsUrl: urls.textUrl, SmsMethod: 'POST', VoiceUrl: urls.voiceUrl, VoiceMethod: 'POST',
+    StatusCallback: urls.statusUrl, StatusCallbackMethod: 'POST', BundleSid: 'BU' + 'b'.repeat(32), AddressSid: 'AD' + 'c'.repeat(32),
+  });
+  // 2. The new number goes into the sender pool of the Messaging Service.
+  const pool = fake.last();
+  assert.equal(pool.method, 'POST');
+  assert.equal(pool.fullPath, `/v1/Services/${MG}/PhoneNumbers`);
+  assert.deepEqual(pool.form, { PhoneNumberSid: ref });
+  assert.equal(pool.headers.authorization, auth);
+  assert.deepEqual(warnings, []);
+
+  // Texts name the service and the number.
+  await twilio.sendText({ from: '+12125551001', to: '+13055550100', body: 'Hi' });
+  assert.deepEqual(fake.last().form, { From: '+12125551001', To: '+13055550100', Body: 'Hi', MessagingServiceSid: MG });
+
+  // The pool refuses the number: the purchase stands, and the operator gets a warning with no number in it.
+  fake.failNext('POST', `/v1/Services/${MG}/PhoneNumbers`, 400, { code: 21712, message: 'Campaign is full for +12125551002', status: 400 });
+  const second = await twilio.buy('+12125551002', urls);
+  assert.match(second.ref, /^PN[0-9a-f]{32}$/);
+  assert.equal(warnings.length, 1);
+  assert.doesNotMatch(warnings[0], /\+1212|PN[0-9a-f]/);
+  await twilio.release(ref);
+  await twilio.release(second.ref);
+});
+
 test('adapter: Twilio errors become plain messages', async () => {
   const twilio = createTwilioProvider({ accountSid: SID, authToken: TOKEN, baseUrl: fake.url });
   const urls = { textUrl: 'u', voiceUrl: 'u', statusUrl: 'u' };
@@ -323,6 +369,10 @@ test('end to end: search, buy, signed incoming text, send, refusal with refund, 
   assert.equal(list.length, 1);
   assert.equal(list[0].direction, 'in');
   assert.deepEqual(await openJson(a.keys, unb64u(list[0].sealed), 'text'), { peer: from, body: 'Hello there & welcome <3 + more' });
+
+  // Twilio delivers the same message a second time: it is stored one time.
+  assert.equal((await twilioPost(HOOK.text, params)).status, 200);
+  assert.equal((await a.api.get(`/api/numbers/${num.id}/texts`)).data.texts.length, 1);
 
   // Bad signatures: wrong value, signed for a different URL, signed with a different token,
   // a changed field, an added field, no header. The Host header does not matter.
