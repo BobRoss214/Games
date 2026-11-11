@@ -5,6 +5,7 @@
 #
 # The address comes from PUBLIC_URL in the .env file (example:
 # https://mail.example.com). Do not put a "/" at the end of PUBLIC_URL.
+# A second, optional site is at the end of this file: the gateway of your own phone.
 #
 # Privacy rules for this file:
 #   1. No access log. Caddy writes an access log only if a site has a `log`
@@ -55,5 +56,38 @@
 		reverse_proxy app:8080 {
 			header_up X-Forwarded-For {remote_host}
 		}
+	}
+}
+
+# The gateway of your own phone (optional, profile "ownphone" in docker-compose.yml).
+#
+# The gateway has its own path "/api", and Postern has that path too. So the gateway
+# needs a second name. The name comes from SMSGATE_HOST in the .env file (example:
+# sms.example.com). With no value, the name is "sms.localhost": it exists only inside
+# the server, Caddy asks nobody for a certificate, and nothing is reachable.
+#
+# Only two paths are open:
+#   /api/mobile/...   the part of the gateway that the app on the phone uses
+#   /health/live      answers "the gateway runs"; it shows no data
+# The other parts of the gateway (the API that Postern uses, the metrics) are not
+# reachable from the internet. Postern uses them inside Docker.
+# No access log here either: it would show the address of your phone.
+{$SMSGATE_HOST:sms.localhost} {
+	header -Server
+
+	# The phone holds one long connection open to get its commands at once
+	# ("SSE Only" in the app). Send each event immediately.
+	handle /api/mobile/* {
+		reverse_proxy smsgate:3000 {
+			flush_interval -1
+		}
+	}
+
+	handle /health/live {
+		reverse_proxy smsgate:3000
+	}
+
+	handle {
+		respond 404
 	}
 }

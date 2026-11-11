@@ -11,6 +11,14 @@
 #   relay  Optional. Sends outgoing mail directly to other mail servers and
 #          signs it with DKIM. It starts only if the .env file has
 #          COMPOSE_PROFILES=relay
+#   smsgate, smsgate-worker, smsgate-db
+#          Optional. The gateway for your own Android phone ("own phone"
+#          provider): the private server of the open-source app "SMS Gateway
+#          for Android", its worker, and its database. They start only if the
+#          .env file has the profile "ownphone" in COMPOSE_PROFILES.
+#          See Part I of the setup guide.
+#
+# Two profiles together: COMPOSE_PROFILES=relay,ownphone
 #
 # Data that you must keep is in the volume "postern_data". See backup.sh.
 
@@ -68,6 +76,9 @@ services:
     environment:
       # The Caddyfile uses this value as the site address.
       PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL in the .env file. Example https://mail.example.com}
+      # The second site address, for the gateway of your own phone (profile "ownphone").
+      # With no value, Caddy uses a name that exists only inside the server.
+      SMSGATE_HOST: ${SMSGATE_HOST:-sms.localhost}
     ports:
       - "80:80"
       - "443:443"
@@ -121,6 +132,120 @@ services:
     logging:
       driver: ${RELAY_LOG_DRIVER:-none}
 
+  # ---- Optional: your own phone as the phone provider (profile "ownphone") ----
+  #
+  # The gateway is the private server of the app "SMS Gateway for Android"
+  # (https://github.com/android-sms-gateway/server, Apache-2.0). It is software
+  # of a different project. Postern only talks to it.
+  #
+  #   phone   -->  https://SMSGATE_HOST/api/mobile/v1    (through Caddy; the phone connects out)
+  #   Postern -->  http://smsgate:3000/api/3rdparty/v1   (inside Docker only)
+  #
+  # The gateway has no "ports": it is not published to the internet directly.
+  # The settings below follow the compose files of that project
+  # (deployments/docker-compose and deployments/docker-compose-proxy).
+  # This profile was not started by the authors of this file. Docker was not available.
+  smsgate:
+    # The release tool of the project gives each image the tag of its version.
+    # The tag below is the newest version in the source that the authors read.
+    # If Docker cannot find it, set SMSGATE_VERSION=latest in the .env file.
+    image: ghcr.io/android-sms-gateway/server:${SMSGATE_VERSION:-v1.52.6}
+    profiles:
+      - ownphone
+    restart: unless-stopped
+    depends_on:
+      smsgate-db:
+        condition: service_healthy
+    environment: &smsgate-env
+      CONFIG_PATH: config.yml
+      DATABASE__PASSWORD: ${SMSGATE_DB_PASSWORD:-}
+      # A phone can register only with this token (private mode).
+      GATEWAY__PRIVATE_TOKEN: ${SMSGATE_PRIVATE_TOKEN:-}
+      # Texts in the gateway database, kept as short as its settings permit:
+      # - A sent text is changed to a hash soon after the phone has processed it
+      #   (the check runs each 60 seconds, and one more time each hour).
+      # - Old rows are deleted: sent texts, and the copies of incoming texts
+      #   that the app uploads to the gateway ("inbox").
+      MESSAGES__HASHING_INTERVAL_SECONDS: "60"
+      TASKS__MESSAGES_HASHING__INTERVAL: 1h
+      TASKS__MESSAGES_CLEANUP__INTERVAL: 1h
+      TASKS__MESSAGES_CLEANUP__MAX_AGE: ${SMSGATE_KEEP:-24h}
+      TASKS__INBOX_CLEANUP__INTERVAL: 1h
+      TASKS__INBOX_CLEANUP__MAX_AGE: ${SMSGATE_KEEP:-24h}
+    configs:
+      - source: smsgate-config
+        target: /app/config.yml
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The authors could not check what the gateway writes in its log.
+    # After the phone works, you can turn the log off: SMSGATE_LOG_DRIVER=none
+    logging: &smsgate-log
+      driver: ${SMSGATE_LOG_DRIVER:-local}
+
+  # The same program in "worker" mode. It does the hashing and the deleting above.
+  smsgate-worker:
+    image: ghcr.io/android-sms-gateway/server:${SMSGATE_VERSION:-v1.52.6}
+    profiles:
+      - ownphone
+    command: ["/app/app", "worker"]
+    restart: unless-stopped
+    depends_on:
+      smsgate-db:
+        condition: service_healthy
+    environment: *smsgate-env
+    configs:
+      - source: smsgate-config
+        target: /app/config.yml
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *smsgate-log
+
+  # The database of the gateway. The project recommends the "lts" image of MariaDB,
+  # so this tag is not a fixed version.
+  smsgate-db:
+    image: mariadb:lts
+    profiles:
+      - ownphone
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SMSGATE_DB_ROOT_PASSWORD:-}
+      MYSQL_DATABASE: sms
+      MYSQL_USER: sms
+      MYSQL_PASSWORD: ${SMSGATE_DB_PASSWORD:-}
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - smsgate_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "3"
+
+# The fixed settings of the gateway. Secrets are not here: they come from the .env file.
+# (A file with "content" needs Docker Compose 2.23.1 or later.)
+configs:
+  smsgate-config:
+    content: |
+      gateway:
+        mode: private
+      http:
+        listen: 0.0.0.0:3000
+      database:
+        host: smsgate-db
+        port: 3306
+        user: sms
+        database: sms
+
 volumes:
   data:
   caddy_data:
@@ -128,6 +253,8 @@ volumes:
   relay_rspamd:
   relay_opendkim:
   relay_queue:
+  # The database of the gateway: the registration of each phone, and texts for a short time.
+  smsgate_db:
 
 # IPv6 note: with the default network below, Docker changes the address of each
 # IPv6 visitor to one internal address. All IPv6 visitors then share one rate
