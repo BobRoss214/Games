@@ -33,10 +33,16 @@ export const taken = () => fail(409, 'taken', 'This address is taken. Choose a d
 
 // ---- blocked senders ----
 
+// Only letters, digits, hyphens, and dots can be in a domain name. The check comes before the
+// conversion, because the conversion function reads its input like a web address: it would drop
+// a path, decode "%41", and turn "0x7f.1" into an IP address.
+const DOMAIN_TEXT = /^[\p{L}\p{N}\p{M}.-]+$/u;
+const toAscii = (domain) => (DOMAIN_TEXT.test(domain) ? domainToASCII(domain) : '');
+
 // A domain in the ASCII form that mail servers use ("xn--..." for international names), lower case.
 // Returns '' if the text is not a domain.
 function asciiDomain(text) {
-  const domain = domainToASCII(String(text).toLowerCase());
+  const domain = toAscii(String(text).toLowerCase());
   return domain.length <= 253 && ANY_DOMAIN.test(domain) ? domain : '';
 }
 
@@ -65,7 +71,7 @@ export function senderBlockTexts(sender) {
   const address = String(sender || '').toLowerCase();
   const at = address.lastIndexOf('@');
   if (at < 1 || address.length > 320) return [];
-  const domain = domainToASCII(address.slice(at + 1)) || address.slice(at + 1);
+  const domain = toAscii(address.slice(at + 1)) || address.slice(at + 1);
   const labels = domain.split('.');
   const texts = [`address:${address.slice(0, at)}@${domain}`, `domain:${domain}`];
   // Parent domains with two labels or more, the shortest first. A very long name is not followed to the end.
