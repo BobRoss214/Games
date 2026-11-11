@@ -86,6 +86,8 @@ export async function createApp(overrides = {}, env = process.env) {
     dev: config.dev,
     signup: config.signup,
     powBits: config.powBits,
+    graceDays: config.graceDays, // days between "suspended" and "released" for a number
+    renewDays: 30,
     mailDomains: config.mail.domains,
     features: {
       phone: config.phone.provider !== 'off',
