@@ -1,10 +1,10 @@
 // One row for an inbox, an alias or a number. Used on Home, Aliases and Numbers.
 import { h } from '../lib/dom.js';
-import { phoneText, plural } from '../lib/format.js';
+import { phoneText, plural, dayText, shortTime } from '../lib/format.js';
 import { icon } from './icons.js';
 import { toggle, copyButton, tag, reportError } from './components.js';
 import { menuButton } from './menu.js';
-import { updateAlias, mailboxName, phoneName } from '../lib/data.js';
+import { updateAlias, mailboxName, phoneName, aliasEnded, gatewayWords } from '../lib/data.js';
 import { openRename, openMoveAlias, confirmDeleteItem } from './items.js';
 import { toast } from './toast.js';
 import { navigate } from '../lib/router.js';
@@ -31,12 +31,13 @@ export function rowItems(state, aliasUnread = new Map()) {
   }
   for (const a of state.aliases || []) {
     const box = boxes.find((m) => m.id === a.mailboxId);
-    items.push({ kind: 'alias', id: a.id, address: a.address, value: a.address, display: a.address, label: a.label, off: !a.enabled, enabled: a.enabled, oneShot: !!a.oneShot, usedUp: !!a.usedUp, refused: a.refused || 0, mailboxId: a.mailboxId, unread: aliasUnread.get(a.id) || 0, received: a.received, href: box ? `/mail/${box.id}` : '/mail', route: { text: `Inbox ${mailboxName(box)}` }, ...group(a), extra: a.extra || {}, raw: a });
+    const ended = aliasEnded(a);
+    items.push({ kind: 'alias', id: a.id, address: a.address, value: a.address, display: a.address, label: a.label, off: !a.enabled || ended, enabled: a.enabled, ended, expiresAt: a.expiresAt || null, oneShot: !!a.oneShot, usedUp: !!a.usedUp, refused: a.refused || 0, mailboxId: a.mailboxId, unread: aliasUnread.get(a.id) || 0, received: a.received, href: box ? `/mail/${box.id}` : '/mail', route: { text: `Inbox ${mailboxName(box)}` }, ...group(a), extra: a.extra || {}, raw: a });
   }
   for (const n of state.numbers || []) {
     const phone = n.forwardPhoneId ? phones.find((p) => p.id === n.forwardPhoneId) : null;
     const forwards = phone && phone.verified && (n.forwardTexts || n.forwardCalls);
-    items.push({ kind: 'number', id: n.id, number: n.number, value: n.number, display: phoneText(n.number), label: n.label, off: n.status !== 'active', paused: n.status !== 'active', unread: n.unread, href: `/numbers/${n.id}`, forwards: !!forwards, route: forwards ? { text: `forwards to ${phoneName(phone)}` } : { text: 'in app only', plain: true }, ...group(n), extra: n.extra || {}, raw: n });
+    items.push({ kind: 'number', id: n.id, number: n.number, value: n.number, display: phoneText(n.number), label: n.label, off: n.status !== 'active', paused: n.status !== 'active', unread: n.unread, href: `/numbers/${n.id}`, forwards: !!forwards, phoneWords: gatewayWords(n, shortTime), phoneOffline: !!(n.gateway && !n.gateway.online), route: forwards ? { text: `forwards to ${phoneName(phone)}` } : { text: 'in app only', plain: true }, ...group(n), extra: n.extra || {}, raw: n });
   }
   return items;
 }
@@ -80,28 +81,33 @@ export function itemRow(item, { showReceived = false, showIdentity = true } = {}
     { label: item.kind === 'number' ? 'Release number' : 'Delete', icon: 'trash', danger: true, onSelect: () => confirmDeleteItem(item) },
   ];
 
+  // An alias past its end date refuses mail: its switch shows off. It cannot be turned on with the switch.
+  const on = item.enabled && !item.ended;
   const sw = item.kind === 'alias' ? toggle({
-    checked: item.enabled,
-    label: item.enabled ? `Turn off ${item.address}` : `Turn on ${item.address}`,
+    checked: on,
+    label: on ? `Turn off ${item.address}` : `Turn on ${item.address}`,
     onChange: async (on) => {
+      if (item.ended) throw new Error(`This alias ended on ${dayText(new Date(item.expiresAt * 1000).toISOString().slice(0, 10))}. Change or remove its end date to use it again.`);
       await updateAlias(item.id, { enabled: on });
       toast(on ? (item.oneShot ? 'Alias turned on. It stops again after the next mail.' : 'Alias turned on') : 'Alias turned off. Mail to it is refused.', { kind: 'ok', timeout: on && item.oneShot ? 4000 : 2600 });
     },
   }) : null;
 
+  const badges = registered.rowBadges(item.kind, item); // marks of feature files
   return h('li', { class: `item-row ${item.off ? 'is-off' : ''}`.trim(), dataset: { kind: item.kind, id: item.id } },
     h('span', { class: 'item-icon', title: KIND_NAME[item.kind] }, icon(KIND_ICON[item.kind], { size: 20, label: KIND_NAME[item.kind] })),
     h('div', { class: 'item-main' },
       h('a', { class: 'item-value mono', href: item.href, 'data-link': true, title: item.display }, item.kind === 'number' ? item.display : breakable(item.display)),
       h('div', { class: 'item-sub' },
         item.label ? h('span', { class: 'item-label' }, item.label) : h('span', { class: 'item-label is-empty' }, 'No label'),
-        item.usedUp ? tag('Used up', 'warn') : item.kind === 'alias' && !item.enabled ? tag('Off') : null,
-        item.oneShot && item.enabled ? tag('One mail only') : null,
+        item.usedUp ? tag('Used up', 'warn') : item.ended ? (badges.some((n) => n.dataset && n.dataset.end === 'ended') ? null : tag('Ended', 'warn')) : item.kind === 'alias' && !item.enabled ? tag('Off') : null,
+        item.oneShot && item.enabled && !item.ended ? tag('One mail only') : null,
+        item.phoneWords ? h('span', { class: `tag ${item.phoneOffline ? 'tag-warn' : ''} item-phone`.trim(), dataset: { phone: item.phoneOffline ? 'offline' : 'online' } }, item.phoneWords) : null,
         item.paused ? tag('Paused', 'warn') : null,
         item.unread > 0 ? h('span', { class: 'badge', 'aria-label': `${item.unread} unread` }, item.unread > 99 ? '99+' : String(item.unread)) : null,
         showIdentity && item.identityId ? h('a', { class: 'tag tag-link item-group', href: `/identities/${item.identityId}`, 'data-link': true, title: `In the identity ${item.identityName}` }, icon('folder', { size: 12 }), colourDot(item.identity), h('span', { class: 'truncate' }, item.identityName)) : null,
         item.persona ? h('button', { class: 'tag tag-link item-persona', type: 'button', title: 'Random identifiers', onClick: () => openPersonaDialog(item) }, icon('person', { size: 12 }), h('span', { class: 'truncate' }, fullName(item.persona))) : null,
-        registered.rowBadges(item.kind, item),
+        badges,
         item.refused > 0 ? h('span', { class: 'item-refused small faint', title: 'Mail that this address refused. The server keeps only this number.' }, `Refused ${plural(item.refused, 'mail')}`) : null,
       ),
     ),

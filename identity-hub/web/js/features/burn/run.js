@@ -12,6 +12,7 @@ import { updateAlias, releaseNumber, setItemExtra, loadAliases, loadMailboxes, f
 import { findIdentity, membersOf, setIdentityExtra, addIdentityEvent } from '../../lib/identities.js';
 import { button, callout, skeletonRows, loadError } from '../../ui/components.js';
 import { openDialog, confirmDialog } from '../../ui/dialog.js';
+import { why } from '../../ui/why.js';
 
 const WORD = 'BURN';
 const ID = /^[A-Za-z0-9_-]{22}$/;
@@ -202,6 +203,7 @@ export async function openBurn(target) {
           h('p', { class: 'read' }, 'The burn does all of this:'),
           listOf(cover, counts),
           callout('danger', 'This cannot be undone'),
+          why('burn'),
           h('div', { class: 'dialog-actions' }, cancel, button('Continue', { kind: 'danger', onClick: () => dlg.close(true) })),
         );
         cancel.focus();

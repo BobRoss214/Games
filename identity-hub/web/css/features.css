@@ -2,8 +2,10 @@
    Owner: the web app owner. Feature files do not get their own CSS file.
    1. The places that the shared screens give to feature parts.
    2. A few shared helpers for feature screens.
-   3. One block for each feature that needs a style of its own: classes start with "f-<feature id>-".
-   Only tokens from tokens.css. No new colours, no new font sizes. */
+   3. One block for each feature that needs a style of its own, between a "start" and an "end" line.
+      Its classes start with "f-<feature id>-".
+   Only tokens from tokens.css: no colour values and no new font sizes here, so every block follows
+   the light and the dark theme. A grid with fixed columns gets one column at 720px and less. */
 
 /* ---------- 1. places ---------- */
 
@@ -18,6 +20,7 @@
 
 /* an open email (registerMessagePanel) */
 .message-panels { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-4); }
+.message-panels:empty { display: none; }
 
 /* under one text or one call (registerTextAddon, registerCallAddon) */
 .addons { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-2); }
@@ -51,13 +54,13 @@
 
 /* ---------- 3. features ---------- */
 
-/* f-warnings: Home warnings (features/home-warnings.js) */
-.warn-list { list-style: disc; padding-left: 1.125rem; }
-.warn-list li + li { margin-top: var(--s-1); }
-.home-slot .callout-body > div { margin-top: var(--s-1); }
-.warn-actions { align-items: flex-start; gap: var(--s-2) var(--s-4); }
-.warn-actions > .why { flex: 1 1 14rem; padding-top: 0.375rem; }
-.callout-warn .why-btn { color: inherit; }
+/* ---- home warnings: start (features/home-warnings.js) ---- */
+.f-warnings-list { list-style: disc; padding-left: 1.125rem; }
+.f-warnings-list li + li { margin-top: var(--s-1); }
+.f-warnings .callout-body > div { margin-top: var(--s-1); }
+.f-warnings-actions { align-items: flex-start; gap: var(--s-2) var(--s-4); }
+.f-warnings-actions > .why { flex: 1 1 14rem; padding-top: 0.375rem; }
+/* ---- home warnings: end ---- */
 
 /* ---- help: start (features/help.js, features/help/screens.js) ---- */
 
@@ -85,9 +88,11 @@
 .f-help-limit dd { color: var(--ink-2); }
 .f-help-note { margin-top: var(--s-5); max-width: 62ch; }
 
-/* questions and answers */
-.f-help-questions { columns: 2; column-gap: var(--s-6); }
-.f-help-questions li { break-inside: avoid; padding: var(--s-1) 0; }
+/* questions and answers: the questions in groups, two columns of groups on a wide screen */
+.f-help-groups { columns: 2; column-gap: var(--s-6); }
+.f-help-groups > section { break-inside: avoid; margin-bottom: var(--s-4); }
+.f-help-group-title { font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0; color: var(--ink-2); }
+.f-help-questions li { padding: var(--s-1) 0; }
 .f-help-answers { margin-top: var(--s-6); }
 .f-help-answer { scroll-margin-top: var(--s-5); }
 
@@ -97,7 +102,7 @@
 .f-help-words dt { font-weight: 600; }
 
 @media (max-width: 720px) {
-  .f-help-questions { columns: 1; }
+  .f-help-groups { columns: 1; }
   .f-help-questions li { padding: 0; }
   .f-help-questions a { display: flex; align-items: center; min-height: var(--touch); }
   .f-help-answer { scroll-margin-top: calc(var(--topbar-h) + var(--s-4)); }
@@ -105,9 +110,14 @@
 }
 /* ---- help: end ---- */
 
-/* f-leak: "Possibly leaked" panel in an open email (features/leak-hint.js) */
-.leak-actions { margin-top: var(--s-1); }
-.code-panel { display: flex; }
+/* ---- leak hint: start (features/leak-hint.js): the "Possibly leaked" panel in an open email ---- */
+.f-leak-actions { margin-top: var(--s-1); }
+/* ---- leak hint: end ---- */
+
+/* ---- code helper: start (features/code-helper.js): the code above the text of an email ---- */
+.f-code-panel { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s-2) var(--s-4); }
+.f-code-panel > .why { flex: 1 1 12rem; padding-top: 0.375rem; }
+/* ---- code helper: end ---- */
 
 /* --- voicemail (web/js/features/voicemail.js): the line under a call --- */
 .f-vm { display: flex; flex-direction: column; gap: var(--s-1); flex: 1 1 100%; min-width: 0; }
@@ -127,6 +137,10 @@
 .f-tutorial-do { padding-top: var(--s-4); border-top: 1px solid var(--line); }
 /* Back on the left, Next on the right */
 .f-tutorial-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-top: var(--s-4); }
+/* the list of a step to read ("More things you can do"): a name and one line for each thing */
+.f-tutorial-list li { padding: var(--s-2) 0; border-top: 1px solid var(--line); }
+.f-tutorial-list li:first-child { padding-top: 0; border-top: 0; }
+.f-tutorial-list li:last-child { padding-bottom: 0; }
 /* a step whose part of the server is off: grey, with "Turned off" and the reason in words */
 .f-tutorial-off h2, .f-tutorial-off .read, .f-tutorial-off .item-value, .f-tutorial-off .item-icon { color: var(--ink-3); }
 @media (max-width: 720px) {

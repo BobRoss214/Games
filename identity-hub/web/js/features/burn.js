@@ -17,10 +17,10 @@ const open = (name, ...args) => import('./burn/run.js').then((m) => m[name](...a
 
 // "Burn" is under the line of the menu, next to Delete.
 registerRowAction('identity', (item) => (isObject(item.extra.burning)
-  ? { label: 'Finish the burn', icon: 'warning', danger: true, run: () => open('finishBurn', item.id) }
-  : { label: 'Burn', icon: 'warning', danger: true, run: () => open('openBurn', { kind: 'identity', id: item.id }) }));
-registerRowAction('alias', (item) => ({ label: 'Burn', icon: 'warning', danger: true, run: () => open('openBurn', { kind: 'alias', id: item.id }) }));
-registerRowAction('number', (item) => ({ label: 'Burn', icon: 'warning', danger: true, run: () => open('openBurn', { kind: 'number', id: item.id }) }));
+  ? { label: 'Finish the burn', icon: 'flame', danger: true, run: () => open('finishBurn', item.id) }
+  : { label: 'Burn', icon: 'flame', danger: true, run: () => open('openBurn', { kind: 'identity', id: item.id }) }));
+registerRowAction('alias', (item) => ({ label: 'Burn', icon: 'flame', danger: true, run: () => open('openBurn', { kind: 'alias', id: item.id }) }));
+registerRowAction('number', (item) => ({ label: 'Burn', icon: 'flame', danger: true, run: () => open('openBurn', { kind: 'number', id: item.id }) }));
 
 registerRowBadge('identity', (item) => {
   if (!isObject(item.extra.burning)) return null;

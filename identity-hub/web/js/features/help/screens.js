@@ -5,12 +5,11 @@
 // - The address shows the name of the screen and nothing more. A link inside a screen
 //   moves the view, and does not change the address.
 import { h } from '../../lib/dom.js';
-import { store } from '../../lib/store.js';
+import { appName } from '../../lib/store.js';
 import { icon } from '../../ui/icons.js';
 import { pageHeader, section, callout, linkButton } from '../../ui/components.js';
-import { WHY_PAGE, TIPS, TIPS_NOTE, WHY, WORDS } from '../../help/content.js';
+import { WHY_PAGE, TIPS, TIPS_NOTE, WHY, WHY_GROUPS, WORDS } from '../../help/content.js';
 
-const appName = () => { const c = store.get('config'); return (c && c.appName) || 'this app'; };
 // Puts the name of the product in the place of {app}.
 const fill = (text) => String(text).split('{app}').join(appName());
 
@@ -114,10 +113,19 @@ export function tipsScreen() {
 }
 
 // ---- /help/answers ----
+// All "Why?" texts, in the groups of WHY_GROUPS: a list of the questions first, then the answers.
 // Each answer has the key of its "Why?" text as its id. Another screen can link to one answer:
 // /help/answers#balance. This screen reads that part of the address, and never writes it.
+function answerGroups() {
+  const groups = WHY_GROUPS.map((g) => ({ title: g.title, entries: g.keys.filter((key) => WHY[key]).map((key) => [key, WHY[key]]) }));
+  // A text that is in no group still shows (the test of the help text keeps this list empty).
+  const grouped = new Set(WHY_GROUPS.flatMap((g) => g.keys));
+  const rest = Object.entries(WHY).filter(([key]) => !grouped.has(key));
+  if (rest.length) groups.push({ title: 'More', entries: rest });
+  return groups.filter((g) => g.entries.length);
+}
 export function answersScreen({ scope }) {
-  const entries = Object.entries(WHY);
+  const groups = answerGroups();
   const headings = new Map();
   const show = (key) => {
     const heading = headings.get(key);
@@ -131,18 +139,24 @@ export function answersScreen({ scope }) {
     e.preventDefault();
     show(key);
   };
-  const answers = entries.map(([key, entry]) => {
-    const heading = h('h2', { class: 'section-title f-help-answer', id: key, tabIndex: -1 }, fill(entry.title));
-    headings.set(key, heading);
-    return [heading, entry.paragraphs.map((p) => h('p', null, fill(p)))];
-  });
+  const answers = groups.map((g) => [
+    h('h2', { dataset: { group: g.title } }, g.title),
+    g.entries.map(([key, entry]) => {
+      const heading = h('h3', { class: 'f-help-answer', id: key, tabIndex: -1 }, fill(entry.title));
+      headings.set(key, heading);
+      return [heading, entry.paragraphs.map((p) => h('p', null, fill(p)))];
+    }),
+  ]);
   const wanted = location.hash.slice(1);
   if (headings.has(wanted)) requestAnimationFrame(() => { if (!scope.disposed) show(wanted); });
   return helpPage({ title: 'Questions and answers', lede: fill('The small “Why?” buttons in {app} open these answers. Here you can read them all in one place.') },
-    h('nav', { class: 'sheet sheet-pad stack stack-2', 'aria-labelledby': 'help-questions-title' },
+    h('nav', { class: 'sheet sheet-pad stack stack-3', 'aria-labelledby': 'help-questions-title' },
       h('h2', { class: 'section-title', id: 'help-questions-title' }, 'Questions'),
-      h('ul', { class: 'f-help-questions' }, entries.map(([key, entry]) => h('li', null,
-        h('a', { href: `#${key}`, onClick: onJump(key) }, fill(entry.title))))),
+      h('div', { class: 'f-help-groups' }, groups.map((g, i) => h('section', { 'aria-labelledby': `help-group-${i}` },
+        h('h3', { class: 'f-help-group-title', id: `help-group-${i}` }, g.title),
+        h('ul', { class: 'f-help-questions' }, g.entries.map(([key, entry]) => h('li', null,
+          h('a', { href: `#${key}`, onClick: onJump(key) }, fill(entry.title))))),
+      ))),
     ),
     h('div', { class: 'prose f-help-answers' }, answers),
     more('/help/answers'),

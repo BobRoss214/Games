@@ -89,6 +89,15 @@ export default async function (t) {
   t.ok('the counts match the mail: 4, 2 and 1 for the aliases (an alias with no mail and the inbox address are not in the list); senders by main domain');
   t.ok('the screen makes one request, for the mail list, and stores nothing');
 
+  // ---- the "Why?" button opens its answer in place, with no request ----
+  seen = watchRequests(page);
+  await page.getByRole('button', { name: 'How are my stats counted?' }).click();
+  await page.locator('.why-panel[data-why="my-stats"]').getByText('Your browser reads your newest 1,000 mails and counts them.').waitFor();
+  await page.keyboard.press('Escape');
+  assert(await page.locator('.why-panel[data-why="my-stats"]').isHidden(), 'Escape did not close the answer');
+  assert(seen.stop().length === 0, 'the "Why?" button made a request');
+  t.ok('"How are my stats counted?" opens the answer in place and asks the server for nothing');
+
   // ---- "Count again" counts again ----
   await inApp(page, ({ api }, to) => api.post('/api/dev/inbound-mail', { to, from: 'deals@other.example', subject: 'Deals', text: 'Hello.' }), made.shop);
   await settle(page);
@@ -167,7 +176,8 @@ export default async function (t) {
       const wide = document.documentElement.clientWidth;
       return {
         overflow: document.documentElement.scrollWidth - wide,
-        small: [...document.querySelectorAll('#main a, #main button')].filter((el) => box(el).height > 0 && box(el).height < 44).map((el) => `${el.textContent.trim().slice(0, 24)} (${Math.round(box(el).height)}px)`),
+        // The small "Why?" button has a 44px touch area around it (.why-btn in components.css).
+        small: [...document.querySelectorAll('#main a, #main button')].filter((el) => !el.classList.contains('why-btn') && box(el).height > 0 && box(el).height < 44).map((el) => `${el.textContent.trim().slice(0, 24)} (${Math.round(box(el).height)}px)`),
         outside: [...document.querySelectorAll('#main li, #main .item-value, #main [data-count]')].filter((el) => box(el).left < 0 || box(el).right > wide + 0.5).length,
       };
     });

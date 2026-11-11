@@ -159,6 +159,9 @@ export function createHooks(app, ph) {
   }
 
   const hooks = {
+    // The normal path of an incoming text: { to, from, body, id }. A provider with its own
+    // webhook route (own phone) calls it after its own signature check.
+    receiveText,
     paths: {
       text: '/api/hooks/phone/text', textStatus: '/api/hooks/phone/text-status', voice: '/api/hooks/phone/voice',
       bridge: '/api/hooks/phone/bridge', sayCode: '/api/hooks/phone/say-code', status: '/api/hooks/phone/status',
@@ -206,6 +209,8 @@ export function createHooks(app, ph) {
     },
   };
 
+  // A provider with its own webhook route and its own signature has none of the routes below.
+  if (provider.ownWebhooks) return hooks;
   const opts = { body: provider.webhookBody };
   http.post(hooks.paths.text, opts, hooks.text);
   http.post(hooks.paths.textStatus, opts, hooks.textStatus);

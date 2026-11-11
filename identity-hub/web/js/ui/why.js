@@ -12,18 +12,20 @@ const words = (text) => String(text).split('{app}').join(appName());
 
 // Returns { button, panel } for the places where the two cannot sit in one box:
 // put the button next to the thing and the panel under it.
-// key: a key of WHY in help/content.js. text: the words on the button.
+// key: a key of WHY in help/content.js. A key that has no words (yet) gives nothing: { button: null, panel: null }.
+// text: the words on the button.
 // (the question itself when left out; pass 'Why?' where the place is tight and the thing is clear).
 export function whyParts(key, { text = '' } = {}) {
   const entry = WHY[key];
   if (!entry) return { button: null, panel: null };
   const id = uid('why');
-  const titleId = `${id}-title`;
   const title = words(entry.title);
   text = text || title;
   const close = h('button', { class: 'btn btn-quiet btn-sm why-close', type: 'button' }, 'Close');
-  const panel = h('div', { class: 'why-panel', id, role: 'region', 'aria-labelledby': titleId, hidden: true, dataset: { why: key } },
-    h('p', { class: 'why-title', id: titleId }, title),
+  // role "note": the panel is extra information. It has no label of its own, so that it is never
+  // taken for the field next to it (a labelled region named "Why a recovery key?" next to the field "Recovery key").
+  const panel = h('div', { class: 'why-panel', id, role: 'note', hidden: true, dataset: { why: key } },
+    h('p', { class: 'why-title' }, title),
     entry.paragraphs.map((p) => h('p', null, words(p))),
     h('div', null, close),
   );
@@ -62,5 +64,6 @@ export function why(key, opts) {
 // entries: [[key, { text }], ...]
 export function whyGroup(entries) {
   const parts = entries.map(([key, opts]) => whyParts(key, opts)).filter((p) => p.button);
+  if (!parts.length) return null; // none of the keys has words yet
   return h('div', { class: 'why' }, h('div', { class: 'why-line' }, parts.map((p) => p.button)), parts.map((p) => p.panel));
 }

@@ -86,6 +86,8 @@ export async function loadNumbers() {
       forwardPhoneId: n.forwardPhoneId || null, forwardTexts: !!n.forwardTexts, forwardCalls: !!n.forwardCalls, unread: n.unread || 0,
       retentionDays: Number.isInteger(n.retentionDays) ? n.retentionDays : null, // old texts are deleted after this many days; null = never
       voicemail: !!n.voicemail, // callers can leave a message
+      // "Own phone" provider: the phone that carries this number. null for the other providers.
+      gateway: n.gateway && typeof n.gateway === 'object' ? { online: !!n.gateway.online, lastSeen: Number.isFinite(n.gateway.lastSeen) && n.gateway.lastSeen > 0 ? n.gateway.lastSeen : null } : null,
     };
   }));
   if (!isUnlocked()) return [];
@@ -159,6 +161,17 @@ export const renewDays = () => { const c = store.get('config'); return (c && c.r
 export const graceDays = () => { const c = store.get('config'); return (c && Number.isInteger(c.graceDays) && c.graceDays > 0) ? c.graceDays : 0; };
 
 // ---- label helpers ----
+// An alias past its end date refuses mail, also when its switch is still on.
+export const aliasEnded = (a, now = Date.now() / 1000) => !!(a && Number.isFinite(a.expiresAt) && a.expiresAt > 0 && a.expiresAt <= now);
+// A number of the "own phone" provider: the words for its phone, or '' for a number of another provider.
+export function gatewayWords(n, shortTime) {
+  if (!n || !n.gateway) return '';
+  if (n.gateway.online) return 'Phone online';
+  return n.gateway.lastSeen ? `Phone offline since ${shortTime(n.gateway.lastSeen)}` : 'Phone offline';
+}
+// Does this server get its numbers from its own phones? (texts only, no calls)
+export const ownPhone = () => { const c = store.get('config'); const f = (c && c.features) || {}; return !!f.ownPhone; };
+
 export const mailboxName = (m) => (m ? (m.label || m.address || 'Inbox') : 'Inbox');
 export const phoneName = (p) => (p ? (p.label || p.number || 'Phone') : 'Phone');
 

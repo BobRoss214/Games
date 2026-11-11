@@ -92,6 +92,14 @@ export default async function (t) {
   t.ok('an alias with one sender, and an alias with no mail, are not in the list');
   t.ok('the screen makes one request, for the mail list, and stores nothing');
 
+  // ---- the "Why?" button opens its answer in place, with no request ----
+  seen = watchRequests(page);
+  await page.getByRole('button', { name: 'How does "Who leaked me" work?' }).click();
+  await page.locator('.why-panel[data-why="who-leaked-me"]').getByText('A hint is not proof.').waitFor();
+  await page.locator('.why-panel[data-why="who-leaked-me"]').getByRole('button', { name: 'Close' }).click();
+  assert(seen.stop().length === 0, 'the "Why?" button made a request');
+  t.ok('the "Why?" button of the page opens the answer in place and asks the server for nothing');
+
   // ---- an alias that knows nobody yet: this screen saves its first sender (encrypted) ----
   await inApp(page, ({ data }, id) => data.setItemExtra('alias', id, { senders: null }), made.shop);
   await waitSenders(made.shop, null);
@@ -175,8 +183,9 @@ export default async function (t) {
       const wide = document.documentElement.clientWidth;
       return {
         overflow: document.documentElement.scrollWidth - wide,
-        // A small mark that is a link (the identity) has a 44px touch area around it (.tag-link in components.css).
-        small: [...document.querySelectorAll('#main a, #main button')].filter((el) => !el.classList.contains('tag-link') && box(el).height > 0 && box(el).height < 44).map((el) => `${el.textContent.trim().slice(0, 24)} (${Math.round(box(el).height)}px)`),
+        // A small mark that is a link (the identity) and the small "Why?" button have a 44px touch area around them
+        // (.tag-link and .why-btn in components.css).
+        small: [...document.querySelectorAll('#main a, #main button')].filter((el) => !el.classList.contains('tag-link') && !el.classList.contains('why-btn') && box(el).height > 0 && box(el).height < 44).map((el) => `${el.textContent.trim().slice(0, 24)} (${Math.round(box(el).height)}px)`),
         outside: [...document.querySelectorAll('#main article, #main article *')].filter((el) => box(el).width > 0 && (box(el).left < 0 || box(el).right > wide + 0.5)).length,
       };
     });

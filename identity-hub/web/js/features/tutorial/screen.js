@@ -21,7 +21,7 @@ import { openLinkPhone } from '../../screens/numbers.js';
 import { openTestTools } from '../../screens/testtools.js';
 import { openRecoveryTest } from '../recovery-test.js';
 import { progress, loadProgress, saveProgress } from './state.js';
-import { STEPS, TOTAL, stepIndex, stepById, priceOf, fill, proofs, statusOf, nextIndex, prevIndex, missingFor, withProven } from './steps.js';
+import { STEPS, TOTAL, stepIndex, stepById, priceOf, fill, proofs, statusOf, nextIndex, prevIndex, missingFor, withProven, isReadStep, listOf } from './steps.js';
 import { extra, onExtra, refreshExtra, watchStep, stopWatch } from './watch.js';
 
 // The last step offers "Open Help" only when the Help screen exists.
@@ -67,8 +67,8 @@ export default function screen({ scope }) {
     index = to;
     focusTitle = true;
     save((next) => {
-      // The first step has nothing to do: to leave it is to do it.
-      if (from.id === 'welcome' && !next.done.includes('welcome')) next.done.push('welcome');
+      // A step to read (the first step, "More things you can do") has nothing to do: to leave it is to do it.
+      if (isReadStep(from) && !next.done.includes(from.id)) next.done.push(from.id);
       if (skip && !next.done.includes(from.id) && !next.skipped.includes(from.id)) next.skipped.push(from.id);
     });
     paint();
@@ -142,7 +142,11 @@ export default function screen({ scope }) {
   function doPart(step, st, app) {
     const t = (text) => fill(text, step, app.config);
     if (st === 'off') return h('div', { class: 'f-tutorial-do stack stack-3' }, h('p', { class: 'read muted' }, t(step.offNote)));
-    if (st === 'done') return h('div', { class: 'f-tutorial-do' }, callout('ok', t(step.done)));
+    if (st === 'done') return t(step.done) ? h('div', { class: 'f-tutorial-do' }, callout('ok', t(step.done))) : null;
+    // A step to read: the sentence if it has one, and no button.
+    if (isReadStep(step)) {
+      return t(step.doIt) ? h('div', { class: 'f-tutorial-do stack stack-1' }, h('p', { class: 'label' }, 'Do it now'), h('p', { class: 'read' }, t(step.doIt))) : null;
+    }
 
     const dev = !!(app.config && app.config.dev);
     const payOn = !!(app.config && app.config.features && app.config.features.pay);
@@ -211,7 +215,7 @@ export default function screen({ scope }) {
     return section({ title: 'All steps' },
       h('div', { class: 'sheet item-sheet' }, h('ol', { class: 'item-list f-tutorial-steps' }, STEPS.map((step, i) => {
         const st = statuses[i];
-        const title = fill(step.title, step, app.config);
+        const title = fill(step.title, step, app.config) || stepText(i + 1);
         const here = i === index;
         return h('li', { class: `phone-row ${st === 'off' ? 'f-tutorial-off' : ''}`.trim(), 'aria-current': here ? 'step' : null, dataset: { step: step.id, status: st } },
           h('span', { class: 'item-icon mono small', 'aria-hidden': 'true' }, st === 'done' ? icon('check', { size: 18 }) : String(i + 1)),
@@ -264,7 +268,8 @@ export default function screen({ scope }) {
     const back = prevIndex(index, app.config);
     const next = nextIndex(index, app.config);
 
-    const title = h('h2', { id: 'tutorial-step-title', tabIndex: -1, 'data-key': 'title' }, t(step.title));
+    const title = h('h2', { id: 'tutorial-step-title', tabIndex: -1, 'data-key': 'title' }, t(step.title) || stepText(index + 1));
+    const rows = listOf(step);
     const nav = h('div', { class: 'f-tutorial-nav' },
       back !== index ? button('Back', { iconName: 'arrowLeft', attrs: { 'data-key': 'back' }, onClick: () => go(back) }) : h('span', null),
       last
@@ -283,8 +288,10 @@ export default function screen({ scope }) {
       ),
       h('section', { class: `sheet sheet-pad stack ${st === 'off' ? 'f-tutorial-off' : ''}`.trim(), 'aria-labelledby': 'tutorial-step-title', dataset: { step: step.id, status: st } },
         h('div', { class: 'row row-between row-top' }, title, statusTag(st)),
-        h('div', { class: 'stack stack-1' }, h('p', { class: 'label' }, 'What it is'), h('p', { class: 'read' }, t(step.what))),
-        h('div', { class: 'stack stack-1' }, h('p', { class: 'label' }, 'Why it exists'), h('p', { class: 'read' }, t(step.why))),
+        t(step.what) ? h('div', { class: 'stack stack-1' }, h('p', { class: 'label' }, 'What it is'), h('p', { class: 'read' }, t(step.what))) : null,
+        t(step.why) ? h('div', { class: 'stack stack-1' }, h('p', { class: 'label' }, 'Why it exists'), h('p', { class: 'read' }, t(step.why))) : null,
+        // The list of a step to read: a name and one line for each thing.
+        rows.length ? h('ul', { class: 'f-tutorial-list' }, rows.map((row) => h('li', null, h('p', { class: 'strong' }, fill(row.name, step, app.config)), row.line ? h('p', { class: 'small muted' }, fill(row.line, step, app.config)) : null))) : null,
         doPart(step, st, app),
         last && finished ? summary(statuses) : null,
         last && finished ? h('div', null, button('Start again', { iconName: 'refresh', attrs: { 'data-key': 'again' }, onClick: startAgain })) : null,
@@ -294,7 +301,7 @@ export default function screen({ scope }) {
     );
 
     // A screen reader hears the sentence when the step on the screen becomes done.
-    if (shown.id === step.id && shown.status !== 'done' && st === 'done') live.textContent = t(step.done);
+    if (shown.id === step.id && shown.status !== 'done' && st === 'done' && t(step.done)) live.textContent = t(step.done);
     else if (shown.id !== step.id) live.textContent = '';
     shown = { id: step.id, status: st };
 

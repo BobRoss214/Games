@@ -4,11 +4,13 @@
 import { h } from '../../lib/dom.js';
 import { api, query } from '../../lib/api.js';
 import { fullTime, plural } from '../../lib/format.js';
+import { findAlias, findMailbox, loadAliases, loadMailboxes } from '../../lib/data.js';
 import { button, field, callout, runBusy } from '../../ui/components.js';
 import { formDialog, confirmDialog } from '../../ui/dialog.js';
 import { toast } from '../../ui/toast.js';
+import { why } from '../../ui/why.js';
 import { choiceList } from '../common/choices.js';
-import { refreshFacts, aliasFacts, inboxFacts } from '../common/facts.js';
+import { aliasFacts, inboxFacts } from '../common/facts.js';
 
 const DAY = 86400;
 const PRESETS = [7, 30, 90, 365];
@@ -25,8 +27,8 @@ async function countOlder(inboxId, n) {
 
 // ---- inbox: delete old mail ----
 export async function openInboxAutoDelete(inbox) {
-  await refreshFacts();
-  const current = inboxFacts(inbox.id).retentionDays;
+  // The value as the store has it now (the list may have changed since the row was painted).
+  const current = inboxFacts(findMailbox(inbox.id) || inbox).retentionDays;
   const own = field({ label: 'Days', mono: true, inputmode: 'numeric', maxlength: 4, value: current && !PRESETS.includes(current) ? String(current) : '', hint: `A whole number from 1 to ${MAX_DAYS}.` });
   const ownBox = h('div', { hidden: true }, own.el);
   const choice = choiceList({
@@ -54,7 +56,7 @@ export async function openInboxAutoDelete(inbox) {
   const saved = await formDialog({
     title: 'Delete old mail automatically', submitLabel: 'Save', size: 'md',
     description: 'The server deletes old mail of this inbox by itself, also when this app is closed.',
-    build: () => h('div', { class: 'stack' }, h('p', { class: 'mono small muted break' }, inbox.address), choice.el, ownBox),
+    build: () => h('div', { class: 'stack' }, h('p', { class: 'mono small muted break' }, inbox.address), why('auto-delete'), choice.el, ownBox),
     onSubmit: async () => {
       const next = read();
       if (next === undefined) return false;
@@ -73,7 +75,7 @@ export async function openInboxAutoDelete(inbox) {
         if (!ok) return false;
       }
       await api.patch(`/api/mailboxes/${inbox.id}`, { retentionDays: next });
-      await refreshFacts();
+      await loadMailboxes();
       return { next };
     },
   });
@@ -85,8 +87,7 @@ const pad = (n) => String(n).padStart(2, '0');
 const dayValue = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 export async function openAliasEnd(alias) {
-  await refreshFacts();
-  const current = aliasFacts(alias.id).expiresAt;
+  const current = aliasFacts(findAlias(alias.id) || alias).expiresAt;
   const ended = !!current && current <= now();
   const today = new Date();
   const last = new Date(today.getFullYear(), today.getMonth(), today.getDate() + MAX_DAYS - 2);
@@ -113,13 +114,14 @@ export async function openAliasEnd(alias) {
     if (!at || at <= now() || at > now() + MAX_DAYS * DAY) { day.setError('Choose a day from today on, 10 years ahead at most.'); return undefined; }
     return at;
   };
-  const patch = (expiresAt) => api.patch(`/api/aliases/${alias.id}`, { expiresAt }).then(() => refreshFacts());
+  const patch = (expiresAt) => api.patch(`/api/aliases/${alias.id}`, { expiresAt }).then(() => loadAliases());
 
   const result = await formDialog({
     title: current ? 'Change the end date' : 'Set an end date', submitLabel: 'Set end date', size: 'md',
     description: 'After the end date the alias refuses mail, like an alias that is turned off. Its mail stays.',
     build: (dlg) => h('div', { class: 'stack' },
       h('p', { class: 'mono small muted break' }, alias.address),
+      why('end-date'),
       current ? callout(ended ? 'warn' : 'info', ended ? `This alias ended on ${fullTime(current)}` : `This alias stops on ${fullTime(current)}`,
         h('div', null, button('Remove the end date', { size: 'sm', onClick: (e, btn) => runBusy(btn, async () => { await patch(null); dlg.close({ removed: true }); }) })),
       ) : null,

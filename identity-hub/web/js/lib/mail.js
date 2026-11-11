@@ -1,6 +1,6 @@
 // Mail: read (decrypt) and send (with a browser-encrypted Sent copy).
 import { api, query } from './api.js';
-import { store } from './store.js';
+import { store, bus } from './store.js';
 import { getKeys, onForget } from './session.js';
 import { b64u, unb64u } from '/shared/bytes.js';
 import { openContentKey, openMeta, openBody, openAttachment, sealEnvelope } from '/shared/crypto.js';
@@ -72,7 +72,8 @@ export async function deleteMessage(id) {
 
 // One-time hand-over from another screen: "open Mail and show only this address".
 let pendingFilter = null; // { mailboxId, addressId }
-export function setMailFilter(filter) { pendingFilter = filter; }
+// It also works while the Mail screen is open on that inbox: the screen hears it (bus event "mail-filter").
+export function setMailFilter(filter) { pendingFilter = filter; bus.emit('mail-filter', filter); }
 export function takeMailFilter(mailboxId) {
   const f = pendingFilter && pendingFilter.mailboxId === mailboxId ? pendingFilter.addressId : '';
   pendingFilter = null;

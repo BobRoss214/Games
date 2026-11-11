@@ -5,12 +5,13 @@ import { h } from '../lib/dom.js';
 import { registerMessagePanel, registerTextAddon } from '../lib/registry.js';
 import { htmlToText } from '../lib/sanitize.js';
 import { codeIn } from '../ui/code.js';
+import { why } from '../ui/why.js';
 
 registerMessagePanel((message) => {
   if (message.direction !== 'in' || message.broken) return null;
   const body = message.body || {};
   const chip = codeIn(body.text || (body.html ? htmlToText(body.html) : ''), message.meta.subject);
-  return chip ? h('div', { class: 'code-panel' }, chip) : null;
+  return chip ? h('div', { class: 'f-code-panel' }, chip, why('code-helper', { text: 'Why?' })) : null;
 });
 
 registerTextAddon((text) => (text.direction === 'in' ? codeIn(text.body) : null));

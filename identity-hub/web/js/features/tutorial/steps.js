@@ -4,8 +4,26 @@
 import { TUTORIAL } from '../../help/content.js';
 import { money } from '../../lib/format.js';
 
-export const STEPS = TUTORIAL;
+// The content file can get new steps. An entry that is no step (no id) is left out, so that
+// a mistake there cannot break the tutorial.
+export const STEPS = (Array.isArray(TUTORIAL) ? TUTORIAL : []).filter((s) => s !== null && typeof s === 'object' && typeof s.id === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(s.id));
 export const TOTAL = STEPS.length;
+
+// The steps that this file knows: each has a button or a proof. Every other step (a new one
+// in the content file, for example "More things you can do") is a step to read: its title, its
+// words, its list if it has one, no button. To leave such a step is to do it, as for the first step.
+const WITH_ACTION = ['recovery-key', 'passkey', 'funds', 'inbox', 'alias', 'first-mail', 'alias-off', 'identity', 'made-up-details', 'number', 'first-text', 'link-phone', 'finish'];
+export const isReadStep = (step) => !WITH_ACTION.includes(step.id);
+
+// The list of a step to read: [{ name, line }]. Entries in a wrong form are left out.
+export function listOf(step) {
+  const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  return (Array.isArray(step.list) ? step.list : [])
+    .filter((row) => row !== null && typeof row === 'object')
+    .map((row) => ({ name: text(row.name, 80), line: text(row.line, 300) }))
+    .filter((row) => row.name)
+    .slice(0, 30);
+}
 
 export const stepIndex = (id) => Math.max(0, STEPS.findIndex((s) => s.id === id));
 export const stepById = (id) => STEPS.find((s) => s.id === id) || null;

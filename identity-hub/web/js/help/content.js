@@ -1,5 +1,5 @@
 // The words of the in-app Help: the "Why this exists" page, the privacy tips, the short
-// "why?" explanations, the tutorial steps, and the word list.
+// "why?" explanations (with their groups for the Help page), the tutorial steps, and the word list.
 //
 // Rules for this file:
 // - Plain data only: strings, arrays, objects, and null. No HTML and no markdown.
@@ -95,7 +95,7 @@ export const TIPS = [
   {
     id: 'keep-recovery-key',
     title: 'Keep the recovery key safe, and test it',
-    doThis: 'Keep your recovery key in a safe place, and sign in with it one time as a test.',
+    doThis: 'Keep your recovery key in a safe place, and test your copy with "Test my recovery key" in "Settings".',
     why: 'The recovery key opens your account on a new device. {app} shows it one time only. A test tells you that your copy is correct.',
     limit: 'Each person who has your recovery key can open your account. Keep it where other people cannot read it.',
   },
@@ -158,7 +158,7 @@ export const TIPS = [
     id: 'delete-what-you-do-not-need',
     title: 'Delete what you do not need',
     doThis: 'Delete old mail, old texts, and aliases that you do not use.',
-    why: 'Data that does not exist cannot leak. The server writes over deleted data. {app} can also delete the old texts of a number for you.',
+    why: 'Data that does not exist cannot leak. The server writes over deleted data. {app} can also delete old mail and old texts for you.',
     limit: 'The person who runs the server can keep backups. An older backup can still contain deleted data for some time.',
   },
   {
@@ -173,6 +173,34 @@ export const TIPS = [
     title: 'Mail that you send is visible on the way out',
     doThis: 'Write only what the recipient and their mail company can read.',
     why: 'When you send mail, the server, the mail relay and the mail company of the recipient can read it. This is how email works. The recipient sees the address that you send from.',
+  },
+  {
+    id: 'block-before-you-turn-off',
+    title: 'Block one sender before you turn off an alias',
+    doThis: 'Select "Block this sender" when one sender is the problem and you still need the alias.',
+    why: 'A block refuses the mail of one sender only. The website that you gave the alias to can still reach you.',
+    limit: 'A sender can write again from a different address. Then turn off the alias.',
+  },
+  {
+    id: 'one-mail-for-a-code',
+    title: 'For one sign-up code, stop after the first mail',
+    doThis: 'Select "Stop after the first mail" when a website must send you one code only.',
+    why: 'The alias turns itself off after that mail. If the website sells the address later, {app} refuses the unwanted mail.',
+    limit: 'A second mail from the website is refused too. You can turn the alias on again for one more mail.',
+  },
+  {
+    id: 'burn-when-you-are-finished',
+    title: 'Burn an identity when you are finished with a website',
+    doThis: 'Select "Burn" on an identity that you do not need any more.',
+    why: 'Burn turns off its aliases, deletes their mail, and releases its numbers. Then no data of that website stays in your account.',
+    limit: 'You cannot undo a burn. An earlier backup of the server can still hold the deleted data for some time.',
+  },
+  {
+    id: 'download-your-data',
+    title: 'Keep your own copy of your data',
+    doThis: 'Select "Download my data" from time to time, and keep the file apart from your recovery key.',
+    why: 'The file is a copy that you can read with your recovery key. If the server stops, you still have your mail and your texts.',
+    limit: 'A person who has the file and your recovery key can read everything in it.',
   },
   {
     id: 'trust-the-server',
@@ -310,7 +338,184 @@ export const WHY = {
       'A call still works. A voice says the code two times. The call costs the price of one minute of a call.',
     ],
   },
+  'block-sender': {
+    title: 'What does a block do?',
+    paragraphs: [
+      '{app} refuses mail from a blocked sender to this one address. Your other addresses still get mail from that sender.',
+      'You can block one address, or all addresses of a domain. A block of a domain also covers its subdomains.',
+      'The server does not store a blocked sender in plain form. Only your browser can show the list.',
+      'A sender can still write from a different address. To take a block away, open "Blocked senders" and select "Unblock".',
+    ],
+  },
+  'auto-delete': {
+    title: 'What does automatic deletion do?',
+    paragraphs: [
+      'The server deletes old mail of an inbox, or old texts of a number, by itself. It does this one time each hour, also when {app} is closed.',
+      'It is off until you turn it on. For an inbox, select "Delete old mail automatically". For a number, use "Old texts".',
+      'A deleted message cannot be brought back. The copies of mail that you sent are deleted too.',
+      'The person who runs the server can keep backups. An earlier backup can still hold a deleted message for some time.',
+    ],
+  },
+  'end-date': {
+    title: 'What is an end date?',
+    paragraphs: [
+      'An alias with an end date stops by itself. After that date it refuses mail, like an alias that is off.',
+      'The mail that you have stays. To make the alias work again, set a later date or select "Remove the end date".',
+      'Use an end date for a thing that ends, for example a trial or a trip.',
+      'The server does the refusing, so the server knows the date.',
+    ],
+  },
+  'first-mail-only': {
+    title: 'Why stop after the first mail?',
+    paragraphs: [
+      'With "Stop after the first mail", an alias gets one mail and then turns itself off. The app then shows "Used up".',
+      'Use it for one sign-up code. If the website sells the address later, the unwanted mail is refused.',
+      'If a website sends two mails, the second one is refused. Select "Turn on again" to get one more mail.',
+      'Select "Make it a normal alias" when you want all its mail.',
+    ],
+  },
+  'refused-mail': {
+    title: 'What does the refused count mean?',
+    paragraphs: [
+      'The count shows how many mails an address refused. An address refuses mail when it is off, used up or past its end date, or when it blocks the sender.',
+      'The server keeps only this number. It does not keep the sender, the time or the content of a refused mail.',
+      'A count that grows on an alias that is off tells you that senders still use the address.',
+      'The count does not go back to zero. It goes away when you delete the address.',
+    ],
+  },
+  'possibly-leaked': {
+    title: 'What does possibly leaked mean?',
+    paragraphs: [
+      'An alias normally gets mail from one sender: the website that you gave it to. The app saves that first sender with the alias, encrypted.',
+      'When mail comes from a different sender, the app shows "Possibly leaked". The address was possibly passed on, sold or stolen.',
+      'It is only a hint. A company can use several sender names, and the From line of a mail can be forged.',
+      'Your browser works this out. Select "This sender is expected" or "Turn off this alias".',
+    ],
+  },
+  'who-leaked-me': {
+    title: 'How does "Who leaked me" work?',
+    paragraphs: [
+      'The page lists each alias that got mail from a sender that it does not know. It names that sender.',
+      'Your browser reads your newest 1,000 mails and compares the senders. The server cannot do this work, because it cannot read who wrote a mail.',
+      'A hint is not proof. A company can use several sender names, and the From line of a mail can be forged.',
+      'When you select "This sender is expected", the app saves that sender with the alias, encrypted.',
+    ],
+  },
+  'my-stats': {
+    title: 'How are my stats counted?',
+    paragraphs: [
+      'Your browser reads your newest 1,000 mails and counts them. It counts again each time you open the page.',
+      'Nothing is saved, in your browser or on the server. The server cannot count senders, because it cannot read who wrote a mail.',
+      'A sender name can be forged, so this is a count of what the mails say.',
+      'The server keeps two plain numbers for each address: the mails that it got and the mails that it refused.',
+    ],
+  },
+  'code-helper': {
+    title: 'How does the app find a code?',
+    paragraphs: [
+      'When a mail or a text has a sign-up code, the app shows the code with a "Copy" button.',
+      'Your browser finds the code in the message after it decrypted the message. The code is sent nowhere.',
+      'The helper is careful. It shows a number only when a word such as code or verification is near it. So it can miss a code.',
+      'A code in a text passed through the phone company. Use codes, but do not use texts for secrets.',
+    ],
+  },
+  newsletter: {
+    title: 'Why does {app} not open unsubscribe links?',
+    paragraphs: [
+      'An unsubscribe link comes from a stranger. A visit to it tells the sender that a person reads the address.',
+      'So {app} never opens such a link. "Unsubscribe by email" sends a real mail from your alias to the address that the newsletter names.',
+      'The sender then learns that this alias is in use. {app} keeps a copy of that mail in "Sent".',
+      'If the newsletter keeps coming, turn off the alias or select "Block this sender".',
+    ],
+  },
+  burn: {
+    title: 'What does a burn do?',
+    paragraphs: [
+      '"Burn" ends an identity for good. It turns off its aliases and deletes all mail that they got and sent.',
+      'It releases its numbers and deletes their texts, their calls and their voicemail. You cannot get a released number back.',
+      'A burn cannot be undone. The app shows the exact list first, and you must type the word "BURN".',
+      'The identity stays, with the mark "Burned". An earlier backup of the server can still hold the deleted data for some time.',
+    ],
+  },
+  export: {
+    title: 'What is in my data file?',
+    paragraphs: [
+      '"Download my data" makes one encrypted file with a copy of your data. Your browser builds it. The server never sees the plain contents.',
+      'Your recovery key opens the file, on the page "Open an export file". Keep the key and the file in two different places.',
+      'Not in the file: working numbers, your credit, and your passkeys. You cannot load the file back into an account.',
+      'A person who has two files can see that they are from one account. Without the key, that person cannot read them.',
+    ],
+  },
+  voicemail: {
+    title: 'How private is voicemail?',
+    paragraphs: [
+      'Voicemail is off until you turn on "Take voicemail". Then a caller who does not reach you can leave a message.',
+      'The phone company plays the greeting and records the message. So the phone company hears the whole message.',
+      '{app} stores an encrypted copy that only your browser can play. Then {app} deletes the recording at the phone company.',
+      'The phone company can keep its call records, and its own backups for some time. {app} cannot delete those.',
+    ],
+  },
+  'own-domain': {
+    title: 'Why is my own domain worse for privacy?',
+    paragraphs: [
+      'Each website sees the domain of the alias that you give it. If only you use that domain, all addresses on it belong together.',
+      'Websites that compare their lists can then tell that the aliases are from one person. A domain that many people share does not show this.',
+      'Your own domain helps when a website refuses alias addresses. Use it for those websites only.',
+    ],
+  },
+  'quick-jump': {
+    title: 'How does the search work?',
+    paragraphs: [
+      'Press "/" or Ctrl+K, type a few letters, and press Enter. On a phone, select "Search" in the top bar.',
+      'The search finds your identities, aliases, numbers, inboxes and pages. It looks at names, labels, addresses, numbers and notes.',
+      'Your browser searches in the data that it has open already. It asks the server for nothing, and it keeps no history.',
+    ],
+  },
+  'username-password': {
+    title: 'Why make a username and a password here?',
+    paragraphs: [
+      'Many websites want a username and a password too. Your browser can make both at random, so that no two websites get the same ones.',
+      'The username is saved with the random identifiers, encrypted. Only you can read it.',
+      '{app} never saves the password. Copy it into your password manager at once. When you close the card, the password is gone.',
+    ],
+  },
+  'identity-look': {
+    title: 'What do the door, the colour and the history show?',
+    paragraphs: [
+      'The door shows the state of an identity: "On", "Off" or "Burned". The word is always next to the picture.',
+      'An identity is on when one of its aliases is on, or one of its numbers works.',
+      'The colour is a dot next to the name, to find the identity fast. The history is a short list of days, for example the day of the first mail.',
+      'Your browser saves all of this with the identity, encrypted. The server cannot read it.',
+    ],
+  },
+  'home-warnings': {
+    title: 'Why does Home show a warning?',
+    paragraphs: [
+      'Home warns you in two cases. One: the renewals of the next 7 days cost more than your credit. Two: an inbox or a number is paused.',
+      'A paused inbox gets no mail. A paused number gets no texts and no calls, and {app} releases it after some days.',
+      'Add funds to stop this. Your browser works the warning out from data that it has already.',
+    ],
+  },
+  'recovery-test': {
+    title: 'Why test my recovery key?',
+    paragraphs: [
+      'Your recovery key is the way back into your account when your passkeys are gone. Nobody can reset it.',
+      'A copy with one wrong character opens nothing. "Test my recovery key" tells you now if your copy is right.',
+      'The test runs in this browser. The key is not sent to the server, and it is not saved.',
+      'If your copy is wrong, do not sign out of this browser. Find a correct copy first.',
+    ],
+  },
 };
+
+// ---- The groups of the "why?" explanations on the Help page ----
+// Each key of WHY is in one group. The Help page shows the groups in this order.
+export const WHY_GROUPS = [
+  { title: 'Basics', keys: ['recovery-key', 'passkey', 'inbox-vs-alias', 'balance', 'payments', 'test-mode', 'quick-jump'] },
+  { title: 'Mail', keys: ['alias-off', 'end-date', 'first-mail-only', 'block-sender', 'refused-mail', 'newsletter', 'remote-images', 'code-helper', 'own-domain', 'my-stats'] },
+  { title: 'Numbers', keys: ['link-phone', 'phone-by-call', 'forwarding', 'delivery-status', 'voicemail'] },
+  { title: 'Identities', keys: ['identity', 'identity-look', 'made-up-details', 'username-password', 'burn'] },
+  { title: 'Safety', keys: ['recovery-test', 'possibly-leaked', 'who-leaked-me', 'deleting', 'auto-delete', 'export', 'home-warnings'] },
+];
 
 // ---- Tutorial ----
 // One entry for each step, in this order.
@@ -327,6 +532,8 @@ export const WHY = {
 //             "Skip this step".
 //   skipNote  what a skip means, or null. Some free steps have one too.
 //   offNote   one line for a step that is off, or null.
+//   list      optional: [{ name, line }]. The step only shows this list: there is nothing to do
+//             and nothing to prove. name is the real name of the thing in the app.
 export const TUTORIAL = [
   {
     id: 'welcome',
@@ -488,6 +695,31 @@ export const TUTORIAL = [
     offNote: 'Numbers are turned off on this server, so you cannot link a real phone.',
   },
   {
+    id: 'more',
+    title: 'More things you can do',
+    what: 'Here are more things that {app} can do. Each one has a simple name.',
+    why: 'You do not need them on the first day. Read the list now, so that you know where to look later.',
+    doIt: 'Try them later, when you need them.',
+    done: 'You read the list.',
+    needs: null,
+    costKey: null,
+    skipNote: null,
+    offNote: null,
+    list: [
+      { name: 'Block this sender', line: 'In an open mail, under "More actions". The mail of that sender is then refused.' },
+      { name: 'Delete old mail automatically', line: 'In the menu of an inbox. Deleted mail cannot come back.' },
+      { name: 'Set an end date', line: 'In the menu of an alias. After that date the alias refuses mail.' },
+      { name: 'Stop after the first mail', line: 'A choice when you make an alias. Good for one sign-up code.' },
+      { name: 'Burn', line: 'Ends an identity for good: its mail, its texts and its numbers go. You cannot undo it.' },
+      { name: 'Download my data', line: 'In "Settings". One encrypted file that your recovery key opens.' },
+      { name: 'Voicemail', line: 'In the settings of a number. The phone company hears each message.' },
+      { name: 'My stats', line: 'A link on "Home". It shows which alias gets the most mail.' },
+      { name: 'Who leaked me', line: 'A link on "Home". It shows aliases with mail from a sender that they do not know.' },
+      { name: 'Search', line: 'Press "/" or Ctrl+K and type a few letters to go to an alias, a number or a page.' },
+      { name: 'Test my recovery key', line: 'In "Settings". It tells you if your copy of the key is right.' },
+    ],
+  },
+  {
     id: 'finish',
     title: 'You are done',
     what: 'You know the main parts of {app} now: inboxes, aliases, identities, numbers and credit.',
@@ -520,4 +752,10 @@ export const WORDS = [
   { word: 'lock', meaning: 'Make this browser tab forget your key. You stay signed in.' },
   { word: 'test mode', meaning: 'A mode for trying {app} with simulated companies and pretend money.' },
   { word: 'encrypted', meaning: 'Locked so that only you can read it.' },
+  { word: 'block', meaning: 'Refuse the mail of one sender on one address.' },
+  { word: 'end date', meaning: 'The day after which an alias refuses mail.' },
+  { word: 'used up', meaning: 'An alias that turned itself off after its one mail.' },
+  { word: 'possibly leaked', meaning: 'An alias that got mail from a sender that it does not know. This is a hint only.' },
+  { word: 'burn', meaning: 'End an identity for good. Its aliases go off, their mail is deleted, and its numbers are released.' },
+  { word: 'code', meaning: 'A sign-up or sign-in code that a website sends you in a mail or a text.' },
 ];

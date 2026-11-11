@@ -2,6 +2,7 @@
 // Counted in the browser each time the screen opens. Nothing is saved, in the browser or on the server.
 import { h } from '../../lib/dom.js';
 import { pageHeader, section, button, emptyState, tag } from '../../ui/components.js';
+import { why } from '../../ui/why.js';
 import { statsView } from './work.js';
 import { mailReport, basisLine, day, count } from './report.js';
 
@@ -65,6 +66,7 @@ export function statsScreen({ scope }) {
       back: { href: '/', label: 'Home' },
       actions: report.againButton,
     }),
+    h('div', { class: 'page-why' }, why('my-stats')),
     report.el,
   );
 }

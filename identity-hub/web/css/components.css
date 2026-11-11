@@ -338,6 +338,7 @@
 .balance .why { margin-top: var(--s-2); }
 /* inside coloured places the button takes the colour of the text around it */
 .banner .why-btn, .bubble .why-btn { color: inherit; font-size: inherit; font-weight: inherit; }
+.callout-warn .why-btn, .callout-danger .why-btn { color: inherit; }
 .banner-wrap > .why-panel { margin: var(--s-3) auto; width: calc(100% - 2 * var(--s-4)); }
 .bubble > .why-panel { opacity: 1; }
 @media (max-width: 720px) {

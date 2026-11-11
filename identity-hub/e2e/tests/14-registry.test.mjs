@@ -158,6 +158,24 @@ export default async function (t) {
   await page.locator('.e2e-word', { hasText: 'key' }).waitFor();
   t.ok('a global key runs, but not in a field, not with a dialog open, not with Ctrl');
 
+  // a key that is registered with Ctrl works in a field too, but not with a dialog open
+  await page.goto(t.base + '/');
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('dialog').waitFor();
+  await page.keyboard.press('Control+m');
+  assert(new URL(page.url()).pathname === '/', 'a key with Ctrl ran while a dialog was open');
+  await page.keyboard.press('Escape');
+  await page.getByRole('searchbox').focus();
+  await page.keyboard.press('Control+m');
+  await page.locator('.e2e-word', { hasText: 'mod' }).waitFor();
+  // the same action as an entry at the top of the sidebar, with its key as a hint
+  const side = page.locator('.sidebar .side-action[data-side-action="e2e"]');
+  assert((await side.locator('kbd').textContent()) === 't', 'the sidebar entry does not show its key');
+  await side.focus();
+  await page.keyboard.press('Enter');
+  await page.getByText('Test search opened').waitFor();
+  t.ok('a key with Ctrl works in a field; an action of a feature file is an entry at the top of the sidebar, with its key');
+
   // ---- identity: action in the "More" menu, mark on the screen and on the Home card ----
   const identityId = await inApp(page, async ({ identities, data }, aliasId) => {
     const id = await identities.createIdentity({ name: 'Maple', note: '' });
@@ -178,6 +196,12 @@ export default async function (t) {
   // ---- Settings: section between Theme and "What the server can see" ----
   await page.goto(t.base + '/settings');
   await page.locator('.e2e-settings').waitFor();
+  // every section has the id "settings-<id>"; an address with that id moves the page and the focus to it
+  for (const sid of ['settings-passkeys', 'settings-sessions', 'settings-theme', 'settings-privacy', 'settings-e2e', 'settings-browser', 'settings-delete-account']) {
+    assert(await page.locator(`#${sid}`).count() === 1, `the settings section #${sid} is missing`);
+  }
+  await page.goto(t.base + '/settings#settings-theme');
+  await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'settings-theme');
   const titles = await page.locator('.section-title').allTextContents();
   assert(titles.indexOf('Test section') === titles.indexOf('Theme') + 1, 'the settings section is in the wrong place: ' + titles.join('|'));
   assert(titles.includes('Test tools'), 'the Test tools section (a feature file of the app) is missing');
@@ -190,7 +214,14 @@ export default async function (t) {
   await page.locator('.message-bar').getByRole('button', { name: 'More actions' }).click();
   await page.getByRole('menuitem', { name: 'Test message action' }).click();
   await page.getByText('Test message: Your order 1042 is on its way / Maple Shop').waitFor();
-  t.ok('mail: panel above the text, entry in the More actions menu, both get the message and its alias');
+  // "show only the mail of this alias", asked while the Mail screen is open on that inbox
+  await page.goto(`${t.base}/mail/${ids.personal}`);
+  await page.locator('.msg-row').nth(2).waitFor();
+  const all = await page.locator('.msg-row').count();
+  await inApp(page, ({ mail }, f) => mail.setMailFilter(f), { mailboxId: ids.personal, addressId: ids.shop });
+  await page.waitForFunction((n) => document.querySelectorAll('.msg-row').length > 0 && document.querySelectorAll('.msg-row').length < n, all);
+  assert(await page.locator('.mail-address-filter select').inputValue() === ids.shop, 'the "Show mail of" choice did not follow setMailFilter');
+  t.ok('mail: panel above the text, entry in the More actions menu, both get the message and its alias; setMailFilter reaches an open Mail screen');
 
   // ---- number: tab, setting, part under a text and under a call ----
   await page.goto(`${t.base}/numbers/${ids.n1}`);

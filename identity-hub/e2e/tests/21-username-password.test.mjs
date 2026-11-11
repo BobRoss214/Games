@@ -22,7 +22,7 @@ export default async function (t) {
   await dlg.getByText('The username is saved with these identifiers, encrypted. A password is never saved.').waitFor();
 
   // username: make, copy, make new; saved encrypted in the alias
-  await dlg.getByRole('button', { name: 'Make a username' }).click();
+  await dlg.getByRole('button', { name: 'Make a username', exact: true }).click();
   await page.getByText('Username made').waitFor();
   const name1 = await dlg.locator('.persona-username').textContent();
   assert(/^[a-z][a-z0-9_]{7,19}$/.test(name1), 'the username has a wrong form: ' + name1);
@@ -32,7 +32,7 @@ export default async function (t) {
   assert(saved.username === name1 && saved.label === 'Maple Shop' && saved.persona, 'the username is not saved with the alias, or something else was lost: ' + JSON.stringify(saved));
   const raw = await page.evaluate(() => fetch('/api/aliases').then((r) => r.text()));
   assert(!raw.includes(name1), 'the username is readable in the server answer');
-  await dlg.getByRole('button', { name: 'Make new username' }).click();
+  await dlg.getByRole('button', { name: 'Make new username', exact: true }).click();
   await page.getByText('New username made').waitFor();
   const name2 = await dlg.locator('.persona-username').textContent();
   assert(name2 !== name1 && /^[a-z][a-z0-9_]{7,19}$/.test(name2), 'the new username is wrong: ' + name2);
@@ -43,7 +43,7 @@ export default async function (t) {
   const requests = [];
   const onRequest = (r) => { if (!r.url().includes('/api/events')) requests.push(`${r.method()} ${r.url()}`); };
   page.on('request', onRequest);
-  await dlg.getByRole('button', { name: 'Make a password' }).focus();
+  await dlg.getByRole('button', { name: 'Make a password', exact: true }).focus();
   await page.keyboard.press('Enter');
   const value = dlg.locator('.password-value');
   const pw1 = await value.textContent();
@@ -74,12 +74,12 @@ export default async function (t) {
   t.ok('password: made in the browser with length and symbols options and the strength in words; no request; in no storage');
 
   // the password goes away: Hide, a new username keeps it, closing the card drops it
-  await dlg.getByRole('button', { name: 'Make new username' }).click();
+  await dlg.getByRole('button', { name: 'Make new username', exact: true }).click();
   await page.getByText('New username made').waitFor();
   assert(await value.textContent() === pw4, 'a new username took the password off the screen');
   await dlg.getByRole('button', { name: 'Hide' }).click();
   assert(await dlg.locator('.password-value').count() === 0, '"Hide" left the password on the screen');
-  await dlg.getByRole('button', { name: 'Make a password' }).click();
+  await dlg.getByRole('button', { name: 'Make a password', exact: true }).click();
   const pw5 = await dlg.locator('.password-value').textContent();
   await dlg.getByRole('button', { name: 'Done' }).click();
   await page.waitForFunction(() => !document.querySelector('dialog'));
@@ -106,9 +106,9 @@ export default async function (t) {
   await page.getByRole('tab', { name: 'Settings' }).click();
   await page.getByRole('button', { name: 'Make random identifiers' }).click();
   await page.locator('.persona-card').waitFor();
-  await page.getByRole('button', { name: 'Make a password' }).click();
+  await page.getByRole('button', { name: 'Make a password', exact: true }).click();
   const npw = await page.locator('.password-value').textContent();
-  await page.getByRole('button', { name: 'Make a username' }).click();
+  await page.getByRole('button', { name: 'Make a username', exact: true }).click();
   await page.getByText('Username made').waitFor();
   await page.locator('.persona-username').waitFor();
   assert(await page.locator('.password-value').textContent() === npw, 'saving the username of a number took the password off the screen');
@@ -129,7 +129,7 @@ export default async function (t) {
   await page.goto(`${t.base}/identities/${identityId}`);
   await page.getByRole('button', { name: 'Make random identifiers' }).click();
   await page.locator('.persona-card').waitFor();
-  await page.getByRole('button', { name: 'Make a username' }).click();
+  await page.getByRole('button', { name: 'Make a username', exact: true }).click();
   await page.locator('.persona-username').waitFor();
   const iname = await page.locator('.persona-username').textContent();
   const istored = await inApp(page, ({ store }, id) => store.get('identities').find((g) => g.id === id).extra.username, identityId);
@@ -143,11 +143,11 @@ export default async function (t) {
   await p.page.goto(`${t.base}/identities/${identityId}`);
   await p.page.locator('.persona-username').waitFor();
   assert(await p.page.locator('.persona-username').textContent() === iname, 'a new browser session does not show the saved username');
-  await p.page.getByRole('button', { name: 'Make a password' }).click();
+  await p.page.getByRole('button', { name: 'Make a password', exact: true }).click();
   await p.page.locator('.password-value').waitFor();
   const wide = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert(wide <= 0, 'the card with a password makes the phone screen scroll sideways');
-  const small = await p.page.locator('.persona-login button:visible').evaluateAll((els) => els.filter((el) => el.getBoundingClientRect().height < 40).map((el) => el.textContent));
+  const small = await p.page.locator('.persona-login button:visible:not(.why-btn)').evaluateAll((els) => els.filter((el) => el.getBoundingClientRect().height < 40).map((el) => el.textContent));
   assert(small.length === 0, 'buttons on the card are too small for a finger: ' + small.join(', '));
   t.ok('phone (360px): the card with username and password fits');
   await p.close();

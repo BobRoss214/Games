@@ -33,6 +33,8 @@ export function registerRoutes(app, ph) {
     status: r.status, paidUntil: r.paid_until, createdDay: r.created_day,
     forwardPhoneId: r.forward_phone_id, forwardTexts: r.forward_texts === 1, forwardCalls: r.forward_calls === 1,
     retentionDays: r.retention_days ?? null, voicemail: r.voicemail === 1, unread: r.unread || 0,
+    // Own phone only: is the phone of this number online? Other providers: null.
+    gateway: ph.gatewayOf(r),
   });
   const loadNumber = (accountId, id) => numberView(db.get(`SELECT ${NUMBER_COLS} FROM numbers n WHERE n.id = ? AND n.account_id = ?`, id, accountId));
   const phoneView = (r) => ({ id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), verified: r.verified === 1, createdDay: r.created_day });
@@ -71,8 +73,11 @@ export function registerRoutes(app, ph) {
 
   http.get('/api/numbers/search', { auth: true, rate: { max: 30, per: 60 } }, async (c) => {
     ph.requireOn();
-    const country = need.string(c.query.country || config.phone.countries[0], 'country', { min: 2, max: 2, pattern: /^[A-Za-z]{2}$/ }).toUpperCase();
-    if (!config.phone.countries.includes(country)) throw fail(400, 'bad_request', 'Numbers in this country are not available.');
+    // A fixed pool (own phone) is small: with no country the search gives every free number of it.
+    const pool = ph.capabilities.pool === true;
+    const country = pool && !c.query.country ? undefined
+      : need.string(c.query.country || config.phone.countries[0], 'country', { min: 2, max: 2, pattern: /^[A-Za-z]{2}$/ }).toUpperCase();
+    if (!pool && !config.phone.countries.includes(country)) throw fail(400, 'bad_request', 'Numbers in this country are not available.');
     let areaCode = need.optional(c.query.areaCode || undefined, need.string, 'areaCode', { max: 6, pattern: /^\d{1,6}$/ });
     if (!ph.capabilities.searchByArea) areaCode = undefined;
     let found;
@@ -82,7 +87,7 @@ export function registerRoutes(app, ph) {
       if (numbers.length >= 20) break;
       if (typeof n.number !== 'string' || !E164.test(n.number) || ph.numberByPlain(n.number)) continue;
       const item = {
-        number: n.number, locality: String(n.locality || ''), region: String(n.region || ''), country: String(n.country || country),
+        number: n.number, locality: String(n.locality || ''), region: String(n.region || ''), country: String(n.country || country || ''),
         sms: Boolean(n.sms), voice: Boolean(n.voice) && ph.capabilities.voice,
       };
       numbers.push(item);

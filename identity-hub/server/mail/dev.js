@@ -31,4 +31,11 @@ export function registerDev(app, { data, inbound, compose, outbox }) {
   http.get('/api/dev/outbox', { auth: true }, (c) => ({
     mail: outbox.filter((m) => m.accountId === c.account.id).map((m) => ({ from: m.from, to: m.to, subject: m.subject, at: m.at })),
   }));
+
+  // Runs the job that deletes old mail now. The job runs one time each hour by itself; a test
+  // cannot wait that long. It is the same job, so it works on every mailbox with the setting,
+  // not only on the mailboxes of this account.
+  http.post('/api/dev/run-mail-retention', { auth: true }, async () => {
+    await app.runJobs('mail-retention');
+  });
 }

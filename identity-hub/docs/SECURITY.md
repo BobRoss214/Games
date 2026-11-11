@@ -37,15 +37,20 @@ The server keeps a value in plain form only when it must use that value itself.
 | Blocked senders | For each block: a keyed hash of the address or domain, and a copy that only your browser can open. | The blocked sender in plain form. A record of refused senders. |
 | Automatic deletion | A number of days for each inbox and for each number. The server deletes older mail and texts one time each hour. | — |
 | End date of an alias | The date. After it, the server refuses mail to the alias. | — |
-| One-shot alias | Two yes/no values: "one-shot" and "used up". | — |
+| "Stop after the first mail" | Two yes/no values for the alias: "one mail only" and "used up". | — |
 | Counters | For each address: one number for received mail and one number for refused mail. | Who wrote, and when. |
 | Forwarding and voicemail | On or off for each number, and the linked phone. | — |
 | Newsletter data ("unsubscribe") | Nothing outside the encrypted message. | — |
 | Voicemail | The audio, encrypted for you in the same way as a mail message. | The plain audio. It is in memory for a moment only. |
-| Identities and random identifiers | Encrypted entries that only your browser can open. | Names, notes, groups, identifiers. |
+| Identities and random identifiers | Encrypted entries that only your browser can open. | Names, notes, groups, identifiers, usernames. The colour, the history, and the "burned" mark of an identity. |
+| Known senders of an alias ("Possibly leaked") | Nothing in plain form. The sender domains that an alias knows are inside the encrypted data of the alias. The app saves the first sender of an alias there. | The senders. The hints: they are in the memory of your browser only. |
+| Tutorial | One encrypted entry with the name `tutorial`. It always has the same size. | The step that you are at. See Limits 14. |
+| Burn | No record of the burn. The server does three normal things: it turns the aliases off, deletes their stored mail, and releases the numbers. See section 5. | That these changes were one burn. The identity keeps an encrypted "burned" mark that only your browser can read. |
 | A payment in progress | An encrypted entry in your account. Your browser needs it to finish the payment. | A link between the account and the invoice. |
 
 When mail arrives, the server compares the envelope sender, the From line, and the Sender line with the hashes of your blocks.
+
+A block can be for one address or for a domain. A block of a domain also refuses its subdomains. When you block "all addresses" of a sender, the app proposes the main domain of that sender: for `news@mail.shop.example` it is `shop.example`. The "possibly leaked" hint and the statistics use the same rule. The rule has a short built-in list of two-part endings such as `co.uk`. It is not the full public suffix list, so for a rare ending the main domain can be one part too short.
 
 ## 2. Keys
 
@@ -106,9 +111,13 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 - **Day precision.** Creation dates are stored as a day, not as an exact time, where the service does not need the exact time.
 - **Strict browser policy.** The web app loads no third-party script, font, or image. A Content-Security-Policy blocks inline scripts.
 - **Email HTML is isolated.** The app shows email HTML in a sandboxed frame that cannot run scripts. Remote images are blocked, so senders cannot track when you open a message.
-- **No unsubscribe link is opened.** To leave a newsletter, the app sends a normal email to the address that the newsletter gives. Postern never opens an unsubscribe web link. A visit to that link tells the sender that a person reads the address, and it makes the server open an address that a stranger chose.
-- **Work that stays in the browser.** These helpers run in the browser only and send nothing to the server: the code helper (it finds a sign-up code in a message), the "possibly leaked" hint, the mail statistics, the random identifiers generator, and the username and password maker. The password maker stores no password. You copy the password into your password manager.
-- **Encrypted export.** The browser makes the export file and encrypts it. The server never sees the plain file. The recovery key opens the file, with no server. See Limits 12.
+- **No unsubscribe link is opened.** To leave a newsletter, the app sends a normal email to the address that the newsletter gives. Postern never opens an unsubscribe web link. A visit to that link tells the sender that a person reads the address, and it makes the server open an address that a stranger chose. "Unsubscribe by email" is a real mail from the address that got the newsletter. So the sender learns that this address is in use. The app keeps an encrypted copy in "Sent", as for each mail that you send.
+- **Work that stays in the browser.** These helpers do their work in the browser: the code helper, the "possibly leaked" hint, "Who leaked me", and "My stats". Also the search (the "/" key), the warnings on Home, and "Test my recovery key". Also the random identifiers generator, and the username and password maker. The server gets no result of this work in plain form. Three details:
+  - "My stats" and "Who leaked me" read your encrypted mail list, the newest 1,000 messages at most, as the Mail screen does. The server sees these requests. It does not see the counts or the hints.
+  - Two results are saved, both encrypted: the known senders of an alias, and a username. The password maker stores no password. You copy the password into your password manager.
+  - The search, the warnings on Home, and "Test my recovery key" make no request. The recovery key that you type for the test is not sent and not saved.
+- **Encrypted export.** The browser makes the export file and encrypts it. The server never sees the plain file. The recovery key opens the file on the page "Open an export file". That page reads the file in the browser. After the page has loaded, it asks the server for nothing, and it also works when you are signed out. See Limits 12.
+- **Burn deletes on the server.** A burn of an identity does three things on the server. It turns off the aliases of the identity. It deletes all stored mail of these aliases: incoming mail and Sent copies, with attachments. It releases the numbers of the identity, with their texts, their call records and their voicemail. After it deletes the mail, the server empties the write-ahead file. While a burn runs, the identity holds an encrypted list of what is left to do, so that a burn that stopped can be finished. Two things are out of reach: backups (Limits 9) and the records of the phone company (Limits 3).
 - **Cross-site request protection.** `SameSite=Strict` cookie, an Origin check, and JSON-only request bodies.
 - **Rate limits** on login, sign-up, and sending. Counters are in memory only.
 - **A deleted address is never reused.** A new user cannot get the old mail of a deleted alias.
@@ -132,15 +141,16 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 10. **The phone company hears each voicemail.** The company plays the greeting and records the message itself. Postern cannot encrypt a voicemail before the company has it. Postern fetches the recording, encrypts it for you, and then deletes it at the company. If the company does not delete it, Postern tries again each hour for 30 days. The company can keep call records under its own policy, and its own backups for some time. Postern cannot delete those.
 11. **A mail domain that only one person uses links its aliases.** Each website sees the domain of the alias that you give it. If only you use that domain, websites that compare their lists can tell that the addresses belong to one person. A domain that many people share does not show this. On a server for one person, each domain is such a domain.
 12. **Two export files of one account can be recognised.** The plain header of an export file has the app name, the day, sizes, and the encrypted account key. The encrypted account key is the same in each export of one account. A person who has two export files can tell that they come from the same account. That person cannot read them without the recovery key. A person who has one file *and* the recovery key can read everything in it.
-13. **Some settings and counts are plain for the server.** The server does the deleting and the refusing, so it knows your settings for automatic deletion, end dates, one-shot aliases, forwarding, and voicemail. It also knows how many messages each address received and refused. It does not know who wrote them.
+13. **Some settings and counts are plain for the server.** The server does the deleting and the refusing, so it knows your settings for automatic deletion, end dates, "stop after the first mail", forwarding, and voicemail. It also knows how many messages each address received and refused. It does not know who wrote them.
+14. **The server sees that an encrypted entry changes, and when.** It sees the name and the size of each encrypted entry of your account, not the contents. Example: the tutorial saves its progress in the entry `tutorial`, and the entry changes with each step that you take. So the server can count these changes and see their times. It cannot read which step it is, and the size tells nothing, because it is always the same. The same is true for the entry with your identities. It is also true for the encrypted data of an alias, when the app saves a known sender in it.
 
 ## 7. What an attacker gets
 
 | Attacker | Gets | Does not get |
 |---|---|---|
-| Steals a database backup | Encrypted blobs, hashes, balances, settings and counters, real phone numbers in encrypted form. Also data that was deleted after the backup. | Mail, texts, voicemail, labels, identities, random identifiers, addresses, numbers, blocked senders, real phone numbers (they need the server secret key) |
+| Steals a database backup | Encrypted blobs, hashes, balances, settings and counters, real phone numbers in encrypted form. Also data that was deleted or burned after the backup. | Mail, texts, voicemail, labels, identities, random identifiers, usernames, the known senders of an alias, addresses, numbers, blocked senders, real phone numbers (they need the server secret key) |
 | Steals the database and the server secret key | Linked real phone numbers; can test guesses of addresses and of blocked senders; can make false credit tokens | Stored mail, texts and voicemail, labels, identities, lists of addresses |
-| Controls the running server for some time | New incoming mail, texts and voicemail during that time; can send bad web app code; can log times and IP addresses | Old stored messages (unless you sign in during that time) |
+| Controls the running server for some time | New incoming mail, texts and voicemail during that time; can send bad web app code; can log times and IP addresses, also the times at which encrypted entries change | Old stored messages (unless you sign in during that time) |
 | Watches the network | Nothing useful with HTTPS; SMTP between mail servers uses opportunistic TLS | — |
 | Gets a payment processor record | That an invoice was paid | Which account got the credit |
 | Gets the records of the phone company | Numbers, texts, call records; a linked real phone that got forwarded calls or texts, and which numbers forward to it; a voicemail recording until Postern deleted it | Stored mail, labels, your aliases |

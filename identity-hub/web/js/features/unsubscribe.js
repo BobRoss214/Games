@@ -16,7 +16,7 @@ import { emailOk } from '../lib/format.js';
 import { button, callout, runBusy } from '../ui/components.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
-import { aliasFacts } from './common/facts.js';
+import { why } from '../ui/why.js';
 
 const DEFAULT_SUBJECT = 'unsubscribe';
 // Messages that got an unsubscribe mail in this tab. Memory only: nothing about it is saved.
@@ -41,11 +41,12 @@ function senderOf(message, alias) {
 registerMessagePanel((message, alias) => {
   if (message.direction !== 'in' || !message.meta || message.meta.bulk !== true) return null;
   const title = 'This looks like a newsletter';
-  const wrap = (...lines) => h('div', { dataset: { newsletter: '' } }, callout('info', title, ...lines));
+  // Each form of the panel ends with the explanation why this app opens no unsubscribe link.
+  const wrap = (...lines) => h('div', { dataset: { newsletter: '' } }, callout('info', title, ...lines, why('newsletter', { text: 'Why no web link?' })));
   if (alias && !alias.enabled) return wrap(h('p', null, 'This alias is off. Mail to it is refused.'));
   // An alias past its end date refuses mail too, and it cannot send.
-  const end = alias ? aliasFacts(alias.id).expiresAt : null;
-  if (end && end <= Date.now() / 1000) return wrap(h('p', null, 'This alias is past its end date. Mail to it is refused.'));
+  const end = alias && Number.isFinite(alias.expiresAt) ? alias.expiresAt : 0;
+  if (end > 0 && end <= Date.now() / 1000) return wrap(h('p', null, 'This alias is past its end date. Mail to it is refused.'));
 
   const target = targetOf(message);
   const from = senderOf(message, alias);

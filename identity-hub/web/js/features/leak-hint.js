@@ -8,6 +8,7 @@ import { startLeakWatch, leakOf, knownSenders, expectSender } from '../lib/leakw
 import { updateAlias } from '../lib/data.js';
 import { button, callout, runBusy, reportError, tag } from '../ui/components.js';
 import { toast } from '../ui/toast.js';
+import { why } from '../ui/why.js';
 
 startLeakWatch();
 
@@ -29,7 +30,7 @@ registerMessagePanel((message, alias) => {
   return h('div', { dataset: { leakPanel: hint.domain } }, callout('warn', 'This alias was possibly leaked',
     h('p', null, 'This alias normally gets mail from ', list(known), '. This message says that it is from ', h('span', { class: 'mono strong break' }, hint.domain), '.'),
     h('p', null, 'It is only a hint: the From line of a mail can be forged, and one company can use several domains.'),
-    h('div', { class: 'row row-wrap row-2 leak-actions' },
+    h('div', { class: 'row row-wrap row-2 f-leak-actions' },
       button('This sender is expected', { size: 'sm', onClick: (e, btn) => runBusy(btn, async () => {
         await expectSender(alias, hint.domain);
         toast(`Saved. Mail from ${hint.domain} gives no hint from now on.`, { kind: 'ok' });
@@ -39,5 +40,6 @@ registerMessagePanel((message, alias) => {
         toast('Alias turned off. Mail to it is refused.', { kind: 'ok', action: { label: 'Undo', onClick: () => updateAlias(alias.id, { enabled: true }).catch(reportError) } });
       }) }) : h('span', { class: 'small' }, 'This alias is off. Mail to it is refused.'),
     ),
+    why('possibly-leaked', { text: 'Why?' }),
   ));
 });

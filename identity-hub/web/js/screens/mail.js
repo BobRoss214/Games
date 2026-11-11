@@ -10,7 +10,7 @@ import { confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
 import { listMessages, getMessage, getAttachment, setSeen, deleteMessage, personShort, personText, downloadBlob, takeMailFilter } from '../lib/mail.js';
 import { mailBody } from '../ui/mailbody.js';
-import { loadMailboxes, updateAlias, findMailbox } from '../lib/data.js';
+import { loadMailboxes, updateAlias, findMailbox, aliasEnded } from '../lib/data.js';
 import { openNewInbox } from '../ui/items.js';
 import { openCompose } from './compose.js';
 import { openTestTools } from './testtools.js';
@@ -211,14 +211,20 @@ export function mailScreen({ params, scope }) {
     const aliases = store.get('aliases') || [];
     return aliases.find((a) => a.id === msg.addressId) || aliases.find((a) => a.address === msg.meta.deliveredTo) || null;
   }
-  const markOf = (msg) => { const a = msg ? aliasOf(msg) : null; return a ? `${a.id}:${a.enabled}:${a.usedUp}:${a.label}:${JSON.stringify(a.extra || {})}` : ''; };
+  // Two marks of the alias of the open message. When its state changes (on, off, used up, ended, label),
+  // the message is made again. When only its extra fields change (for example the known senders), only
+  // the panels of feature files are made again: the text of the message stays as it is.
+  const markOf = (msg) => { const a = msg ? aliasOf(msg) : null; return a ? `${a.id}:${a.enabled}:${a.usedUp}:${a.label}:${a.expiresAt}` : ''; };
+  const extraOf = (msg) => { const a = msg ? aliasOf(msg) : null; return a ? JSON.stringify(a.extra || {}) : ''; };
+  let extraMark = '';
+  let repaintPanels = null;
 
   function renderMessage(msg) {
     const meta = msg.meta;
     const alias = aliasOf(msg);
     const incoming = msg.direction === 'in';
 
-    const turnOff = alias && alias.enabled && incoming ? button('Turn off this alias', { size: 'sm', onClick: (e, btn) => runBusy(btn, async () => {
+    const turnOff = alias && alias.enabled && !aliasEnded(alias) && incoming ? button('Turn off this alias', { size: 'sm', onClick: (e, btn) => runBusy(btn, async () => {
       await updateAlias(alias.id, { enabled: false });
       toast('Alias turned off. Mail to it is refused.', { kind: 'ok', action: { label: 'Undo', onClick: () => updateAlias(alias.id, { enabled: true }).catch(reportError) } });
     }) }) : null;
@@ -238,7 +244,9 @@ export function mailScreen({ params, scope }) {
       ...registered.messageActions(msg, alias).map((a) => ({ label: a.label, icon: a.icon, danger: a.danger, onSelect: () => a.run(msg, alias) })),
     ] });
     // Panels of feature files (registerMessagePanel), between the head and the text.
-    const panels = msg.broken ? [] : registered.messagePanels(msg, alias);
+    const panelsSlot = h('div', { class: 'message-panels' });
+    repaintPanels = () => replace(panelsSlot, msg.broken ? [] : registered.messagePanels(msg, aliasOf(msg)));
+    repaintPanels();
 
     const atts = meta.attachments || [];
     return h('article', { class: 'message' },
@@ -278,14 +286,14 @@ export function mailScreen({ params, scope }) {
         incoming && meta.deliveredTo ? h('div', { class: 'message-via' },
           icon(alias ? 'alias' : 'inbox', { size: 16 }),
           h('span', { class: 'message-via-text' }, 'Sent to ', h('span', { class: 'mono break' }, meta.deliveredTo)),
-          alias ? (alias.enabled ? tag('Alias') : alias.usedUp ? tag('Alias, used up', 'warn') : tag('Alias, off')) : null,
+          alias ? (aliasEnded(alias) ? tag('Alias, ended', 'warn') : alias.enabled ? tag('Alias') : alias.usedUp ? tag('Alias, used up', 'warn') : tag('Alias, off')) : null,
           alias && alias.label ? h('span', { class: 'small muted' }, alias.label) : null,
           turnOff,
           whyOff ? whyOff.button : null,
         ) : null,
         whyOff ? whyOff.panel : null,
       ),
-      panels.length ? h('div', { class: 'message-panels' }, panels) : null,
+      panelsSlot,
       msg.broken ? h('p', { class: 'form-error' }, 'This message cannot be opened with your key.') : renderBody(msg),
       atts.length ? h('section', { class: 'message-atts', 'aria-label': 'Attachments' },
         h('h3', { class: 'message-atts-title' }, plural(atts.length, 'attachment')),
@@ -313,6 +321,7 @@ export function mailScreen({ params, scope }) {
       if (scope.disposed || token !== msgToken) return;
       currentMsg = msg;
       aliasMark = markOf(msg);
+      extraMark = extraOf(msg);
       replace(viewPane, renderMessage(msg));
       if (!quiet) viewPane.querySelector('.message-subject')?.focus({ preventScroll: true });
       if (msg.direction === 'in' && !msg.seen) {
@@ -366,11 +375,25 @@ export function mailScreen({ params, scope }) {
     if (mailboxId) paintListHead();
     if (!currentMsg || currentMsg.id !== messageId) return;
     const mark = markOf(currentMsg);
-    if (mark === aliasMark) return;
+    const extra = extraOf(currentMsg);
+    if (mark === aliasMark) {
+      if (extra !== extraMark) { extraMark = extra; if (repaintPanels) repaintPanels(); }
+      return;
+    }
     aliasMark = mark;
+    extraMark = extra;
     replace(viewPane, renderMessage(currentMsg));
   }));
   scope.add(bus.on('mail', () => { if (mailboxId) loadList(); }));
+  // "Show only the mail of this address", asked from another part of the app while this screen is open.
+  scope.add(bus.on('mail-filter', (f) => {
+    if (!f || f.mailboxId !== mailboxId) return; // another inbox: the screen takes the choice when it opens that inbox
+    addressFilter = takeMailFilter(mailboxId);
+    list = null;
+    paintListHead();
+    paintList();
+    loadList();
+  }));
   sync(params);
 
   return { el, update(p) { lastParams = p; sync(p); } };

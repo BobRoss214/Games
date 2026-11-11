@@ -69,6 +69,7 @@ function nameChoice() {
     el: h('div', { class: 'stack stack-3' },
       domain ? domain.el : null,
       domain ? ownNote : null,
+      domain && own.size ? why('own-domain') : null,
       h('p', { class: 'hint' }, 'We pick a random, readable name. For example ', h('span', { class: 'mono' }, 'quiet.river482'), '.'), toggleBtn, custom),
     read() {
       const value = custom.hidden ? '' : local.value.trim().toLowerCase();
@@ -108,7 +109,7 @@ export async function openNewAlias({ mailboxId = '', identityId = '' } = {}) {
     title: 'New alias', description: 'An alias is an extra address. Mail to it lands in your inbox. Turn it off when you get spam.',
     submitLabel: 'Make alias',
     build: () => h('div', { class: 'stack' }, why('inbox-vs-alias'), boxes.length > 1 ? target.el : null, label.el, name.el,
-      h('div', { class: 'stack stack-1' }, once.el, onceHint),
+      h('div', { class: 'stack stack-1' }, once.el, onceHint, h('div', { class: 'check-hint' }, why('first-mail-only', { text: 'Why?' }))),
     ),
     onSubmit: async () => {
       const n = name.read();
@@ -173,18 +174,26 @@ export function openGetNumber({ identityId = '' } = {}) {
     if (res.number.id && !identityId) navigate(`/numbers/${res.number.id}`);
   }
 
+  // "Own phone": the numbers come from a fixed pool (the SIM cards of the phones of this server).
+  // There is nothing to search for: the free numbers show at once.
+  const pool = !!c.features.ownPhone || c.features.searchByArea === false;
   openDialog({
     title: 'Get a number', size: 'lg',
     description: price ? `A number costs ${money(price)} for each ${renewDays()} days. The first ${renewDays()} days are charged when you buy.` : 'Choose a number.',
     content: (api) => {
-      const searchBtn = button('Search', { kind: 'primary', type: 'submit', iconName: 'search' });
+      const searchBtn = pool ? button('Look again', { type: 'submit', iconName: 'refresh', size: 'sm' }) : button('Search', { kind: 'primary', type: 'submit', iconName: 'search' });
       const run = () => runBusy(searchBtn, async () => {
-        const code = area.value.trim();
+        const code = pool ? '' : area.value.trim();
         if (code && !/^\d{1,6}$/.test(code)) { area.setError('Use numbers only.'); return; }
         replace(results, skeletonRows(4));
         let list;
-        try { list = await searchNumbers(country.value, code || undefined); } catch (err) { replace(results); throw err; }
-        if (!list.length) { replace(results, emptyState({ title: 'No numbers found', text: 'Try another area code, or leave the area code empty.', compact: true, figure: false })); return; }
+        try { list = await searchNumbers(pool ? undefined : country.value, code || undefined); } catch (err) { replace(results); throw err; }
+        if (!list.length) {
+          replace(results, pool
+            ? emptyState({ title: 'No number is free now.', text: 'All numbers of this server are in use. Look again later.', compact: true, figure: false })
+            : emptyState({ title: 'No numbers found', text: 'Try another area code, or leave the area code empty.', compact: true, figure: false }));
+          return;
+        }
         replace(results, h('ul', { class: 'number-list' }, list.map((n) => h('li', { class: 'number-option' },
           h('div', { class: 'grow' },
             h('p', { class: 'mono number-option-value' }, phoneText(n.number)),
@@ -195,7 +204,9 @@ export function openGetNumber({ identityId = '' } = {}) {
         ))));
       });
       const form = h('form', { class: 'stack', novalidate: true, onSubmit: (e) => { e.preventDefault(); run(); } },
-        h('div', { class: 'number-search' }, country.el, area.el, searchBtn),
+        pool
+          ? h('div', { class: 'row row-wrap row-between' }, h('p', { class: 'muted', dataset: { pool: '' } }, 'These numbers come from the phones of this server.'), searchBtn)
+          : h('div', { class: 'number-search' }, country.el, area.el, searchBtn),
         results,
       );
       queueMicrotask(run);

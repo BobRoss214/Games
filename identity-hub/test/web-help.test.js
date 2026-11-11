@@ -8,30 +8,41 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as help from '../web/js/help/content.js';
 
-const { WHY_PAGE, TIPS, TIPS_NOTE, WHY, TUTORIAL, WORDS } = help;
+const { WHY_PAGE, TIPS, TIPS_NOTE, WHY, WHY_GROUPS, TUTORIAL, WORDS } = help;
 const WEB_JS = fileURLToPath(new URL('../web/js/', import.meta.url));
 const SOURCE = readFileSync(join(WEB_JS, 'help', 'content.js'), 'utf8');
 
 const WHY_KEYS = [
   'recovery-key', 'passkey', 'inbox-vs-alias', 'identity', 'made-up-details', 'link-phone', 'forwarding',
   'payments', 'alias-off', 'deleting', 'test-mode', 'balance', 'remote-images', 'delivery-status', 'phone-by-call',
+  // The features that came later. Other screens place "Why?" buttons with exactly these keys.
+  'block-sender', 'auto-delete', 'end-date', 'first-mail-only', 'refused-mail', 'possibly-leaked', 'who-leaked-me',
+  'my-stats', 'code-helper', 'newsletter', 'burn', 'export', 'voicemail', 'own-domain', 'quick-jump',
+  'username-password', 'identity-look', 'home-warnings', 'recovery-test',
 ];
+const GROUP_TITLES = ['Basics', 'Mail', 'Numbers', 'Identities', 'Safety'];
 const STEP_IDS = [
   'welcome', 'recovery-key', 'passkey', 'funds', 'inbox', 'alias', 'first-mail', 'alias-off',
-  'identity', 'made-up-details', 'number', 'first-text', 'link-phone', 'finish',
+  'identity', 'made-up-details', 'number', 'first-text', 'link-phone', 'more', 'finish',
+];
+// The names in the list of the step "more": the real names of these things in the app.
+const MORE_NAMES = [
+  'Block this sender', 'Delete old mail automatically', 'Set an end date', 'Stop after the first mail', 'Burn',
+  'Download my data', 'Voicemail', 'My stats', 'Who leaked me', 'Search', 'Test my recovery key',
 ];
 const STEP_TEXT_FIELDS = ['title', 'what', 'why', 'doIt', 'doItTest', 'done', 'skipNote', 'offNote'];
-const STEP_FIELDS = ['id', 'needs', 'costKey', ...STEP_TEXT_FIELDS];
+const STEP_FIELDS = ['id', 'needs', 'costKey', 'list', ...STEP_TEXT_FIELDS];
 const GLOSSARY = [
   'inbox', 'alias', 'number', 'identity', 'random identifiers', 'recovery key', 'passkey', 'funds', 'credit',
   'turn on', 'turn off', 'delete', 'release', 'paused', 'sign in', 'sign out', 'lock', 'test mode',
+  'block', 'end date', 'used up', 'possibly leaked', 'burn', 'code',
 ];
 
 // Words that promise too much. The help must never use them, also not with "not" in front.
 const FORBIDDEN_WORDS = ['invisible', 'anonymous', 'untraceable', '100%', 'guarantee', 'military-grade', 'unhackable', 'completely safe'];
-// Names that the app does not use. The app says inbox, alias, and random identifiers.
-// "made-up details" is the old name of the random identifiers.
-const FORBIDDEN_NAMES = ['mailbox', 'burner', 'fake identity', 'made-up detail', 'made up detail'];
+// Names that the app does not use (docs/UI-GUIDE.md, "The words"). The app says inbox, alias, random
+// identifiers, "used up", paused, and code. "made-up details" is the old name of the random identifiers.
+const FORBIDDEN_NAMES = [/\bmailbox(es)?\b/i, /\bburner\b/i, /\bfake identit/i, /\bmade[- ]up details?\b/i, /\bpersonas?\b/i, /\bone-shot\b/i, /\bsuspended\b/i, /\bOTP\b/i, /\b2FA\b/i];
 const PRODUCT_NAME = 'Postern';
 
 // ---- helpers ----
@@ -57,7 +68,12 @@ function allTexts() {
   }
   TUTORIAL.forEach((step) => {
     for (const field of STEP_TEXT_FIELDS) if (step[field] !== undefined && step[field] !== null) add(`TUTORIAL.${step.id}.${field}`, step[field]);
+    (step.list || []).forEach((item, i) => {
+      add(`TUTORIAL.${step.id}.list[${i}].name`, item.name);
+      add(`TUTORIAL.${step.id}.list[${i}].line`, item.line);
+    });
   });
+  WHY_GROUPS.forEach((g, i) => add(`WHY_GROUPS[${i}].title`, g.title));
   WORDS.forEach((w, i) => {
     add(`WORDS[${i}].word`, w.word);
     add(`WORDS[${i}].meaning`, w.meaning);
@@ -84,7 +100,7 @@ function webSources(dir = WEB_JS) {
 // ---- shape ----
 
 test('help: the module is plain data', () => {
-  assert.deepEqual(Object.keys(help).sort(), ['TIPS', 'TIPS_NOTE', 'TUTORIAL', 'WHY', 'WHY_PAGE', 'WORDS']);
+  assert.deepEqual(Object.keys(help).sort(), ['TIPS', 'TIPS_NOTE', 'TUTORIAL', 'WHY', 'WHY_GROUPS', 'WHY_PAGE', 'WORDS']);
   // Plain data stays the same after a trip through JSON: no function, no date, no undefined value.
   for (const [name, value] of Object.entries(help)) assert.deepEqual(JSON.parse(JSON.stringify(value)), value, name);
   assert.equal(typeof TIPS_NOTE, 'string');
@@ -117,6 +133,17 @@ test('help: the "why?" explanations have exactly the expected keys', () => {
   }
 });
 
+test('help: each "why?" explanation is in one group of the Help page', () => {
+  assert.deepEqual(WHY_GROUPS.map((g) => g.title), GROUP_TITLES);
+  for (const g of WHY_GROUPS) {
+    assert.deepEqual(Object.keys(g).sort(), ['keys', 'title']);
+    assert.ok(Array.isArray(g.keys) && g.keys.length >= 3 && g.keys.length <= 12, `${g.title}: a group has 3 to 12 answers`);
+  }
+  const grouped = WHY_GROUPS.flatMap((g) => g.keys);
+  assert.equal(new Set(grouped).size, grouped.length, 'a key is in two groups');
+  assert.deepEqual([...grouped].sort(), [...WHY_KEYS].sort());
+});
+
 test('help: the tutorial has exactly the expected steps, in order', () => {
   assert.deepEqual(TUTORIAL.map((s) => s.id), STEP_IDS);
   for (const s of TUTORIAL) {
@@ -130,7 +157,7 @@ test('help: the tutorial has exactly the expected steps, in order', () => {
 });
 
 test('help: the tips and the word list have the expected shape', () => {
-  assert.ok(TIPS.length >= 12 && TIPS.length <= 16, `there are ${TIPS.length} tips; the range is 12 to 16`);
+  assert.ok(TIPS.length >= 12 && TIPS.length <= 20, `there are ${TIPS.length} tips; the range is 12 to 20`);
   assert.equal(new Set(TIPS.map((t) => t.id)).size, TIPS.length, 'each tip has its own id');
   for (const t of TIPS) {
     assert.match(t.id, /^[a-z0-9-]+$/);
@@ -173,7 +200,7 @@ test('help: no word that promises too much, and only the names that the app uses
   for (const { where, value } of allTexts()) {
     const low = value.toLowerCase();
     for (const word of FORBIDDEN_WORDS) assert.ok(!low.includes(word), `${where} has the forbidden word "${word}"`);
-    for (const name of FORBIDDEN_NAMES) assert.ok(!low.includes(name), `${where} has the name "${name}"; the app does not use it`);
+    for (const name of FORBIDDEN_NAMES) assert.doesNotMatch(value, name, `${where} has a name that the app does not use`);
     assert.doesNotMatch(value, /\b(masks?|phone lines?)\b/i, `${where}: say alias and number`);
     // "identity" is the name of a group of aliases and numbers, and of nothing else.
     assert.doesNotMatch(value, /\b(real|true|fake|false|your own|personal) identit/i, `${where}: "identity" means a group only`);
@@ -236,6 +263,11 @@ test('help: the tips cover the subjects that the owner listed', () => {
     'remote images': /remote images are blocked/i,
     'delete what you do not need': /delete old mail/i,
     'lock on a shared computer': /"Lock".*sign out/i,
+    // The habits of the later features.
+    'block one sender before you turn off an alias': /"Block this sender".*still need the alias/i,
+    'stop after the first mail for one code': /"Stop after the first mail".*one code/i,
+    'burn an identity when you are finished': /"Burn" on an identity/i,
+    'download your data and keep the file apart from the key': /"Download my data".*apart from your recovery key/i,
   };
   for (const [subject, pattern] of Object.entries(subjects)) assert.ok(all.some((text) => pattern.test(text)), `no tip about: ${subject}`);
 });
@@ -272,6 +304,52 @@ test('help: the "why?" explanations state their limits', () => {
   assert.match(text('test-mode'), /no real money/i);
 });
 
+test('help: the explanations of the later features say what the owner asked for', () => {
+  const text = (key) => WHY[key].paragraphs.join(' ');
+  // Newsletter: why no link is opened, and what the unsubscribe mail shows the sender.
+  assert.match(text('newsletter'), /never opens such a link/i);
+  assert.match(text('newsletter'), /tells the sender that a person reads the address/i);
+  assert.match(text('newsletter'), /"Unsubscribe by email" sends a real mail from your alias/);
+  assert.match(text('newsletter'), /sender then learns that this alias is in use/i);
+  assert.match(text('newsletter'), /copy of that mail in "Sent"/);
+  // Export: the key that opens it, what is not in it, and two files of one account.
+  assert.match(text('export'), /recovery key opens the file/i);
+  assert.match(text('export'), /not in the file: working numbers, your credit, and your passkeys/i);
+  assert.match(text('export'), /two files can see that they are from one account/i);
+  assert.match(text('export'), /cannot load the file back/i);
+  // Voicemail: what the phone company hears and keeps.
+  assert.match(text('voicemail'), /phone company hears the whole message/i);
+  assert.match(text('voicemail'), /deletes the recording at the phone company/i);
+  assert.match(text('voicemail'), /keep its call records, and its own backups/i);
+  // Burn: exactly what it destroys, and that it cannot be undone.
+  assert.match(text('burn'), /turns off its aliases and deletes all mail that they got and sent/i);
+  assert.match(text('burn'), /releases its numbers and deletes their texts, their calls and their voicemail/i);
+  assert.match(text('burn'), /cannot be undone/i);
+  assert.match(text('burn'), /earlier backup/i);
+  // Automatic deletion: no way back, and the backups of the operator.
+  assert.match(text('auto-delete'), /cannot be brought back/i);
+  assert.match(text('auto-delete'), /earlier backup can still hold a deleted message/i);
+  // The limits of the other new parts.
+  assert.match(text('block-sender'), /can still write from a different address/i);
+  assert.match(text('end-date'), /server knows the date/i);
+  assert.match(text('first-mail-only'), /second one is refused/i);
+  assert.match(text('refused-mail'), /does not keep the sender, the time or the content/i);
+  for (const key of ['possibly-leaked', 'who-leaked-me']) assert.match(text(key), /From line of a mail can be forged/i, key);
+  assert.match(text('possibly-leaked'), /only a hint/i);
+  assert.match(text('my-stats'), /sender name can be forged/i);
+  assert.match(text('my-stats'), /nothing is saved/i);
+  assert.match(text('code-helper'), /can miss a code/i);
+  assert.match(text('own-domain'), /compare their lists/i);
+  assert.match(text('quick-jump'), /Press "\/" or Ctrl\+K/);
+  assert.match(text('quick-jump'), /asks the server for nothing/i);
+  assert.match(text('username-password'), /never saves the password/i);
+  assert.match(text('identity-look'), /server cannot read it/i);
+  assert.match(text('home-warnings'), /next 7 days/i);
+  assert.match(text('recovery-test'), /not sent to the server/i);
+  // "leaked" is never said without "possibly" about an alias.
+  for (const key of ['possibly-leaked', 'who-leaked-me']) assert.doesNotMatch(text(key).replace(/"Who leaked me"|possibly leaked|"Possibly leaked"/gi, ''), /leaked/i, key);
+});
+
 // ---- tutorial ----
 
 test('help: each tutorial step is short', () => {
@@ -285,6 +363,26 @@ test('help: each tutorial step is short', () => {
     if (s.doItTest !== undefined) assert.equal(sentences(s.doItTest).length, 1, `${s.id}.doItTest must be one sentence`);
     if (s.offNote !== null) assert.equal(sentences(s.offNote).length, 1, `${s.id}.offNote must be one line`);
   }
+});
+
+test('help: the step "more" is a list to read, just before the last step', () => {
+  assert.equal(TUTORIAL[TUTORIAL.length - 2].id, 'more');
+  const more = step('more');
+  assert.equal(more.title, 'More things you can do');
+  assert.deepEqual([more.needs, more.costKey, more.skipNote, more.offNote], [null, null, null, null]);
+  assert.match(more.doIt, /later/i);
+  assert.deepEqual(more.list.map((item) => item.name), MORE_NAMES);
+  for (const item of more.list) {
+    assert.deepEqual(Object.keys(item).sort(), ['line', 'name'], item.name);
+    assert.ok(sentences(item.line).length <= 2 && countWords(item.line) <= 20, `${item.name}: one short line`);
+  }
+  // The line of the search says which key opens it.
+  assert.match(more.list.find((item) => item.name === 'Search').line, /Press "\/" or Ctrl\+K/);
+  // No other step has a list.
+  for (const s of TUTORIAL) if (s.id !== 'more') assert.ok(!('list' in s), `${s.id} has a list`);
+  // The name of each thing is its real name in the app.
+  const app = webSources();
+  for (const name of MORE_NAMES) assert.ok(app.includes(`'${name}'`), `the app has no text "${name}"`);
 });
 
 test('help: a step that costs credit shows the price and can be skipped', () => {
@@ -311,7 +409,7 @@ test('help: the steps name the right part of the server and the right price', ()
   assert.equal(step('number').costKey, 'numberMonth');
   assert.equal(step('first-text').costKey, 'textOut');
   assert.equal(step('link-phone').costKey, 'textOut');
-  for (const id of ['welcome', 'recovery-key', 'passkey', 'funds', 'alias', 'first-mail', 'alias-off', 'identity', 'made-up-details', 'finish']) assert.equal(step(id).costKey, null, id);
+  for (const id of ['welcome', 'recovery-key', 'passkey', 'funds', 'alias', 'first-mail', 'alias-off', 'identity', 'made-up-details', 'more', 'finish']) assert.equal(step(id).costKey, null, id);
 });
 
 test('help: the tutorial works with no credit, in test mode, and with parts turned off', () => {

@@ -4,31 +4,28 @@ import { h, replace } from '../../lib/dom.js';
 import { api } from '../../lib/api.js';
 import { dayText } from '../../lib/format.js';
 import { openSealed } from '../../lib/session.js';
+import { loadAliases, loadMailboxes } from '../../lib/data.js';
 import { senderDomain } from '../../lib/leak.js';
 import { icon } from '../../ui/icons.js';
 import { button, field, tag, runBusy, reportError, emptyState, skeletonRows, loadError } from '../../ui/components.js';
 import { openDialog, formDialog } from '../../ui/dialog.js';
 import { toast } from '../../ui/toast.js';
+import { why } from '../../ui/why.js';
 import { choiceList } from '../common/choices.js';
-import { facts, aliasFacts, refreshFacts } from '../common/facts.js';
 
 const thing = (target) => (target.kind === 'inbox' ? 'inbox' : 'alias');
 const path = (target) => `/api/addresses/${target.addressId}/blocks`;
 
+// The rows show the number of blocks. It comes with the list of aliases or inboxes: load that list again.
+const reload = (target) => (target.kind === 'alias' ? loadAliases() : loadMailboxes()).catch(() => { /* the next change of the list shows it */ });
 async function block(target, kind, value) {
   const res = await api.post(path(target), { kind, value });
-  refreshFacts();
+  reload(target);
   return res.block;
 }
 async function unblock(target, blockId) {
   await api.del(`${path(target)}/${blockId}`);
-  refreshFacts();
-}
-// How many senders the address blocks now, as far as this tab knows.
-function blocksOf(target) {
-  if (target.kind === 'alias') return aliasFacts(target.addressId).blocks;
-  for (const box of facts.get('inboxes').values()) if (box.addressId === target.addressId) return box.blocks;
-  return 0;
+  reload(target);
 }
 // What was blocked, in words: "news@shop.example" or "all addresses at shop.example".
 const named = (kind, value) => (kind === 'domain' ? `all addresses at ${value}` : value);
@@ -48,16 +45,14 @@ export async function openBlockSender(fromAddress, target) {
   const made = await formDialog({
     title: 'Block this sender', submitLabel: 'Block sender', size: 'md',
     description: `Mail from this sender to ${target.address} is refused. Everything else on this ${thing(target)} keeps working.`,
-    build: () => h('div', { class: 'stack' }, choice.el),
+    build: () => h('div', { class: 'stack' }, choice.el, why('block-sender')),
     onSubmit: async () => {
       const kind = choice.value;
       const value = kind === 'domain' ? domain : address;
-      // The server answers the same for a sender that was blocked before. The count tells the two apart.
-      await refreshFacts();
-      const before = blocksOf(target);
+      // The server answers the same for a sender that was blocked before. The list from before tells the two apart.
+      const before = ((await api.get(path(target))).blocks || []).map((b) => b.id);
       const made = await block(target, kind, value);
-      await refreshFacts();
-      return { kind, value, block: made, isNew: blocksOf(target) > before };
+      return { kind, value, block: made, isNew: !before.includes(made.id) };
     },
   });
   if (!made || !made.block) return;
@@ -141,6 +136,7 @@ export function openBlockList(target) {
     description: `Mail from these senders to this ${thing(target)} is refused. Everything else on it keeps working.`,
     content: (dlg) => h('div', { class: 'stack' },
       h('p', { class: 'mono small muted break' }, target.address),
+      why('block-sender'),
       slot,
       form,
       h('div', { class: 'dialog-actions' }, button('Done', { kind: 'primary', onClick: () => dlg.close() })),

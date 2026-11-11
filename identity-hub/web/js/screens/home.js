@@ -72,6 +72,8 @@ export function homeScreen({ scope }) {
     const unread = members.reduce((n, m) => n + (m.unread || 0), 0);
     const forwards = forwardingOf(numbers.map((m) => m.raw), state);
     const marks = registered.rowBadges('identity', identityItem(g));
+    // An alias inside got mail from a sender it does not know (see lib/leakwatch.js).
+    const leaked = aliases.some((m) => ((state.leaks || {})[m.id] || []).length > 0);
     const door = identityState(g, { aliases: aliases.map((m) => m.raw), numbers: numbers.map((m) => m.raw) });
     return h('li', null,
       h('a', { class: 'identity-card', href: `/identities/${g.id}`, 'data-link': true, dataset: { identity: g.id } },
@@ -83,8 +85,9 @@ export function homeScreen({ scope }) {
         ),
         g.note ? h('span', { class: 'identity-card-note' }, g.note) : null,
         h('span', { class: 'identity-card-count' }, stateWord(door), ' · ', members.length ? `${plural(aliases.length, 'address', 'addresses')}, ${plural(numbers.length, 'number')}` : 'Empty'),
-        forwards.length || marks.length ? h('span', { class: 'identity-card-marks' },
+        forwards.length || marks.length || leaked ? h('span', { class: 'identity-card-marks' },
           forwards.length ? h('span', { class: 'tag tag-warn identity-card-forward' }, icon('phone', { size: 12 }), 'Forwards to real phone') : null,
+          leaked ? h('span', { class: 'tag tag-warn', dataset: { leak: '' } }, 'Possibly leaked') : null,
           marks,
         ) : null,
       ),

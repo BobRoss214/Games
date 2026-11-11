@@ -55,6 +55,8 @@ const ICONS = {
   folder: ['M3.5 7.5a1.5 1.5 0 0 1 1.5-1.5h4.2l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v7.8A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5v-10Z'],
   group: [['rect', { x: 3.5, y: 4.5, width: 17, height: 15, rx: 1.5 }], 'M3.5 9.5h17', 'M8 13.5h8M8 16.5h5'],
   dot: [['circle', { cx: 12, cy: 12, r: 4, fill: 'currentColor', stroke: 'none' }]],
+  clock: [['circle', { cx: 12, cy: 12, r: 8.5 }], 'M12 7v5.2l3.4 2.1'],
+  flame: ['M12 3.5c.6 3-1.2 4.4-2.6 6.2C8 11.5 7 13 7 15a5 5 0 0 0 10 0c0-1.7-.7-3-1.6-4.2-.4 1.3-1.1 2-2 2.4.5-3.2-.2-6.7-1.4-9.7Z'],
   play: ['M8 5.5v13l10.5-6.5L8 5.5Z'],
   pause: ['M8.5 5.5v13M15.5 5.5v13'],
   // The door of an identity. Open = something inside is on. Shut = all off. Bricked up = burned.

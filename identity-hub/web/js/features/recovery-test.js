@@ -15,6 +15,7 @@ import { store } from '../lib/store.js';
 import { registerSettingsSection } from '../lib/registry.js';
 import { button, runBusy, callout } from '../ui/components.js';
 import { openDialog } from '../ui/dialog.js';
+import { why } from '../ui/why.js';
 import { getKeys } from '../lib/session.js';
 import { recoveryInput } from '../screens/signin.js';
 import { unb64u, bytesEqual } from '/shared/bytes.js';
@@ -100,4 +101,4 @@ export function openRecoveryTest() {
   return dlg.closed.then(() => right);
 }
 
-registerSettingsSection({ id: 'recovery-test', title: TITLE, lede: LEDE, order: 15, render: () => recoveryTestForm() });
+registerSettingsSection({ id: 'recovery-test', title: TITLE, lede: LEDE, order: 15, render: () => h('div', { class: 'stack stack-3' }, why('recovery-test'), recoveryTestForm()) });

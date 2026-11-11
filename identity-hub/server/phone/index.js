@@ -12,13 +12,16 @@ import { nowSec } from '../core/db.js';
 import { safeEqual } from '../core/keys.js';
 import { createMockProvider } from './providers/mock.js';
 import { createTwilioProvider } from './providers/twilio.js';
+import { createOwnPhoneProvider } from './providers/ownphone.js';
+import { createPool } from './pool.js';
+import { registerOwnPhone } from './ownphone.js';
 import { ProviderError } from './providers/errors.js';
 import { createDelivery } from './delivery.js';
 import { createVoicemail } from './voicemail.js';
 import { createHooks } from './hooks.js';
 import { registerRoutes } from './routes.js';
 import { registerDevRoutes } from './dev.js';
-import { E164 } from './common.js';
+import { E164, deleteTextRows, deleteNumberRows } from './common.js';
 
 // The tables. A column that was added after the first version is also in MIGRATIONS below,
 // because CREATE TABLE IF NOT EXISTS does not change a table that exists already.
@@ -155,7 +158,7 @@ const SAY_CODE_SECONDS = 5 * 60;
 const LIVE_CALL_SECONDS = 12 * 3600;
 const TEXT_SEND_SECONDS = 7 * 86400;
 const RECORDING_RETRY_SECONDS = 30 * 86400;
-const NO_CAPABILITIES = { voice: false, voicemail: false, asyncText: false, searchByArea: false };
+const NO_CAPABILITIES = { voice: false, voicemail: false, asyncText: false, searchByArea: false, pool: false };
 
 function migrate(db) {
   db.exec(TABLES);
@@ -179,7 +182,12 @@ export async function register(app) {
     : null);
 
   let provider = null;
-  if (name === 'mock') {
+  // "Own phone": the pool of phones and SIM cards. The operator fills it with server/tools/ownphone.js.
+  let pool = null;
+  if (name === 'ownphone') {
+    pool = createPool({ db, keys, config });
+    provider = createOwnPhoneProvider(config.phone.ownphone, { pool });
+  } else if (name === 'mock') {
     const auto = config.phone.mockAutoAnswer;
     provider = createMockProvider({
       sign: (raw) => app.keys.sign('mock-hook', raw),
@@ -191,7 +199,7 @@ export async function register(app) {
   } else if (name === 'twilio') {
     provider = createTwilioProvider(config.phone.twilio, { warn: (message) => log.warn(message) });
   } else if (!off) {
-    throw new Error('PHONE_PROVIDER must be mock, twilio, or off');
+    throw new Error('PHONE_PROVIDER must be mock, twilio, ownphone, or off');
   }
 
   // Search results that an account may buy. Key: HMAC of account + number, so that
@@ -247,6 +255,8 @@ export async function register(app) {
     requireActive(row) {
       if (row.status !== 'active') throw fail(409, 'suspended', 'This number is suspended. Add funds to use it again.');
     },
+    // Own phone only: { online, lastSeen } of the phone that has the number. Other providers: null.
+    gatewayOf() { return null; },
     // Calls need a provider with voice and a number with voice.
     hasVoice(row) {
       return ph.capabilities.voice === true && row.voice === 1;
@@ -327,25 +337,10 @@ export async function register(app) {
     },
 
     // Deletes texts of one number: one text (textId), or all texts older than a time (before).
-    // A send that still waits for its delivery status must not point at a text that is gone.
-    // The send itself stays: if the provider reports later that the text failed, the charge
-    // still comes back, one time. Returns the count of deleted texts.
-    deleteTexts(accountId, numberId, { textId, before }) {
-      const which = textId !== undefined ? 'id = ?' : 'at < ?';
-      const value = textId !== undefined ? textId : before;
-      return db.tx(() => {
-        db.run(`UPDATE text_sends SET text_id = NULL WHERE account_id = ? AND text_id IN (SELECT id FROM texts WHERE account_id = ? AND number_id = ? AND ${which})`,
-          accountId, accountId, numberId, value);
-        return db.run(`DELETE FROM texts WHERE account_id = ? AND number_id = ? AND ${which}`, accountId, numberId, value).changes;
-      });
-    },
+    // Returns the count of deleted texts. The rules are in common.js.
+    deleteTexts: (accountId, numberId, which) => deleteTextRows(db, accountId, numberId, which),
     // Deletes the row of a number. Its texts and calls go with it.
-    deleteNumber(accountId, numberId) {
-      db.tx(() => {
-        ph.deleteTexts(accountId, numberId, { before: Number.MAX_SAFE_INTEGER });
-        db.run('DELETE FROM numbers WHERE id = ? AND account_id = ?', numberId, accountId);
-      });
-    },
+    deleteNumber: (accountId, numberId) => deleteNumberRows(db, accountId, numberId),
   };
 
   // Charge, send, and delivery status of outgoing texts.
@@ -353,6 +348,7 @@ export async function register(app) {
   ph.sendPaidText = delivery.sendPaidText;
   ph.trackSend = delivery.trackSend;
   ph.reportTextStatus = delivery.reportTextStatus;
+  ph.failStaleTexts = delivery.failStale;
 
   registerRoutes(app, ph);
 
@@ -381,6 +377,10 @@ export async function register(app) {
 
   ph.voicemail = createVoicemail(app, ph);
   const hooks = createHooks(app, ph);
+  if (pool) {
+    registerOwnPhone(app, ph, hooks, pool);
+    service.pool = pool;
+  }
   if (name === 'mock') {
     provider.attach(hooks);
     app.onStop(() => provider.stop());

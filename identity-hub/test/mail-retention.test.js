@@ -173,6 +173,40 @@ test('the job deletes only old messages of mailboxes that have the setting', asy
   assert.deepEqual(await subjects(a, `?mailboxId=${cleaned.mailbox.id}`), ['new']);
 });
 
+test('the development route runs the job now', async () => {
+  const a = await newAccount(app, { credits: 100 });
+  const b = await newAccount(app, { credits: 100 });
+  const box = await newMailbox(a);
+  const other = await newMailbox(b);
+  for (const subject of ['old', 'new']) await inject(a, box.address, { subject });
+  await inject(b, other.address, { subject: 'old' });
+  await age(a, 40, 'old');
+  await age(b, 40, 'old');
+  assert.equal((await a.api.patch(`/api/mailboxes/${box.mailbox.id}`, { retentionDays: 30 })).status, 200);
+  assert.equal((await client(app).post('/api/dev/run-mail-retention')).status, 401);
+  assert.deepEqual(await subjects(a), ['new', 'old'], 'nothing is deleted before the job runs');
+
+  const events = [];
+  const publish = app.events.publish;
+  app.events.publish = (...args) => { events.push(args); return publish(...args); };
+  let res;
+  try { res = await a.api.post('/api/dev/run-mail-retention'); } finally { app.events.publish = publish; }
+  assert.equal(res.status, 204);
+  assert.deepEqual(await subjects(a), ['new']);
+  assert.deepEqual(events.filter((e) => e[0] === a.id), [[a.id, 'mail', { mailboxId: box.mailbox.id }]]);
+  // A mailbox without the setting keeps its old mail, also when a different account starts the job.
+  assert.deepEqual(await subjects(b), ['old']);
+
+  // Outside development the route does not exist.
+  const production = await startTestApp({ dev: false });
+  try {
+    const p = await newAccount(production, { credits: 100 });
+    assert.equal((await p.api.post('/api/dev/run-mail-retention')).status, 404);
+  } finally {
+    await production.stop();
+  }
+});
+
 test('the job handles a mailbox with very many old messages', async () => {
   const a = await newAccount(app, { credits: 100 });
   const { mailbox } = await newMailbox(a);

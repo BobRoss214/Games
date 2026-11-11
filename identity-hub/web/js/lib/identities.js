@@ -150,7 +150,9 @@ export function addIdentityEvent(id, type, day = today()) {
 // 'burned' when the burn feature marked it. 'on' when an alias inside is on or a number inside is active. Else 'off'.
 export function identityState(g, members = membersOf(g.id)) {
   if (g && g.extra && isObject(g.extra.burned)) return 'burned';
-  return members.aliases.some((a) => a.enabled) || members.numbers.some((n) => n.status === 'active') ? 'on' : 'off';
+  const now = Date.now() / 1000;
+  const live = (a) => a.enabled && !(Number.isFinite(a.expiresAt) && a.expiresAt > 0 && a.expiresAt <= now); // an alias past its end date is off
+  return members.aliases.some(live) || members.numbers.some((n) => n.status === 'active') ? 'on' : 'off';
 }
 
 // The aliases and numbers of a deleted identity stay. Their identityId then matches

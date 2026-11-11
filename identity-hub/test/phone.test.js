@@ -39,6 +39,8 @@ async function buyNumber(acct, query = 'country=US&areaCode=415') {
   assert.equal(s.status, 200);
   const res = await acct.api.post('/api/numbers', { number: s.data.numbers[0].number });
   assert.equal(res.status, 201);
+  // Only the provider "own phone" says if the phone of a number is online.
+  assert.equal(res.data.number.gateway, null);
   return { ...res.data.number, plain: remember(res.data.plain) };
 }
 

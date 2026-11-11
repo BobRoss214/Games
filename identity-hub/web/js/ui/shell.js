@@ -97,8 +97,14 @@ function build() {
     nav.appendChild(a);
   }
   const balanceValue = h('span', { class: 'side-balance-value mono' });
+  // Actions of feature files (registerTopBarAction): on a wide screen they are entries above the menu,
+  // each with the key that opens it too ("Search", "/").
+  const sideActions = registered.topBarActions().map((a) => h('button', { class: 'side-action', type: 'button', dataset: { sideAction: a.id }, onClick: () => a.run() },
+    icon(a.icon, { size: 18 }), h('span', { class: 'grow' }, a.label),
+    (a.key || (a.id === 'quick-jump' ? '/' : '')) ? h('kbd', { class: 'side-key', title: 'Press this key to open it' }, a.key || '/') : null));
   const sidebar = h('aside', { class: 'sidebar' },
     brand(),
+    sideActions.length ? h('div', { class: 'side-actions-top' }, sideActions) : null,
     nav,
     h('div', { class: 'sidebar-foot' },
       h('a', { class: 'side-balance', href: '/funds', 'data-link': true }, h('span', { class: 'side-balance-label' }, 'Balance'), balanceValue),

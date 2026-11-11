@@ -1,7 +1,7 @@
 // Tests for the Home warnings (web/js/lib/warnings.js). It runs here in Node.js exactly as in the browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { homeWarnings, WARN_DAYS } from '../web/js/lib/warnings.js';
+import { homeWarnings, WARN_DAYS, OFFLINE_SECONDS } from '../web/js/lib/warnings.js';
 
 const DAY = 86400;
 const NOW = 1_800_000_000;
@@ -11,8 +11,8 @@ const number = (id, days, status = 'active') => ({ id, status, paidUntil: NOW + 
 const run = (extra) => homeWarnings({ now: NOW, balance: 0, prices: PRICES, graceDays: 7, mailboxes: [], numbers: [], ...extra });
 
 test('nothing to warn: empty account, or enough balance', () => {
-  assert.deepEqual(run({}), { renewals: null, paused: [] });
-  assert.deepEqual(run({ balance: 500, mailboxes: [box('m1', 2)], numbers: [number('n1', 3)] }), { renewals: null, paused: [] });
+  assert.deepEqual(run({}), { renewals: null, paused: [], offline: [] });
+  assert.deepEqual(run({ balance: 500, mailboxes: [box('m1', 2)], numbers: [number('n1', 3)] }), { renewals: null, paused: [], offline: [] });
   // exactly enough is enough
   assert.equal(run({ balance: 100, mailboxes: [box('m1', 1)] }).renewals, null);
 });
@@ -56,9 +56,25 @@ test('paused and due at the same time', () => {
 });
 
 test('broken input does not throw and does not warn for nothing', () => {
-  assert.deepEqual(homeWarnings(), { renewals: null, paused: [] });
-  assert.deepEqual(homeWarnings({ now: NaN, mailboxes: [box('m', 1)] }), { renewals: null, paused: [] });
+  assert.deepEqual(homeWarnings(), { renewals: null, paused: [], offline: [] });
+  assert.deepEqual(homeWarnings({ now: NaN, mailboxes: [box('m', 1)] }), { renewals: null, paused: [], offline: [] });
   const w = homeWarnings({ now: NOW, balance: 'x', prices: PRICES, graceDays: 'x', mailboxes: [null, 5, { id: 'm', status: 'active', paidUntil: null }, { id: 'k', status: 'active', paidUntil: NOW + DAY }], numbers: 'no' });
   assert.deepEqual(w.renewals.items.map((i) => i.id), ['k']);
+  assert.deepEqual(w.paused, []);
+});
+
+test('own phone: a phone that is offline for more than one hour', () => {
+  assert.equal(OFFLINE_SECONDS, 3600);
+  const n = (id, gateway) => ({ id, status: 'active', paidUntil: NOW + 20 * DAY, gateway });
+  const w = run({ balance: 9999, numbers: [
+    n('online', { online: true, lastSeen: NOW - 10 }),
+    n('short', { online: false, lastSeen: NOW - 3600 }),      // exactly one hour: not yet
+    n('long', { online: false, lastSeen: NOW - 3601 }),
+    n('never', { online: false, lastSeen: null }),
+    n('other-provider', null),
+    n('broken', 'x'),
+  ] });
+  assert.deepEqual(w.offline, [{ id: 'long', since: NOW - 3601 }, { id: 'never', since: null }]);
+  assert.equal(w.renewals, null);
   assert.deepEqual(w.paused, []);
 });

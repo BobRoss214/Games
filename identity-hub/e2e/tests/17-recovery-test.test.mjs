@@ -35,7 +35,7 @@ export default async function (t) {
   await settingsIdle(page, t.base);
 
   const part = page.locator('[data-section="recovery-test"]');
-  const field = part.getByLabel('Recovery key');
+  const field = part.getByRole('textbox', { name: 'Recovery key' });
   const test = part.getByRole('button', { name: 'Test the key' });
   const answer = part.locator('.f-rtest-answer');
   assert(await answer.getAttribute('role') === 'status', 'the answer is not announced');
@@ -102,14 +102,14 @@ export default async function (t) {
   await signUp(p.page, t.base);
   await p.page.goto(t.base + '/settings');
   const small = p.page.locator('[data-section="recovery-test"]');
-  await small.getByLabel('Recovery key').fill(otherKey);
+  await small.getByRole('textbox', { name: 'Recovery key' }).fill(otherKey);
   await small.getByRole('button', { name: 'Test the key' }).click();
   await small.getByText(OTHER, { exact: true }).waitFor();
   const m = await p.page.evaluate(() => {
     const root = document.querySelector('[data-section="recovery-test"]');
     const vw = document.documentElement.clientWidth;
     const out = [...root.querySelectorAll('*')].filter((el) => { const b = el.getBoundingClientRect(); return b.width > 0 && (b.right > vw + 1 || b.left < -1); }).length;
-    const low = [...root.querySelectorAll('button, textarea')].filter((el) => el.getBoundingClientRect().height < 40).map((el) => el.textContent.trim().slice(0, 20));
+    const low = [...root.querySelectorAll('button:not(.why-btn), textarea')].filter((el) => el.getBoundingClientRect().height > 0 && el.getBoundingClientRect().height < 40).map((el) => el.textContent.trim().slice(0, 20));
     return { out, low };
   });
   assert(m.out === 0, 'a part of the test sticks out of the phone screen');

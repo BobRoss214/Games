@@ -10,6 +10,8 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const WEB_DIR = join(ROOT, 'web');
 const SHARED_DIR = join(ROOT, 'shared');
 
+const escapeHtml = (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
 export class HttpError extends Error {
   constructor(status, code, message, extra) {
     super(message);
@@ -165,10 +167,12 @@ export function createHttp({ config, store, log }) {
       info = await stat(file).catch(() => null);
       if (!info) throw fail(404, 'not_found', 'Not found.');
     }
-    const etag = `"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}"`;
+    const etag = `"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}-${config.appName.length.toString(36)}${Buffer.from(config.appName).toString('hex').slice(0, 8)}"`;
     const headers = { 'content-type': MIME[extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache', etag };
     if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); res.end(); return; }
-    const data = await readFile(file);
+    let data = await readFile(file);
+    // The page shell can show the product name before any script runs: the token %APP_NAME% in index.html.
+    if (file === join(WEB_DIR, 'index.html')) data = Buffer.from(data.toString('utf8').replaceAll('%APP_NAME%', escapeHtml(config.appName)));
     res.writeHead(200, { ...headers, 'content-length': data.length });
     res.end(req.method === 'HEAD' ? undefined : data);
   }

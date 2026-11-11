@@ -11,7 +11,8 @@ import { registerRowAction, registerRowBadge, registerSettingsSection } from '..
 import { fullTime, phoneText, plural } from '../lib/format.js';
 import { icon } from '../ui/icons.js';
 import { button, tag, emptyState, skeletonRows, reportError, linkButton } from '../ui/components.js';
-import { facts, aliasFacts, inboxFacts, liveMark } from './common/facts.js';
+import { why } from '../ui/why.js';
+import { aliasFacts, inboxFacts, keepCurrent } from './common/facts.js';
 
 // The dialogs load when the person opens one.
 const open = (name, ...args) => import('./autodelete/dialogs.js').then((m) => m[name](...args)).catch(reportError);
@@ -29,25 +30,30 @@ export function endWords(expiresAt, at = now()) {
 
 // ---- inbox: delete old mail ----
 registerRowAction('inbox', (item) => ({ label: 'Delete old mail automatically', icon: 'trash', run: () => open('openInboxAutoDelete', item.raw) }));
-registerRowBadge('inbox', (item) => liveMark(() => {
-  const n = inboxFacts(item.id).retentionDays;
+registerRowBadge('inbox', (item) => {
+  const n = inboxFacts(item.raw).retentionDays;
   return n ? h('span', { class: 'small faint nowrap', dataset: { autodelete: String(n) } }, `Deletes mail after ${days(n)}`) : null;
-}));
+});
 
 // ---- alias: an end date ----
 registerRowAction('alias', (item) => ({
-  label: aliasFacts(item.id).expiresAt ? 'Change the end date' : 'Set an end date',
-  icon: 'refresh', run: () => open('openAliasEnd', item.raw),
+  label: aliasFacts(item.raw).expiresAt ? 'Change the end date' : 'Set an end date',
+  icon: 'clock', run: () => open('openAliasEnd', item.raw),
 }));
-registerRowBadge('alias', (item) => liveMark(() => {
-  const end = aliasFacts(item.id).expiresAt;
+// The words change with the clock ("Stops in 2 hours", then "Ended"), so this mark sets its words again each minute.
+// data-end="ended" tells the row that this mark says "Ended" (the row then shows no second one).
+registerRowBadge('alias', (item) => {
+  const end = aliasFacts(item.raw).expiresAt;
   if (!end) return null;
-  const words = endWords(end);
-  const mark = tag(words, words === 'Ended' ? 'warn' : '');
-  mark.dataset.end = words === 'Ended' ? 'ended' : 'set';
-  mark.title = words === 'Ended' ? `This alias ended on ${fullTime(end)}. It refuses mail.` : `This alias stops on ${fullTime(end)}. After that it refuses mail.`;
-  return mark;
-}));
+  return keepCurrent(tag(''), (mark) => {
+    const words = endWords(end);
+    const ended = words === 'Ended';
+    mark.textContent = words;
+    mark.className = ended ? 'tag tag-warn' : 'tag';
+    mark.dataset.end = ended ? 'ended' : 'set';
+    mark.title = ended ? `This alias ended on ${fullTime(end)}. It refuses mail.` : `This alias stops on ${fullTime(end)}. After that it refuses mail.`;
+  });
+});
 
 // ---- Settings: everything that has it on ----
 function row({ iconName, value, words, action }) {
@@ -59,17 +65,17 @@ function row({ iconName, value, words, action }) {
 }
 function overview() {
   const app = store.get();
-  if (!facts.get('loaded') || app.mailboxes === null || app.aliases === null || app.numbers === null) return h('div', { class: 'sheet item-sheet' }, skeletonRows(2));
+  if (app.mailboxes === null || app.aliases === null || app.numbers === null) return h('div', { class: 'sheet item-sheet' }, skeletonRows(2));
   const rows = [];
   for (const m of app.mailboxes) {
-    const n = inboxFacts(m.id).retentionDays;
+    const n = inboxFacts(m).retentionDays;
     if (n) rows.push(row({ iconName: 'inbox', value: m.address, words: `Mail older than ${days(n)} is deleted`, action: button('Change', { size: 'sm', attrs: { 'aria-label': `Change the automatic deletion of ${m.address}` }, onClick: () => open('openInboxAutoDelete', m) }) }));
   }
   for (const n of app.numbers) {
     if (n.retentionDays) rows.push(row({ iconName: 'phone', value: phoneText(n.number), words: `Texts older than ${days(n.retentionDays)} are deleted`, action: linkButton('Open number', `/numbers/${n.id}`, { size: 'sm' }) }));
   }
   for (const a of app.aliases) {
-    const end = aliasFacts(a.id).expiresAt;
+    const end = aliasFacts(a).expiresAt;
     if (end) rows.push(row({ iconName: 'alias', value: a.address, words: end <= now() ? `Ended on ${fullTime(end)}. It refuses mail.` : `Stops on ${fullTime(end)}`, action: button('Change', { size: 'sm', attrs: { 'aria-label': `Change the end date of ${a.address}` }, onClick: () => open('openAliasEnd', a) }) }));
   }
   return h('div', { class: 'sheet item-sheet' }, rows.length
@@ -83,7 +89,8 @@ registerSettingsSection({
   order: 45,
   render: ({ scope }) => {
     const el = region(scope, store, ['mailboxes', 'aliases', 'numbers'], overview);
-    scope.add(facts.subscribe(null, () => el.repaint()));
-    return el;
+    // "Stops on …" becomes "Ended on …" with the clock.
+    scope.timer(() => el.repaint(), 60_000);
+    return h('div', { class: 'stack stack-3' }, why('auto-delete'), el);
   },
 });

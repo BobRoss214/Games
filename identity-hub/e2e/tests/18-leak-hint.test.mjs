@@ -35,8 +35,12 @@ export default async function (t) {
   // ---- a different sender: hint on the row, panel in the mail ----
   await mail('deals@other-seller.example', 'Cheap watches for you');
   await row.locator('[data-leak]', { hasText: 'Possibly leaked' }).waitFor();
+  // in an identity: its Home card says it in words too
+  const identityId = await inApp(page, async ({ identities, data }, alias) => { const id = await identities.createIdentity({ name: 'Maple', note: '' }); await data.setItemIdentity('alias', alias, id); return id; }, ids.shop);
   await page.goto(t.base + '/');
-  await page.locator(`.item-row[data-id="${ids.shop}"]`).waitFor({ state: 'detached' }).catch(() => {});
+  const card = page.locator(`.identity-card[data-identity="${identityId}"]`);
+  await card.locator('[data-leak]', { hasText: 'Possibly leaked' }).waitFor();
+  await inApp(page, ({ data }, alias) => data.setItemIdentity('alias', alias, ''), ids.shop);
   await page.goto(`${t.base}/mail/${ids.personal}`);
   await page.locator('.msg-row', { hasText: 'Cheap watches for you' }).click();
   const panel = page.locator('[data-leak-panel]');

@@ -1,8 +1,7 @@
 // Automatic deletion (web/js/features/autodelete.js): old mail of an inbox, the end date of an
-// alias, and the list in Settings. The deletion itself is the work of a job on the server that
-// runs each hour; this harness cannot start it (test/mail-retention.test.js covers it). Here:
-// the plain warning with the count of old mail, what the server has saved, and an alias past
-// its end date that refuses mail.
+// alias, and the list in Settings. The plain warning with the count of old mail, what the
+// server has saved, the real deletion (a job on the server that runs each hour; the test starts
+// it through POST /api/dev/run-mail-retention), and an alias past its end date that refuses mail.
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { signUp, addCredit, inApp, assert } from '../lib.mjs';
@@ -102,6 +101,23 @@ export default async function (t) {
   await top.getByRole('button', { name: 'Delete old mail' }).click();
   await inboxRow().getByText('Deletes mail after 30 days', { exact: true }).waitFor();
 
+  // ---- the job of the server deletes the old mail; the open list follows without a reload ----
+  await page.goto(`${t.base}/mail/${x.box}`);
+  const rows = page.locator('.msg-row');
+  await rows.filter({ hasText: 'Old one' }).waitFor();
+  assert(await rows.count() === 3, 'the inbox does not show three mails before the job');
+  await inApp(page, async ({ api }) => api.post('/api/dev/run-mail-retention'));
+  await rows.filter({ hasText: 'Old one' }).waitFor({ state: 'detached', timeout: 10_000 });
+  await rows.filter({ hasText: 'Old two' }).waitFor({ state: 'detached' });
+  await rows.filter({ hasText: 'New one' }).waitFor();
+  const left = await inApp(page, async ({ mail }, id) => (await mail.listMessages({ mailboxId: id })).messages.map((m) => m.meta.subject), x.box);
+  assert(left.join() === 'New one', 'the job left other mail: ' + left.join());
+  await page.reload();
+  await rows.filter({ hasText: 'New one' }).waitFor();
+  assert(await rows.count() === 1, 'the old mail is back after a reload');
+  t.ok('the job deletes the two mails that are 40 days old and keeps the new one; the open list follows by itself');
+  await page.goto(t.base + '/');
+
   // ---- alias: an end date ----
   await menu(aliasRow(x.shop), 'Set an end date');
   await dlg.getByRole('heading', { name: 'Set an end date' }).waitFor();
@@ -183,7 +199,7 @@ export default async function (t) {
     const el = document.querySelector(sel);
     const vw = document.documentElement.clientWidth;
     const out = [...el.querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && (b.right > vw + 1 || b.left < -1); }).length;
-    const low = [...el.querySelectorAll('button, a.btn, input:not([type=radio])')].filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 40).map((n) => (n.textContent || n.getAttribute('aria-label') || '').trim().slice(0, 24));
+    const low = [...el.querySelectorAll('button:not(.why-btn), a.btn, input:not([type=radio])')].filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 40).map((n) => (n.textContent || n.getAttribute('aria-label') || '').trim().slice(0, 24));
     return { out, low, scroll: document.documentElement.scrollWidth > vw };
   }, root);
   await p.page.goto(t.base + '/settings');

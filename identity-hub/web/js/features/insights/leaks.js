@@ -11,6 +11,7 @@ import { expectSender, whenIdle } from '../../lib/leakwatch.js';
 import { pageHeader, button, emptyState, tag, runBusy, reportError } from '../../ui/components.js';
 import { icon } from '../../ui/icons.js';
 import { toast } from '../../ui/toast.js';
+import { why } from '../../ui/why.js';
 import { leakView, knownOf } from './work.js';
 import { mailReport, basisLine, day, mails } from './report.js';
 
@@ -113,5 +114,5 @@ export function leaksScreen({ scope }) {
     actions: report.againButton,
   });
   report.start();
-  return h('div', { class: 'page page-narrow' }, head, report.el);
+  return h('div', { class: 'page page-narrow' }, head, h('div', { class: 'page-why' }, why('who-leaked-me')), report.el);
 }

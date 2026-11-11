@@ -11,6 +11,7 @@
 
 const DAY = 86400;
 export const WARN_DAYS = 7;
+export const OFFLINE_SECONDS = 3600; // a phone of the "own phone" provider that is offline longer than this gets a warning
 
 const price = (prices, kind) => {
   const value = prices ? (kind === 'inbox' ? prices.mailboxMonth : prices.numberMonth) : 0;
@@ -24,10 +25,18 @@ const list = (value) => (Array.isArray(value) ? value.filter((x) => x && typeof 
 //   renewals: null, or { items: [{ kind, id, dueAt, cost }], total, firstAt, missing } when the
 //             renewals of the next 7 days cost more than the balance (items: the earliest first),
 //   paused:   [{ kind, id, releaseAt }]  releaseAt: when a paused number is released, or null,
+//   offline:  [{ id, since }]  numbers whose phone ("own phone" provider: number.gateway) is offline
+//             for more than one hour. since: when the phone was last seen, or null if never.
 // }
 export function homeWarnings({ now, balance = 0, prices = null, graceDays = 0, mailboxes = [], numbers = [], days = WARN_DAYS } = {}) {
-  const out = { renewals: null, paused: [] };
+  const out = { renewals: null, paused: [], offline: [] };
   if (!Number.isFinite(now)) return out;
+  for (const n of list(numbers)) {
+    const g = n.gateway && typeof n.gateway === 'object' ? n.gateway : null;
+    if (!g || g.online !== false) continue;
+    const since = Number.isFinite(g.lastSeen) && g.lastSeen > 0 ? g.lastSeen : null;
+    if (since === null || now - since > OFFLINE_SECONDS) out.offline.push({ id: n.id, since });
+  }
   const have = Number.isFinite(balance) && balance > 0 ? balance : 0;
   const grace = Number.isFinite(graceDays) && graceDays > 0 ? graceDays : 0;
   const until = now + days * DAY;

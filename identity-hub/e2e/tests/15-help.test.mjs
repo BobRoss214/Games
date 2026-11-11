@@ -2,7 +2,7 @@
 // "do not track what I read" (no request, no storage, nothing in the address), the keyboard,
 // and a phone screen.
 import { signUp, signIn, assert } from '../lib.mjs';
-import { WHY_PAGE, TIPS, TIPS_NOTE, WHY, WORDS } from '../../web/js/help/content.js';
+import { WHY_PAGE, TIPS, TIPS_NOTE, WHY, WHY_GROUPS, WORDS } from '../../web/js/help/content.js';
 
 const PATHS = ['/help', '/help/why', '/help/tips', '/help/answers', '/help/words'];
 
@@ -84,7 +84,7 @@ export default async function (t) {
   await page.getByRole('link', { name: /^Privacy tips/ }).click();
   await h1(page, 'Privacy tips');
   const cards = page.locator('main article.f-help-tip');
-  assert(await cards.count() === TIPS.length && TIPS.length === 15, `the tips page shows ${await cards.count()} cards, not ${TIPS.length}`);
+  assert(await cards.count() === TIPS.length && TIPS.length >= 15, `the tips page shows ${await cards.count()} cards, not ${TIPS.length}`);
   const shown = await cards.evaluateAll((els) => els.map((el) => ({
     title: el.querySelector('h2').textContent,
     labels: [...el.querySelectorAll('dt')].map((x) => x.textContent),
@@ -106,14 +106,20 @@ export default async function (t) {
   });
   assert(weight.act[0] > weight.reason[0] && weight.act[1] > weight.reason[1], 'the "Do this" line does not stand out: ' + JSON.stringify(weight));
   await noTokens(page, '/help/tips');
-  t.ok('/help/tips: 15 cards; each has "Do this", then "Here is why", then the limit if there is one; the note at the end');
+  t.ok(`/help/tips: ${TIPS.length} cards; each has "Do this", then "Here is why", then the limit if there is one; the note at the end`);
 
   // ---- /help/answers ----
   await page.getByRole('link', { name: /^Questions and answers/ }).click();
   await h1(page, 'Questions and answers');
-  const keys = Object.keys(WHY);
-  const ids = await page.locator('main h2.f-help-answer').evaluateAll((els) => els.map((el) => el.id));
-  assert(ids.join() === keys.join(), 'the answers are not the "Why?" texts in sequence: ' + ids.join());
+  // The answers are in the groups of the help text, and every "Why?" text is there one time.
+  const keys = WHY_GROUPS.flatMap((g) => g.keys);
+  assert(keys.length === Object.keys(WHY).length && Object.keys(WHY).every((k) => keys.includes(k)), 'a "Why?" text is in no group');
+  const ids = await page.locator('main h3.f-help-answer').evaluateAll((els) => els.map((el) => el.id));
+  assert(ids.join() === keys.join(), 'the answers are not the "Why?" texts in the sequence of the groups: ' + ids.join());
+  const groupTitles = WHY_GROUPS.map((g) => g.title).join('|');
+  assert((await page.locator('main .prose > h2').allTextContents()).join('|') === groupTitles, 'the answers do not have the group headings');
+  const index = await page.getByRole('navigation', { name: 'Questions' }).locator('section').evaluateAll((els) => els.map((el) => [el.querySelector('h3').textContent, el.querySelectorAll('a').length]));
+  assert(JSON.stringify(index) === JSON.stringify(WHY_GROUPS.map((g) => [g.title, g.keys.length])), 'the list of questions is not in the groups: ' + JSON.stringify(index));
   const answersText = await page.locator('main').innerText();
   for (const k of keys) {
     assert(await page.locator(`#${k}`).textContent() === fill(WHY[k].title), `the answer ${k} has a wrong title`);
@@ -128,7 +134,7 @@ export default async function (t) {
   assert(jumped.id === 'balance' && jumped.y > 0 && jumped.top >= 0 && jumped.top < 200, 'a question did not move the view to its answer: ' + JSON.stringify(jumped));
   assert(await pathOf(page) === '/help/answers', 'reading one answer changed the address: ' + await pathOf(page));
   await noTokens(page, '/help/answers');
-  t.ok('/help/answers: all 15 "Why?" texts with an anchor each; a question moves to its answer and leaves the address as it is');
+  t.ok(`/help/answers: all ${keys.length} "Why?" texts in ${WHY_GROUPS.length} groups, with an anchor each; a question moves to its answer and leaves the address as it is`);
 
   // ---- /help/words ----
   await page.getByRole('link', { name: /^Words/ }).click();

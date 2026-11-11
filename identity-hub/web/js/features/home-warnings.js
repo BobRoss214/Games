@@ -5,7 +5,7 @@ import { h, region } from '../lib/dom.js';
 import { store } from '../lib/store.js';
 import { registerHomeSection } from '../lib/registry.js';
 import { homeWarnings, WARN_DAYS } from '../lib/warnings.js';
-import { money, dayText, phoneText, plural } from '../lib/format.js';
+import { money, dayText, phoneText, plural, shortTime } from '../lib/format.js';
 import { callout, linkButton } from '../ui/components.js';
 import { graceDays } from '../lib/data.js';
 import { why } from '../ui/why.js';
@@ -27,19 +27,28 @@ function warnings(state) {
     now: Math.floor(Date.now() / 1000), balance: state.balance, prices: state.config.prices, graceDays: graceDays(),
     mailboxes: state.mailboxes, numbers: state.numbers,
   });
-  if (!w.renewals && !w.paused.length) return null;
+  if (!w.renewals && !w.paused.length && !w.offline.length) return null;
   const payOn = !!(state.config.features && state.config.features.pay);
   const addFunds = () => (payOn ? h('div', null, linkButton('Add funds', '/funds', { kind: 'primary', size: 'sm' })) : h('p', { class: 'small' }, 'Payments are turned off on this server.'));
   const parts = [];
 
+  if (w.offline.length) {
+    parts.push(h('div', { dataset: { warning: 'offline' } }, callout('warn', w.offline.length === 1 ? 'A phone is offline' : 'Phones are offline',
+      h('ul', { class: 'f-warnings-list' }, w.offline.map((o) => h('li', null,
+        nameOf('number', o.id, state), ': the phone for this number is offline', o.since ? ` since ${shortTime(o.since)}` : '', '. Texts wait until it is online again.',
+      ))),
+      why('home-warnings', { text: 'Why?' }),
+    )));
+  }
+
   if (w.paused.length) {
     parts.push(h('div', { dataset: { warning: 'paused' } }, callout('warn', w.paused.length === 1 ? 'Paused: the balance was too low' : `${w.paused.length} things are paused: the balance was too low`,
-      h('ul', { class: 'warn-list' }, w.paused.map((p) => h('li', null,
+      h('ul', { class: 'f-warnings-list' }, w.paused.map((p) => h('li', null,
         nameOf(p.kind, p.id, state),
         p.kind === 'inbox' ? ' is paused. It receives no mail.'
           : [' is paused. It receives no texts and no calls.', p.releaseAt ? ` It is released on ${day(p.releaseAt)}.` : ''],
       ))),
-      h('div', { class: 'row row-wrap warn-actions' }, addFunds(), why('balance', { text: 'What does paused mean?' })),
+      h('div', { class: 'row row-wrap f-warnings-actions' }, addFunds(), why('home-warnings', { text: 'Why this warning?' }) || why('balance', { text: 'What does paused mean?' })),
     )));
   }
 
@@ -47,11 +56,11 @@ function warnings(state) {
     const r = w.renewals;
     parts.push(h('div', { dataset: { warning: 'renewals' } }, callout('warn', 'Your balance does not cover the next renewals',
       h('p', null, `${plural(r.items.length, 'renewal')} in the next ${WARN_DAYS} days ${r.items.length === 1 ? 'costs' : 'cost'} `, h('span', { class: 'mono strong' }, money(r.total)), `, the first on ${day(r.firstAt)}. Your balance is `, h('span', { class: 'mono strong' }, money(state.balance)), '.'),
-      h('ul', { class: 'warn-list' }, r.items.map((it) => h('li', null, nameOf(it.kind, it.id, state), ': ', h('span', { class: 'mono' }, money(it.cost)), ` on ${day(it.dueAt)}`))),
-      h('div', { class: 'row row-wrap warn-actions' }, addFunds(), why('balance', { text: 'What happens if I do not add funds?' })),
+      h('ul', { class: 'f-warnings-list' }, r.items.map((it) => h('li', null, nameOf(it.kind, it.id, state), ': ', h('span', { class: 'mono' }, money(it.cost)), ` on ${day(it.dueAt)}`))),
+      h('div', { class: 'row row-wrap f-warnings-actions' }, addFunds(), why('home-warnings', { text: 'Why this warning?' }) || why('balance', { text: 'What happens if I do not add funds?' })),
     )));
   }
-  return h('div', { class: 'stack stack-3' }, parts);
+  return h('div', { class: 'stack stack-3 f-warnings' }, parts);
 }
 
 registerHomeSection({

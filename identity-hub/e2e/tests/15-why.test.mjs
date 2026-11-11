@@ -159,6 +159,20 @@ export default async function (t) {
   await page.locator('.banner-wrap .why-panel').getByText('No real money moves, and no message leaves the server.').waitFor();
   const missing = KEYS.filter((k) => !seen.has(k));
   assert(missing.length === 0, 'these explanations have no place in the app: ' + missing.join(', '));
+  // Explanations for the newer features. The help file gets their words later: a key without words
+  // shows nothing; a key with words must have a place.
+  const later = ['first-mail-only', 'refused-mail', 'possibly-leaked', 'code-helper', 'username-password', 'own-domain', 'home-warnings', 'identity-look', 'own-phone-calls'];
+  const have = await page.evaluate((keys) => import('/js/help/content.js').then((m) => keys.filter((k) => m.WHY[k])), later);
+  await page.goto(t.base + '/aliases');
+  await page.locator('.item-row').first().waitFor();
+  await note();
+  await page.getByRole('button', { name: 'New alias' }).first().click();
+  await page.getByRole('dialog').waitFor();
+  await note();
+  await page.keyboard.press('Escape');
+  const placedHere = ['first-mail-only', 'refused-mail'].filter((k) => have.includes(k) && !seen.has(k));
+  assert(placedHere.length === 0, 'these newer explanations have words but no place: ' + placedHere.join(', '));
+  assert(await page.locator('.why:empty').count() === 0, 'a key without words leaves an empty box');
   t.ok('all 15 explanations have a place; each opens next to its thing');
   await d.close();
 

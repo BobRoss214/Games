@@ -1,6 +1,8 @@
 // An alias that stops after the first mail ("Used up", "Turn on again", "Make it a normal alias"),
 // and the number of mails that an address refused.
 import nodemailer from 'nodemailer';
+import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
 import { signUp, signIn, addCredit, inApp, assert } from '../lib.mjs';
 
 export default async function (t) {
@@ -82,10 +84,31 @@ export default async function (t) {
   await row.getByText('Refused 2 mails', { exact: true }).waitFor(); // the number stays
   t.ok('"Make it a normal alias": no more stop; the refused number stays');
 
+  // ---- an alias past its end date: the switch shows off, the row says "Ended" one time ----
+  const plain = await inApp(page, ({ data, store }) => data.createAlias({ mailboxId: store.get('mailboxes')[0].id, label: 'With an end' }));
+  {
+    const db = new DatabaseSync(join(t.server.dataDir, 'accounts.db'));
+    db.prepare('UPDATE addresses SET expires_at = ? WHERE id = ?').run(Math.floor(Date.now() / 1000) - 3600, plain.alias.id);
+    db.close();
+  }
+  await reload();
+  const endedRow = page.locator('.item-row', { hasText: 'With an end' });
+  await endedRow.getByText('Ended', { exact: true }).waitFor();
+  assert(await endedRow.getByText('Ended', { exact: true }).count() === 1, 'the row says "Ended" more than one time');
+  assert(await endedRow.getByRole('switch').getAttribute('aria-checked') === 'false', 'an ended alias shows its switch as on');
+  assert(await endedRow.evaluate((el) => el.classList.contains('is-off')), 'an ended alias does not look off');
+  assert(await endedRow.getByText('Off', { exact: true }).count() === 0, 'an ended alias says "Off" too');
+  await endedRow.getByRole('switch').click();
+  await page.getByText(/This alias ended on .* Change or remove its end date to use it again\./).waitFor();
+  assert(await endedRow.getByRole('switch').getAttribute('aria-checked') === 'false', 'the switch of an ended alias went on');
+  assert(await smtp(plain.address, 'Too late') === 'refused', 'an ended alias took mail');
+  t.ok('an alias past its end date: switch off, the word "Ended" one time, the switch explains why it cannot go on');
+
   // an address that refused nothing shows no number
   await inApp(page, ({ data, store }) => data.createAlias({ mailboxId: store.get('mailboxes')[0].id, label: 'Plain' }));
-  await page.locator('.item-row', { hasText: 'Plain' }).waitFor();
-  assert(await page.locator('.item-row', { hasText: 'Plain' }).locator('.item-refused').count() === 0, 'an alias that refused nothing shows a number');
+  const plainRow = page.locator('.item-row', { has: page.locator('.item-label', { hasText: /^Plain$/ }) });
+  await plainRow.waitFor();
+  assert(await plainRow.locator('.item-refused').count() === 0, 'an alias that refused nothing shows a number');
   await d.close();
 
   // ---- phone ----

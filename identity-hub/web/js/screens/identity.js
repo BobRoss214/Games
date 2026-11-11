@@ -21,6 +21,7 @@ import { listMessages, personShort } from '../lib/mail.js';
 import { listTexts, listCalls, setNumberOpen } from '../lib/phone.js';
 import { codeChip } from '../ui/code.js';
 import { findCode } from '../lib/codes.js';
+import { why } from '../ui/why.js';
 
 const PAGE = 20;
 const CALL_TEXT = { in: { answered: 'Incoming call', missed: 'Missed call', failed: 'Failed call' }, out: { answered: 'Outgoing call', missed: 'No answer', failed: 'Failed call' } };
@@ -280,6 +281,7 @@ export function identityScreen({ params, scope }) {
         h('section', { class: 'sheet sheet-pad stack stack-3', 'aria-labelledby': 'colour-title' },
           h('div', null, h('h2', { class: 'section-title', id: 'colour-title' }, 'Colour'), h('p', { class: 'section-lede' }, 'A dot next to the name, to spot this identity fast.')),
           colourSlot,
+          why('identity-look', { text: 'What do the door and the dot mean?' }),
         ),
         h('section', { class: 'sheet sheet-pad stack stack-3', 'aria-labelledby': 'history-title' },
           h('h2', { class: 'section-title', id: 'history-title' }, 'History'),

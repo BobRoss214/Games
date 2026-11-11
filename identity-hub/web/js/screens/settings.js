@@ -170,26 +170,26 @@ export function settingsScreen({ scope }) {
   // The sections of Settings, with the sections of feature files between them (registerSettingsSection).
   const parts = mergeByOrder(
     [
-      { order: 10, make: () => section({ title: 'Passkeys', lede: 'Sign in with your fingerprint, your face or your device PIN. Keep your recovery key too.', actions: passkeysSupported() ? button('Add a passkey', { size: 'sm', iconName: 'plus', onClick: addPasskey }) : null }, whyGroup([['passkey'], ['recovery-key']]), passkeySlot) },
-      { order: 20, make: () => section({ title: 'Sessions', lede: 'Browsers and devices that are signed in to this account. The server keeps the day of sign-in, and nothing about the device.', actions: othersBtn }, sessionSlot) },
-      { order: 30, make: () => section({ title: 'Theme' },
+      { order: 10, id: 'passkeys', make: () => section({ title: 'Passkeys', lede: 'Sign in with your fingerprint, your face or your device PIN. Keep your recovery key too.', actions: passkeysSupported() ? button('Add a passkey', { size: 'sm', iconName: 'plus', onClick: addPasskey }) : null }, whyGroup([['passkey'], ['recovery-key']]), passkeySlot) },
+      { order: 20, id: 'sessions', make: () => section({ title: 'Sessions', lede: 'Browsers and devices that are signed in to this account. The server keeps the day of sign-in, and nothing about the device.', actions: othersBtn }, sessionSlot) },
+      { order: 30, id: 'theme', make: () => section({ title: 'Theme' },
         segmented({ label: 'Theme', value: store.get('theme'), options: [{ value: 'system', label: 'System', icon: 'system' }, { value: 'light', label: 'Light', icon: 'sun' }, { value: 'dark', label: 'Dark', icon: 'moon' }], onChange: (v) => setTheme(v) }),
         h('p', { class: 'hint theme-hint' }, 'The theme is saved in this browser only.'),
       ) },
-      { order: 40, make: () => section({ title: 'What the server can and cannot see', lede: 'Your data is encrypted with keys that stay in your browser. Some things the server must know to do its work.' },
+      { order: 40, id: 'privacy', make: () => section({ title: 'What the server can and cannot see', lede: 'Your data is encrypted with keys that stay in your browser. Some things the server must know to do its work.' },
         h('div', { class: 'see-grid' },
           h('div', { class: 'sheet sheet-pad' }, h('h3', { class: 'see-title' }, 'The server can see'), seeList(can, 'yes')),
           h('div', { class: 'sheet sheet-pad see-no' }, h('h3', { class: 'see-title' }, 'The server cannot see'), seeList(cannot, 'no')),
         ),
         callout('info', 'Know the limits', h('p', null, phoneOn ? 'Email and the phone network are not end-to-end encrypted. The phone provider sees texts and calls on its side. Use numbers for convenience, not for secrets.' : 'Email is not end-to-end encrypted on its way to this server. The server sees each new message for a moment.')),
       ) },
-      { order: 90, make: () => section({ title: 'This browser' },
+      { order: 90, id: 'browser', make: () => section({ title: 'This browser' },
         h('div', { class: 'row row-wrap' },
           button('Sign out', { iconName: 'signOut', onClick: async () => { await signOut(); navigate('/', { replace: true }); } }),
           h('span', { class: 'hint' }, `Account made on ${dayText(store.get('account')?.createdDay)}.`),
         ),
       ) },
-      { order: 100, make: () => section({ title: 'Delete account', cls: 'danger-zone' },
+      { order: 100, id: 'delete-account', make: () => section({ title: 'Delete account', cls: 'danger-zone' },
         h('p', { class: 'muted read' }, 'Deletes the account and everything in it from the server. Nobody can undo this.'),
         h('div', { class: 'danger-action' }, button('Delete account', { kind: 'danger', iconName: 'trash', onClick: deleteAccount })),
       ) },
@@ -200,11 +200,12 @@ export function settingsScreen({ scope }) {
       const el2 = section({ title: sec.title, lede: sec.lede }, node);
       el2.dataset.section = sec.id;
       return el2;
-    } })),
+    }, id: sec.id })),
   );
+  // Every section has the id "settings-<id>", so that an address with "#settings-<id>" moves the page to it.
   const el = h('div', { class: 'page page-narrow' },
     pageHeader({ title: 'Settings' }),
-    parts.map((p) => p.make()),
+    parts.map((p) => { const node = p.make(); if (node && !node.id) node.id = `settings-${p.id}`; return node; }),
   );
 
   paintPasskeys();

@@ -93,7 +93,7 @@ export function aliasesScreen({ scope }) {
       lede: 'An alias is an extra address. Mail to it lands in your inbox. Turn it off when you get spam.',
       actions: newButton,
     }),
-    h('div', { class: 'page-why' }, whyGroup([['alias-off'], ['inbox-vs-alias']])),
+    h('div', { class: 'page-why' }, whyGroup([['alias-off'], ['inbox-vs-alias'], ['refused-mail'], ['possibly-leaked']])),
     tools,
     listRegion,
   );

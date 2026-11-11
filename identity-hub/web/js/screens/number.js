@@ -1,6 +1,6 @@
 // One number: Texts (conversations), Calls (log, click-to-call), Settings (label, forwarding, release).
 import { h, replace, uid } from '../lib/dom.js';
-import { store, bus } from '../lib/store.js';
+import { store, bus, appName } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
 import { money, phoneText, cleanPhone, shortTime, clock, dayLabel, duration, textParts, dayText } from '../lib/format.js';
 import { icon } from '../ui/icons.js';
@@ -8,7 +8,8 @@ import { button, iconButton, emptyState, skeletonRows, pageHeader, field, select
 import { menuButton } from '../ui/menu.js';
 import { formDialog, confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
-import { findNumber, findPhone, updateNumber, loadNumbers, phoneName, renewDays, graceDays, setItemPersona, setItemExtra } from '../lib/data.js';
+import { findNumber, findPhone, updateNumber, loadNumbers, phoneName, renewDays, graceDays, setItemPersona, setItemExtra, gatewayWords, ownPhone } from '../lib/data.js';
+import { OFFLINE_SECONDS } from '../lib/warnings.js';
 import { listTexts, sendText, markTextsSeen, deleteText, listCalls, startCall, deleteCall, threadsOf, takeNumberOpen } from '../lib/phone.js';
 import { personaCard } from '../ui/persona.js';
 import { openPutInIdentity, takeOutOfIdentity } from '../ui/identity.js';
@@ -136,8 +137,12 @@ export function numberScreen({ params, scope }) {
     return form;
   }
 
+  // A number of the "own phone" provider: texts only, carried by a phone of this server.
+  const isOwnPhone = () => { const n = findNumber(id); return ownPhone() || !!(n && n.gateway); };
+
   // Made one time, so that it stays open when the texts paint again.
   const whyStatus = whyParts('delivery-status', { text: 'What does this mean?' });
+  const whyCalls = why('own-phone-calls'); // the words come later from the help file; nothing shows until then
 
   // Parts of feature files under one text or one call (registerTextAddon, registerCallAddon).
   const addons = (nodes, cls) => (nodes.length ? h('div', { class: `addons ${cls}` }, nodes) : null);
@@ -149,7 +154,7 @@ export function numberScreen({ params, scope }) {
         h('p', { class: 'bubble-text' }, t.broken ? 'This text cannot be opened.' : t.body),
         h('span', { class: 'bubble-meta' },
           h('time', { datetime: new Date(t.at * 1000).toISOString() }, clock(new Date(t.at * 1000))),
-          t.direction === 'out' ? h('span', { class: `bubble-status ${t.status === 'failed' ? 'is-failed' : ''}`.trim() }, TEXT_STATUS[t.status] || 'Sent') : h('span', { class: 'sr-only' }, ' received'),
+          t.direction === 'out' ? h('span', { class: `bubble-status ${t.status === 'failed' ? 'is-failed' : ''}`.trim() }, (t.status === 'queued' && isOwnPhone() ? 'Waiting for the phone' : TEXT_STATUS[t.status]) || 'Sent') : h('span', { class: 'sr-only' }, ' received'),
           whyStatus ? whyStatus.button : null,
         ),
         whyStatus ? whyStatus.panel : null,
@@ -307,6 +312,14 @@ export function numberScreen({ params, scope }) {
   function paintCalls() {
     const number = findNumber(id);
     if (!number) return;
+    // "Own phone": no calls through the app, so no call list. One short explanation.
+    if (isOwnPhone()) {
+      replace(callsPane, h('div', { class: 'stack stack-3 calls-none' },
+        h('p', { class: 'read' }, `This number cannot make or get calls through ${appName()}. To get calls, set call forwarding on the SIM card. Help explains how.`),
+        whyCalls,
+      ));
+      return;
+    }
     const head = number.voice
       ? h('div', { class: 'calls-head' },
         h('p', { class: 'muted read' }, 'To call from this number, we ring your real phone first and then connect you. The other person sees this number, not your real one.'),
@@ -411,7 +424,7 @@ export function numberScreen({ params, scope }) {
       h('section', { class: 'stack stack-3' },
         h('div', null,
           h('h2', { class: 'section-title' }, 'Forwarding'),
-          h('p', { class: 'section-lede' }, 'Optional. Without forwarding, texts and calls stay in this app. To forward, the server must know your real phone number.'),
+          h('p', { class: 'section-lede' }, isOwnPhone() ? 'Optional. Without forwarding, texts stay in this app. To forward, the server must know your real phone number.' : 'Optional. Without forwarding, texts and calls stay in this app. To forward, the server must know your real phone number.'),
           whyGroup([['forwarding'], ['link-phone']]),
         ),
         phones.length === 0
@@ -421,7 +434,7 @@ export function numberScreen({ params, scope }) {
             forwardRow('Forward texts', prices.textOut ? `Each forwarded text costs ${money(prices.textOut)}.` : 'Texts are sent on to your phone.', 'forwardTexts', number.forwardTexts),
             number.voice
               ? forwardRow('Forward calls', prices.callMinute ? `Forwarded calls cost ${money(prices.callMinute)} for each minute.` : 'Calls ring on your phone.', 'forwardCalls', number.forwardCalls)
-              : h('div', { class: 'switch-row' }, h('div', { class: 'grow' }, h('p', { class: 'strong' }, 'Forward calls'), h('p', { class: 'small muted' }, 'This number cannot make or get calls.'))),
+              : isOwnPhone() ? null : h('div', { class: 'switch-row' }, h('div', { class: 'grow' }, h('p', { class: 'strong' }, 'Forward calls'), h('p', { class: 'small muted' }, 'This number cannot make or get calls.'))),
           ),
       ),
       h('section', { class: 'stack stack-3' },
@@ -478,6 +491,10 @@ export function numberScreen({ params, scope }) {
     const phone = number.forwardPhoneId ? findPhone(number.forwardPhoneId) : null;
     const forwards = phone && phone.verified && (number.forwardTexts || number.forwardCalls);
     const group = number.identityId ? findIdentity(number.identityId) : null;
+    const phoneWords = gatewayWords(number, shortTime);
+    // The phone of this number is offline for more than one hour: say what that means.
+    const g = number.gateway;
+    const longOffline = !!(g && !g.online && (g.lastSeen === null || Date.now() / 1000 - g.lastSeen > OFFLINE_SECONDS));
     replace(headRegion,
       h('a', { class: 'back-link', href: '/numbers', 'data-link': true }, icon('chevronLeft', { size: 16 }), 'Numbers'),
       h('div', { class: 'page-head-row' },
@@ -490,10 +507,12 @@ export function numberScreen({ params, scope }) {
             number.label ? h('span', null, number.label) : h('span', { class: 'faint' }, 'No label'),
             number.status !== 'active' ? tag('Paused', 'warn') : null,
             h('span', { class: 'number-route' }, forwards ? [icon('arrowRight', { size: 14 }), `forwards to ${phoneName(phone)}`] : 'in app only'),
+            phoneWords ? h('span', { class: `tag ${number.gateway.online ? '' : 'tag-warn'}`.trim(), dataset: { phone: number.gateway.online ? 'online' : 'offline' } }, phoneWords) : null,
             group ? h('a', { class: 'tag tag-link', href: `/identities/${group.id}`, 'data-link': true, title: `In the identity ${group.name}` }, icon('folder', { size: 12 }), h('span', { class: 'truncate' }, group.name)) : null,
           ),
         ),
       ),
+      longOffline ? h('div', { class: 'number-offline', dataset: { warning: 'offline' } }, callout('warn', 'The phone is offline', h('p', null, 'The phone for this number is offline. Texts wait until it is online again.'))) : null,
     );
   }
 
@@ -503,7 +522,7 @@ export function numberScreen({ params, scope }) {
     // Texts, Calls and Settings, with the tabs of feature files between them (registerNumberTab).
     tabsEl = tabs({ label: 'Number', value: 'texts', items: mergeByOrder([
       { order: 10, id: 'texts', label: 'Texts', render: () => { queueMicrotask(() => { paintTexts(); if (texts && texts.some((t) => t.direction === 'in' && !t.seen)) markTextsSeen(id).then(() => loadNumbers()).catch(() => {}); }); return textsPane; } },
-      { order: 20, id: 'calls', label: 'Calls', render: () => { if (calls === null) loadCalls(); queueMicrotask(paintCalls); return callsPane; } },
+      { order: 20, id: 'calls', label: 'Calls', render: () => { if (calls === null && !isOwnPhone()) loadCalls(); queueMicrotask(paintCalls); return callsPane; } },
       { order: 90, id: 'settings', label: 'Settings', render: () => { queueMicrotask(paintSettings); return settingsPane; } },
     ], registered.numberTabs().map((t) => ({ order: t.order, id: t.id, label: t.label, render: () => renderSafe(t.render, { number: findNumber(id), scope }) || h('div') }))) });
     replace(root, headRegion, tabsEl);

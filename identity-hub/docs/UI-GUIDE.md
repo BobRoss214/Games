@@ -47,8 +47,8 @@ Register at the top level of the file, not later. Keep heavy code in files that 
 | Fields | `field({ label, hint, maxlength, rows })` gives `{ el, input, value, setError(text) }`; `selectField`, `checkbox`, `toggle`, `segmented`, `chips`, `tabs` | `ui/components.js` |
 | "…" menu | `menuButton({ label, items: () => [{ label, icon, onSelect, danger }, 'separator'] })` | `ui/menu.js` |
 | Page parts | `pageHeader({ title, lede, actions, back })`, `section({ title, lede, actions }, ...nodes)`, `callout('info' or 'warn' or 'danger' or 'ok', title, ...nodes)`, `tag('Off', 'warn')` | `ui/components.js` |
-| Icons | `icon('mail', { size: 18, label: 'Email' })`. The names are in `ui/icons.js`. Ask the owner for a new one. | `ui/icons.js` |
-| "Why?" | `why('alias-off')`: a small button that opens a short explanation in place (no request, nothing saved). The words are `WHY` in `help/content.js`. `whyParts(key)` gives `{ button, panel }` to place apart; `whyGroup([[key], [key]])` puts buttons on one line. | `ui/why.js` |
+| Icons | `icon('mail', { size: 18, label: 'Email' })`. The names are in `ui/icons.js` (also `clock`, `flame`, `play`, `pause`, `doorOpen`, `doorShut`, `doorBricked`). Ask the owner for a new one. | `ui/icons.js` |
+| "Why?" | `why('alias-off')`: a small button that opens a short explanation in place (no request, nothing saved). The words are `WHY` in `help/content.js`; a key that has no words yet shows nothing. `whyParts(key)` gives `{ button, panel }` to place apart; `whyGroup([[key], [key]])` puts buttons on one line. | `ui/why.js` |
 | A code with "Copy" | `codeIn(text, subject)` gives the "Code 482913 · Copy" chip or `null`; `codeChip(found)` | `ui/code.js` |
 | Show an email body | `mailBody({ body: { text, html }, attachments, getAttachment, scope })`: the one viewer (cleaned HTML in a closed frame, remote images blocked). Never build a second one. | `ui/mailbody.js` |
 | Words for a recovery-key error | `recoveryMessage(err)` | `screens/signin.js` |
@@ -84,7 +84,8 @@ Extra fields that exist (do not reuse a name; tell the owner before you add one)
 | `username` | alias, number, identity | the username of the "Random identifiers generator" card | `ui/persona.js` (`cleanUsername(value)` checks it) |
 | `colour` | identity | one name of `COLOURS` (`red`, `orange`, `gold`, `green`, `teal`, `blue`, `purple`, `pink`) | `setIdentityColour(id, name)` |
 | `events` | identity | history, 50 at most, oldest first: `[{ day: 'YYYY-MM-DD', type }]`, types `made`, `first-mail`, `turned-off`, `turned-on`, `burned` | `addIdentityEvent(id, type)`; read with `eventsOf(identity)` |
-| `burned`, `burning` | identity (`burned` also on one alias) | `burned = { day: 'YYYY-MM-DD' }` when it is burned; the door then shows "Burned" (`identityState(identity)`) | the burn feature |
+| `burned` | identity, alias | `{ day: 'YYYY-MM-DD' }` when it is burned; the door of an identity then shows "Burned" (`identityState(identity)`) | the burn feature |
+| `burning` | identity | `{ day, aliasIds, numberIds }`, only while a burn runs | the burn feature |
 
 The hints of "possibly leaked" are in memory only: `store.get('leaks')` = `{ [aliasId]: [{ domain, fromAddress, firstAt, lastAt, count, messageId }] }`.
 Do not write to `label`, `note`, `persona`, `identityId`: they have their own functions (`updateAlias`, `setItemPersona`, `setItemIdentity`).
@@ -93,7 +94,9 @@ Check what you read (`typeof`, length): another version of the app may have writ
 Other helpers: `findAlias(id)`, `findNumber(id)`, `findMailbox(id)`, `findIdentity(id)`, `membersOf(identityId)`, `listMessages({ addressIds })`, `getMessage(id)`, `listTexts(numberId)`, `listCalls(numberId)`.
 The store lists carry every field of the server lists, so do not load a list a second time: an alias has `enabled`, `oneShot`, `usedUp`, `received`, `refused`, `expiresAt`, `blocks`;
 an inbox has `status`, `paidUntil`, `unread`, `refused`, `blocks`, `retentionDays`; a number has `status`, `paidUntil`, `sms`, `voice`, `voicemail`, `retentionDays`, `forwardPhoneId`, `forwardTexts`, `forwardCalls`;
-a call has `voicemail`. Change them with `updateAlias(id, { enabled, oneShot, mailboxId, label })` and `updateNumber(id, { voicemail, retentionDays, … })`.
+a call has `voicemail`. `aliasEnded(alias)` says if an alias is past its end date (its switch then shows off, with the word "Ended").
+A number of the "own phone" provider has `gateway: { online, lastSeen }` (else `null`): `gatewayWords(number, shortTime)` gives "Phone online" or "Phone offline since 14:02"; `ownPhone()` says if the server uses that provider.
+`setMailFilter({ mailboxId, addressId })` shows the mail of one alias, also when the Mail screen is open. Change the lists with `updateAlias(id, { enabled, oneShot, mailboxId, label })` and `updateNumber(id, { voicemail, retentionDays, … })`.
 
 ## 3. Extension points (`lib/registry.js`)
 
@@ -132,6 +135,7 @@ registerTextAddon((text, number) => { const code = findCode(text.body); return c
 registerCallAddon((call, number) => (call.voicemail ? playButton(call) : null));
 
 // A section on Settings. Orders: Passkeys 10, Sessions 20, Theme 30, What the server sees 40, This browser 90, Delete account 100.
+// Every section has the id "settings-<id>": navigate('/settings#settings-export') moves the page to it.
 registerSettingsSection({ id: 'export', title: 'Download my data', lede: 'One encrypted file.', order: 60, render: ({ scope }) => exportPart(scope) });
 // A block on Home. The counts are 20, the lists are 30: below 20 = above the counts (warnings), above 30 = at the end.
 // Return a region(); when it paints nothing, the block takes no space.
@@ -143,12 +147,15 @@ registerNumberSetting({ id: 'voicemail', title: 'Voicemail', order: 25, render: 
 
 // A link on the start page for people without an account, under the buttons (the route needs signedOut: true).
 registerWelcomeLink({ id: 'open-export', label: 'Open an export file', path: '/open-export', order: 60 });
-// An icon button in the top bar of the phone layout, before the gear. Room for two. Give the same action a key for wide screens.
-registerTopBarAction({ id: 'jump', label: 'Search', icon: 'search', run: () => openQuickJump() });
+// An icon button in the top bar of the phone layout, before the gear. Room for two. On a wide screen the same
+// action is an entry at the top of the sidebar; key: the key that opens it too, shown there as a hint.
+registerTopBarAction({ id: 'jump', label: 'Search', icon: 'search', key: '/', run: () => openQuickJump() });
 
-// One key for the whole app. It does nothing in a field, with a dialog or a menu open, or with Ctrl, Alt, Command.
-// Options: signedOut: true = also without an account. Each key can be taken one time: tell the owner which one you take.
+// One key for the whole app. It does nothing in a field, with a dialog or a menu open, or with Alt.
+// Options: signedOut: true = also without an account. mod: true = with Ctrl (Command on a Mac); such a key works in a field too.
+// Each key can be taken one time: tell the owner which one you take.
 registerGlobalKey('/', () => openQuickJump());
+registerGlobalKey('k', () => openQuickJump(), { mod: true });
 ```
 `render` of a number setting runs again each time the number changes: keep it cheap, and do not fetch in it.
 The feature files load before the sign-in state is known. If one of them fails to load, the app starts without all of them and says so.
@@ -217,6 +224,8 @@ Simple English for people who are not technical. Short sentences. Active voice. 
 | credit, balance | money on the account: "$12.40 of credit", "Balance" | credits, tokens, coins, points |
 | turn on / turn off | an alias, forwarding, a setting | enable, disable, activate, toggle, mute |
 | used up | an alias that stopped after its one mail ("Stop after the first mail", "One mail only") | one-shot, burned, expired, consumed |
+| ended | an alias past its end date | expired, timed out, dead |
+| Phone online / Phone offline since … | the phone that carries a number of this server ("own phone"); a text that waits for it says "Waiting for the phone" | gateway, device, SIM status, queued |
 | possibly leaked | an alias that got mail from a sender it does not know. Always with "possibly". | leaked, compromised, breached |
 | code | a sign-up or login code found in a text or an email | OTP, token, 2FA code, PIN |
 | paused | an inbox or a number that waits for funds | suspended, frozen, inactive, expired |

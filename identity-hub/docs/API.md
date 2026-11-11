@@ -411,18 +411,20 @@ Dev routes (register only if `config.dev`):
 - `POST /api/dev/inbound-mail` **(auth)** `{ to, from?, fromName?, subject?, text?, html?, attachments?: [{filename, contentType, content}] }` → 204. Injects a message as if it came from the internet. `to` must be an address of this account.
   The fields have the same rules as in `POST /api/mail/send`. `from` is `sender@example.com` if absent. 404 `not_found` if `to` is not an address of this account. 409 `conflict` if the address cannot get mail now (disabled alias, used-up alias, alias past its end date, suspended or full mailbox), or if the address blocks `from` (message "This address blocks this sender."). A message through this route uses a one-shot alias up and counts in `received` and `refused` like mail from the internet.
 - `GET /api/dev/outbox` **(auth)** → `{ mail: [{ from, to: [], subject, at }] }` from the simulated outbox, own messages only.
+- `POST /api/dev/run-mail-retention` **(auth)** → 204. Runs the auto-delete job (`retentionDays`) now and answers when it is done. The job runs each hour by itself; this route is for tests.
+  It is the same job: it works on every mailbox of the server that has the setting, and it publishes `mail` for each mailbox that lost messages.
 
 Renewal: register a renewable of kind `mailbox` with `app.renewables.register(...)` (see `server/core/renew.js`). A suspended mailbox is readable but receives no mail and cannot send. There is no `expire` for mailboxes.
 The user can still change and delete a suspended mailbox and its aliases.
 
 ## 5. Phone module (`server/phone/`)
 
-The provider is `config.phone.provider`: `mock`, `twilio`, or `off`.
+The provider is `config.phone.provider`: `mock`, `twilio`, `ownphone` (see "Own phone"), or `off`.
 
 | Route | Body / query | Result |
 |---|---|---|
-| `GET /api/numbers/search` **(auth)** | `?country=US&areaCode=415` | `{ numbers: [{ number, locality, region, country, sms, voice }] }` (max 20). `country` must be one of `phoneCountries` (if absent: the first one). `areaCode` is optional, 1 to 6 digits. 400 `bad_request`, 502 `provider_error`. Rate limit 30/minute. |
-| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, retentionDays, voicemail, unread }] }`, oldest first. `unread` = count of incoming texts that are not seen. `retentionDays` is null or a count of days (see "Automatic deletion of old texts"). `voicemail` is a boolean (see "Voicemail"). |
+| `GET /api/numbers/search` **(auth)** | `?country=US&areaCode=415` | `{ numbers: [{ number, locality, region, country, sms, voice }] }` (max 20). `country` must be one of `phoneCountries` (if absent: the first one). `areaCode` is optional, 1 to 6 digits. 400 `bad_request`, 502 `provider_error`. Rate limit 30/minute. With a fixed pool (`capabilities.pool`, own phone): with no `country` the answer has every free number of the pool, a `country` need not be in `phoneCountries`, and `locality` and `region` are empty. |
+| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, retentionDays, voicemail, unread, gateway }] }`, oldest first. `gateway` is null, or with own phone `{ online, lastSeen }` (see "Own phone"). `unread` = count of incoming texts that are not seen. `retentionDays` is null or a count of days (see "Automatic deletion of old texts"). `voicemail` is a boolean (see "Voicemail"). |
 | `POST /api/numbers` **(auth)** | `{ number, enc? }` | 201 `{ number: {…}, plain: "+1…" }`. Charges `prices.numberMonth` (kind `number`). 409 `taken`, 409 `limit_reached`, 402, 502 `provider_error`. See "Buying a number". |
 | `PATCH /api/numbers/:id` **(auth)** | `{ enc?, forwardPhoneId? (null clears), forwardTexts?, forwardCalls?, retentionDays? (null = off), voicemail? }` | `{ number }`. 400 `bad_request`, 404 `not_found`, 409 `conflict`, 409 `no_voice`, 409 `no_voicemail`. See "Forwarding", "Automatic deletion of old texts" and "Voicemail". |
 | `DELETE /api/numbers/:id` **(auth)** | — | 204. Releases the number at the provider, then deletes it with its texts and calls. No credit is given back. 502 `provider_error` if the provider fails; then the number stays. |
@@ -602,19 +604,68 @@ A webhook for a number that is unknown or suspended gets the same answer as a we
 The time limit of a dial instruction is the count of full minutes that the balance pays for (at least 1 minute, at most 4 hours). The provider ends the call at the limit. If `prices.callMinute` is 0, the limit is 4 hours.
 
 The call webhooks (`voice`, `bridge`, `say-code`, `status`) exist only if the provider has voice. `recording` exists only if the provider also has voicemail.
+The provider `ownphone` has none of these routes. Its phones post to `POST /api/hooks/ownphone/:token` (see "Own phone").
+
+### Own phone
+
+Provider `ownphone`: the numbers are the SIM cards of Android phones that the operator owns. Each phone runs the open-source app "SMS Gateway for Android" (SMSGate). The phone connects out to the private server of that app (a container next to Postern). No phone company API is used.
+Postern talks to the "3rd-party" HTTP API of that server (`config.phone.ownphone.apiUrl`, HTTP Basic with the login and password that the app shows for each phone). The phone itself posts its events to Postern.
+
+Texts only. `capabilities = { voice: false, voicemail: false, asyncText: true, searchByArea: false, pool: true }`.
+- Every call function gives 409 `no_voice`: `forwardCalls: true`, click-to-call, phone link with `method: "call"`, `voicemail: true`. Numbers have `voice: false`.
+- Calls to a SIM do not reach Postern. The operator can set plain call forwarding of the carrier on the SIM by hand (GSM code `**21*<number>#`, cancel with `##21#`). Postern knows nothing about those calls.
+- A real phone is linked by text. `forwardTexts` works as with the other providers.
+
+**The pool.** Two tables in the account database, filled by the operator tool. They have no account in them.
+- `own_devices`: one phone. `label`, `login`, `password` and `signing_key` are stored with `keys.srvEncrypt`. `hook_hash` is `keys.indexHmac('own-hook', token)`: the webhook token itself is not stored. `gateway_id` is the id of the phone at the gateway. `last_seen` is the time of its last valid webhook.
+- `own_sims`: one SIM = one number. `sim_number` is the slot (1 to 3). `number_hmac` = `keys.indexHmac('num', number)` (unique, the same value as `numbers.number_hmac`). `number_srv` = `keys.srvEncrypt(number, 'pool')`: the server must read a pool number, because it hands the number out and sends from it. No plain number is stored.
+- A pool number is free when no row of `numbers` has its `number_hmac`. The pool is read from the database each time (no copy in memory), so the server sees a change of the tool at once.
+
+**Numbers.**
+- `GET /api/numbers/search`: the free numbers of the pool (20 at most), `{ number, locality: "", region: "", country, sms: true, voice: false }`. With no `country`: all of them. With `country`: only that country. `areaCode` is ignored. No request goes to the gateway.
+- `POST /api/numbers`: the search-before-buy rule and the price are the same as with other providers. Only a free pool number can be taken. The provider reference of the row is the id of the SIM.
+- `DELETE /api/numbers/:id`, the end of the grace period, and the deletion of an account put the number back in the pool: the row, its texts and its send records go, and the next account that takes the number sees none of them. No request goes to the gateway.
+- The number object has `gateway: { online, lastSeen }`. `online` is true if the phone of the number sent a valid webhook in the last `config.phone.ownphone.offlineMinutes` minutes (default 15). `lastSeen` is Unix seconds, or null if the phone was never seen. A number whose phone left the pool has `{ online: false, lastSeen: null }`. Other providers: `gateway: null`.
+- The phone sends `system:ping` every `pingSeconds` (default 300). A valid webhook makes the phone online at once. The job `ownphone-online` (each minute) sees a phone that was silent for too long. Each change publishes `number` (with `numberId`) to the accounts that hold a number of that phone.
+
+**Sending.** `POST {apiUrl}/messages` with `{ id, deviceId, phoneNumbers: [to], textMessage: { text }, simNumber, ttl: textTtlSeconds, withDeliveryReport: true }`. `id` is made by Postern (22 characters) and is the message id for the reports. The gateway answers 202 and the text is `queued`.
+- Sending while the phone is offline is allowed: the gateway keeps the text for the phone for `textTtlSeconds` (default 3600).
+- The gateway does not answer, or answers 5xx (not 503): 502 `provider_error` "The phone gateway is not reachable." Any other refusal (400, 401, 409, 503): 502 `provider_error` "The phone did not accept this text." The charge comes back in both cases. The gateway server checks the destination itself and refuses a number that it does not hold for a mobile number.
+- A `queued` text with no report after `textTtlSeconds` + 10 minutes is set to `failed` by the job `ownphone-unsent` (each minute), and the charge comes back.
+
+**The webhook of the phone.** `POST /api/hooks/ownphone/:token`, no cookie, raw JSON body `{ id, webhookId, deviceId, event, payload }` (256 KB at most).
+- The token names the phone. Unknown token: 404 `not_found`.
+- Signature: the header `X-Timestamp` is Unix seconds, and `X-Signature` is the hex form of HMAC-SHA256 with the signing key of the phone over the raw body followed by the text of `X-Timestamp`. The comparison is in constant time. A wrong or absent signature, or a time that is more than 5 minutes off: 403 `bad_signature`. A signed body that is not a JSON object: 400.
+- A signed request whose `deviceId` is not the id of this phone is answered with 200 and ignored (two phones of one gateway login share one signing key).
+- Every other valid request sets `last_seen`, also for events that are not in the list below. The answer is 200 `{ ok: true }`, so that the phone does not send the event again.
+- `sms:received` (`payload = { messageId, phoneNumber (the sender), sender, recipient, simNumber, message, receivedAt }`): the number is the pool number of (phone, `simNumber`). If `simNumber` is null: `recipient`, if it is a pool number of this phone; else the only SIM of a phone with one SIM; else the text is dropped. A `simNumber` that is not in the pool is never given to another SIM: the text is dropped, with a line in the log that has no data. Then the normal path of an incoming text runs (see "Provider webhooks": sealed for the account, forwarding, 1600 characters). A text for a pool number that no account holds, or for a suspended number, is not stored. `messageId` of the app is a short hash, so a duplicate is a text with the same `messageId` and the same `receivedAt` for the same number row.
+- `sms:sent`, `sms:delivered`, `sms:failed` (`payload.messageId` = the id that Postern gave the text): `reportTextStatus` with `sent`, `delivered`, `failed` (see "Status of a sent text"). `payload.reason` of a failure goes to the log in a cleaned form.
+- `system:ping`: nothing more.
+
+**The operator tool.** `node server/tools/ownphone.js help`. It opens the database of the server with the same settings (`DATA_DIR`, `SECRET_KEY`, `PUBLIC_URL`, `OWNPHONE_API_URL`).
+- `add --label … --login … --sim 1=+1… [--sim 2=+1…] [--device-id …] [--country XX]`: checks the login with `GET {apiUrl}/devices` and finds the phone (with several phones on one login it lists them and stops), stores the phone and its SIM cards, registers five webhooks with `POST {apiUrl}/webhooks` (`sms:received`, `sms:sent`, `sms:delivered`, `sms:failed`, `system:ping`; `{ id, url: PUBLIC_URL + /api/hooks/ownphone/<token>, event, deviceId }`), and sets `{ webhooks: { signing_key }, ping: { interval_seconds } }` with `PATCH {apiUrl}/settings`. If a step at the gateway fails, the phone is taken out of the pool again. The password comes from `--password`, from the environment variable `OWNPHONE_PASSWORD`, or from the standard input with `--password-stdin`. A second phone of the same gateway login keeps the signing key of the first one.
+- `list [--show]`, `add-sim`, `remove-sim [--force]`, `remove [--force]`, `test --label … --to +1…`. `list` shows the last 4 digits of a number unless `--show` is given. `remove` and `remove-sim` refuse while an account holds a number; `--force` deletes those numbers from the accounts in the same way as a release (the browser of the account learns it at its next load). `remove` also deletes the five webhooks at the gateway.
+- The app on the phone posts webhooks only to an address that starts with `https://`. The tool warns if `PUBLIC_URL` does not.
+
+**What the phone and the gateway see.** The user must know this:
+- The phone network, the SIM carrier, the phone itself and the gateway server see every text in plain form, in both directions, with both numbers. Postern cannot encrypt a text before the phone has it.
+- The gateway server keeps its own copy of messages for some time (its own setting). Postern stores incoming and outgoing texts sealed for the account, as with the other providers.
+- The gateway knows the numbers of the pool and the destinations. It does not know the accounts of Postern.
 
 ### Provider adapters
 
 Adapters are in `server/phone/providers/`. The comment at the top of `mock.js` is the interface.
 
-- `capabilities = { voice, voicemail, asyncText, searchByArea }` (all boolean):
+- `capabilities = { voice, voicemail, asyncText, searchByArea }` (all boolean; own phone also has `pool: true`):
   - `voice`: the provider can make and receive calls. If false: the search and the number list show `voice: false`, new numbers are stored with no voice, and each call function gives 409 `no_voice` (`forwardCalls: true`, click-to-call, phone link by call, `voicemail: true`).
   - `voicemail`: the provider can record a caller. If false, no caller gets the voicemail greeting.
   - `asyncText`: the result of a text can come after the send request.
   - `searchByArea`: the search can filter by area code. If false, `areaCode` is ignored.
-  - `mock`: `{ voice: true, voicemail: true, asyncText: false, searchByArea: true }`. `twilio`: `{ voice: true, voicemail: true, asyncText: true, searchByArea: true }`. With provider `off`: all false.
+  - `pool`: the numbers are a fixed pool that the operator fills. Only `ownphone` has it.
+  - `mock`: `{ voice: true, voicemail: true, asyncText: false, searchByArea: true }`. `twilio`: `{ voice: true, voicemail: true, asyncText: true, searchByArea: true }`. `ownphone`: `{ voice: false, voicemail: false, asyncText: true, searchByArea: false, pool: true }`. With provider `off`: all false.
 - `sendText({ from, to, body, statusUrl })` returns `{ ref, status }` with status `queued` or `sent`. A later result arrives at the `text-status` webhook, or the adapter calls `app.services.phone.reportTextStatus`.
 - `mock.js`: in memory; used by tests and development. Webhook bodies are JSON. The header `x-mock-signature` must be `keys.sign('mock-hook', rawBody)`.
+- `ownphone.js`: the pool of own phones (see "Own phone"). It has `ownWebhooks: true`: its own webhook route and signature, and no `verifyWebhook` or `parse…` functions. It has no voice functions.
 - `twilio.js`: REST with `fetch`, form-encoded webhooks, `X-Twilio-Signature` check, TwiML answers.
   - Each text carries `StatusCallback` = the `text-status` webhook. `MessageStatus` `queued` → `queued`; `sending`, `sent` → `sent`; `delivered` → `delivered`; `undelivered`, `failed` → `failed`. Also: `accepted` and `scheduled` count as `queued`, `read` as `delivered`, `canceled` as `failed`. Other values are ignored.
   - A call status `completed` is `answered`; `busy`, `no-answer`, `canceled` are `missed`; `failed` is `failed`. The result of a `<Dial>` (`DialCallStatus`, `DialCallDuration`) comes before the result of the whole call, so it is the one that counts.
@@ -624,6 +675,7 @@ Adapters are in `server/phone/providers/`. The comment at the top of `mock.js` i
 Service object: `app.services.phone = { provider, name, capabilities, reportTextStatus({ ref, status, errorText? }) → bool }`.
 - `reportTextStatus` is the function behind the `text-status` webhook. `ref` is the message ID that `sendText` returned. It returns true if the report changed something. `errorText` is for the server log only.
 - With the mock provider the object also has `mock` (the adapter), `outbox`, `simulateText({ to, from, body })`, `simulateCall({ to, from, seconds?, answered?, voicemail? })`, `answerCall(ref, { answered?, peerAnswered?, seconds? })` and `reportText(ref, status, errorText?)`. For voicemail tests the adapter has `mock.addRecording({ bytes?, contentType? }) → ref`, `mock.reportRecording({ callId, recordingRef, seconds })`, `mock.recordings` and `mock.deletedRecordings`.
+- With the provider `ownphone` the object also has `pool` (`server/phone/pool.js`).
 - With provider `off`, `provider` is null.
 
 Provider `off`:

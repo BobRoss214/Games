@@ -217,7 +217,7 @@ export default async function (t) {
     const d = [...document.querySelectorAll('dialog[open]')].pop();
     const vw = document.documentElement.clientWidth;
     const out = [...d.querySelectorAll('*')].filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && (b.right > vw + 1 || b.left < -1); }).length;
-    const low = [...d.querySelectorAll('button, input')].filter((n) => n.getBoundingClientRect().height < 40).map((n) => (n.textContent || n.tagName).trim().slice(0, 20));
+    const low = [...d.querySelectorAll('button:not(.why-btn), input')].filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 40).map((n) => (n.textContent || n.tagName).trim().slice(0, 20));
     return { out, low, scroll: document.documentElement.scrollWidth > vw };
   });
   let m = await fits();

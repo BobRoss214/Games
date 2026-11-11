@@ -52,4 +52,6 @@ registerGlobalKey('j', () => navigate('/e2e/key'));
 
 // a link on the start page, and a button in the top bar of a phone
 registerWelcomeLink({ id: 'e2e', label: 'Test link', path: '/e2e-open', order: 99 });
-registerTopBarAction({ id: 'e2e', label: 'Test search', icon: 'search', run: () => toast('Test search opened') });
+registerTopBarAction({ id: 'e2e', label: 'Test search', icon: 'search', key: 't', run: () => toast('Test search opened') });
+// a key with Ctrl (Command on a Mac): it works in a field too
+registerGlobalKey('m', () => navigate('/e2e/mod'), { mod: true });

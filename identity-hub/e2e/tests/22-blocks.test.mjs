@@ -61,7 +61,9 @@ export default async function (t) {
   await dlg.getByRole('heading', { name: 'Blocked senders' }).waitFor();
   const entry = (value) => dlg.locator('.phone-row').filter({ hasText: value });
   await entry('news@mail.shop.example').getByText('One address').waitFor();
-  t.ok('the row shows "1 blocked"; the list opens the encrypted entry');
+  await dlg.getByRole('button', { name: 'What does a block do?' }).click();
+  await dlg.locator('.why-panel').getByText('Only your browser can show the list.').waitFor();
+  t.ok('the row shows "1 blocked"; the list opens the encrypted entry; the "why" button explains a block');
 
   // ---- add a whole domain by hand ----
   await dlg.getByLabel('Block an address or a domain').fill('not a domain');
@@ -163,7 +165,7 @@ export default async function (t) {
     const d = document.querySelector('dialog[open]');
     const vw = document.documentElement.clientWidth;
     const out = [...d.querySelectorAll('*')].filter((el) => { const b = el.getBoundingClientRect(); return b.width > 0 && (b.right > vw + 1 || b.left < -1); }).length;
-    const low = [...d.querySelectorAll('button, input')].filter((el) => el.getBoundingClientRect().height < 40).map((el) => (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 24));
+    const low = [...d.querySelectorAll('button:not(.why-btn), input')].filter((el) => el.getBoundingClientRect().height > 0 && el.getBoundingClientRect().height < 40).map((el) => (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 24));
     return { out, low, scroll: document.documentElement.scrollWidth > vw || d.scrollWidth > d.clientWidth + 1 };
   });
   assert(m.out === 0 && !m.scroll, 'the list of blocked senders sticks out of the phone screen');

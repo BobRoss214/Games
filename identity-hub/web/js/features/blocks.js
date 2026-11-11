@@ -10,7 +10,7 @@ import { h } from '../lib/dom.js';
 import { registerMessageAction, registerRowAction, registerRowBadge } from '../lib/registry.js';
 import { findMailbox } from '../lib/data.js';
 import { reportError } from '../ui/components.js';
-import { aliasFacts, inboxFacts, liveMark } from './common/facts.js';
+import { aliasFacts, inboxFacts } from './common/facts.js';
 
 // The dialogs load when the person opens one.
 const open = (name, ...args) => import('./blocks/dialogs.js').then((m) => m[name](...args)).catch(reportError);
@@ -36,5 +36,6 @@ registerRowAction('inbox', (item) => (item.raw && item.raw.addressId
   : null));
 
 const mark = (n) => (n > 0 ? h('span', { class: 'small faint nowrap', dataset: { blocked: String(n) }, title: 'Senders that this address blocks. Mail from them is refused.' }, `${n} blocked`) : null);
-registerRowBadge('alias', (item) => liveMark(() => mark(aliasFacts(item.id).blocks)));
-registerRowBadge('inbox', (item) => liveMark(() => mark(inboxFacts(item.id).blocks)));
+// The count is in the store, so a row shows the new count as soon as the list is loaded again.
+registerRowBadge('alias', (item) => mark(aliasFacts(item.raw).blocks));
+registerRowBadge('inbox', (item) => mark(inboxFacts(item.raw).blocks));

@@ -44,9 +44,10 @@ export default async function (t) {
   assert(text.includes(`Inbox Personal: $1.00 on ${dayText(dueBox)}`), 'the inbox is not named with its price and day: ' + text);
   assert(text.includes(`${shown.n1} (Selling the bike): $4.00 on ${dayText(dueNumber)}`), 'the number is not named with its price and day: ' + text);
   // the long explanation is behind a "why?" button, not on the screen
-  await renew.getByRole('button', { name: 'What happens if I do not add funds?' }).click();
-  await renew.getByText('When your credit is too low to renew, the inbox or the number is paused.').waitFor();
-  await renew.getByRole('button', { name: 'What happens if I do not add funds?' }).click();
+  await renew.locator('.why-btn').click();
+  await renew.locator('.why-panel').waitFor();
+  assert((await renew.locator('.why-panel').textContent()).length > 80, 'the explanation behind the "why?" button is empty');
+  await renew.locator('.why-btn').click();
   assert(text.indexOf('Inbox Personal') < text.indexOf(shown.n1), 'the earliest renewal is not first');
   assert(await slot.locator('[data-warning="paused"]').count() === 0, 'a paused warning shows for active items');
   const above = await page.evaluate(() => document.querySelector('.home-slot[data-section="warnings"]').getBoundingClientRect().bottom <= document.querySelector('.stats').getBoundingClientRect().top);

@@ -106,6 +106,16 @@ export function createDelivery(app, ph) {
       }
     },
 
+    // Texts that the provider took before `olderThan` (Unix seconds) and that still wait as "queued":
+    // no report came at all. They fail now, and the charge comes back. Returns how many.
+    failStale(olderThan) {
+      let count = 0;
+      for (const row of db.all("SELECT ref_hmac FROM text_sends WHERE status = 'queued' AND at < ?", olderThan)) {
+        if (apply(row.ref_hmac, 'failed', 'no report') === 'done') count++;
+      }
+      return count;
+    },
+
     // A provider reports the status of a text that it accepted before.
     // status: 'queued' | 'sent' | 'delivered' | 'failed'. errorText: a short reason, for the log only.
     // Returns true if the report changed something.

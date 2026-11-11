@@ -98,6 +98,7 @@ export function personaCard({ persona = null, onSave, username = '', onSaveUsern
         name ? button('Remove username', { size: 'sm', onClick: (e, btn) => save(btn, null, 'Username removed') }) : null,
       ),
       h('p', { class: 'hint' }, 'The username is saved with these identifiers, encrypted. A password is never saved.'),
+      why('username-password', { text: 'Why?' }),
       passwordSlot,
     );
   }

@@ -154,22 +154,27 @@ export function registerWelcomeLink({ id, label, path, order = 50 } = {}) {
 }
 
 // An icon button in the top bar of the phone layout, before the gear (a search button, for example).
-// The bar has room for two. On a wide screen there is no top bar: give the same action a key (registerGlobalKey).
-export function registerTopBarAction({ id, label, icon = 'dot', run, order = 50 } = {}) {
+// The bar has room for two.
+// On a wide screen the same action is an entry at the top of the sidebar. key: the key that
+// opens it too (for example '/'), shown as a hint there.
+export function registerTopBarAction({ id, label, icon = 'dot', run, order = 50, key = '' } = {}) {
   need(isText(label), `top bar action "${id}" needs a label`);
   need(isFn(run), `top bar action "${id}" needs a function`);
-  addUnique(topBarActions, { id, label, icon, run, order }, 'top bar action');
+  addUnique(topBarActions, { id, label, icon, run, order, key: typeof key === 'string' ? key.slice(0, 8) : '' }, 'top bar action');
 }
 
 // ---------- keys ----------
 
 // One key for the whole app, for example '/'. It does nothing while the person types in a
 // field, while a dialog or a menu is open, or with Ctrl, Alt or the Command key.
-export function registerGlobalKey(key, run, { signedOut = false } = {}) {
+// mod: true = the key works with Ctrl (Command on a Mac) held down, for example Ctrl+K. Such a key
+// also works while the person types in a field; it still does nothing with a dialog or a menu open.
+export function registerGlobalKey(key, run, { signedOut = false, mod = false } = {}) {
   need(typeof key === 'string' && key.length === 1 && key.trim() !== '', 'a global key is one character that you can see');
   need(isFn(run), `global key "${key}" needs a function`);
-  need(!globalKeys.has(key), `global key "${key}" is registered two times`);
-  globalKeys.set(key, { run, signedOut: !!signedOut });
+  const name = mod ? `mod+${key.toLowerCase()}` : key;
+  need(!globalKeys.has(name), `global key "${name}" is registered two times`);
+  globalKeys.set(name, { run, signedOut: !!signedOut });
 }
 
 // ---------- for the shared screens (feature files do not need these) ----------
@@ -215,11 +220,14 @@ export function onRoute(sink) {
 
 // main.js calls this for each keydown on the page. True = a registered key ran.
 export function runGlobalKey(e, { signedIn }) {
-  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return false;
-  const entry = globalKeys.get(e.key);
+  if (e.defaultPrevented || e.altKey || e.isComposing) return false;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.shiftKey) return false;
+  const entry = globalKeys.get(mod ? `mod+${String(e.key).toLowerCase()}` : e.key);
   if (!entry || (!signedIn && !entry.signedOut)) return false;
   const t = e.target;
-  if (t instanceof Element && t.closest('input, textarea, select, [contenteditable], [role="menu"], dialog')) return false;
+  // A plain key does nothing while the person types. A key with Ctrl or Command works in a field too.
+  if (t instanceof Element && t.closest(mod ? '[role="menu"], dialog' : 'input, textarea, select, [contenteditable], [role="menu"], dialog')) return false;
   if (document.querySelector('dialog[open], .menu')) return false;
   e.preventDefault();
   safe(entry.run, e);
