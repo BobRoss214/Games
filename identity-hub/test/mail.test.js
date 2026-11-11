@@ -583,7 +583,8 @@ test('send: checks; a refused message sends nothing', async () => {
   await expectError(send({ html: ['<p>'] }), 400, 'bad_request');
   await expectError(send({ attachments: [{ filename: 'a', content: 'not+base64' }] }), 400, 'bad_request');
   await expectError(send({ attachments: [{ filename: '', content: 'AAAA' }] }), 400, 'bad_request');
-  await expectError(send({ attachments: [{ filename: 'a', contentType: 'text/plain\r\nX-Evil: 1', content: 'AAAA' }] }), 400, 'bad_request');
+  await expectError(send({ attachments: [{ filename: 'a\r\nX-Evil: 1', content: 'AAAA' }] }), 400, 'bad_request');
+  await expectError(send({ attachments: [{ filename: 'a', contentType: 7, content: 'AAAA' }] }), 400, 'bad_request');
   await expectError(send({ attachments: 'x' }), 400, 'bad_request');
   await expectError(send({ references: 'x'.repeat(1000) }), 400, 'bad_request');
   await expectError(send({ copy: { sealedKey: 'AAAA', encMeta: 'AAAA', parts: ['AAAA'] } }), 400, 'bad_request');
@@ -602,6 +603,12 @@ test('send: checks; a refused message sends nothing', async () => {
   assert.equal((await send({})).status, 201);
   assert.equal(outbox.length, start + 1);
   assert.equal(app.db.get('SELECT n FROM send_counts WHERE account_id = ?', a.id).n, 1);
+  // The file type of an attachment is cleaned: parameters are removed, and a type that is not well formed becomes the generic type.
+  const types = ['text/plain; charset=utf-8', '', 'TEXT/CSV', 'text/plain\r\nX-Evil: 1', 'nonsense'];
+  assert.equal((await send({ attachments: types.map((contentType, i) => ({ filename: `f${i}`, contentType, content: 'AAAA' })) })).status, 201);
+  const typed = outbox[outbox.length - 1].raw;
+  assert.deepEqual((await simpleParser(typed)).attachments.map((f) => f.contentType), ['text/plain', 'application/octet-stream', 'text/csv', 'application/octet-stream', 'application/octet-stream']);
+  assert.ok(!typed.toString('latin1').includes('X-Evil'));
   // A message with no subject and no text is allowed.
   assert.equal((await send({ subject: '', text: '', fromName: undefined, cc: undefined, bcc: null, references: null, attachments: null })).status, 201);
   const bare = await simpleParser(outbox[outbox.length - 1].raw);
@@ -632,6 +639,27 @@ test('send: size limits', async () => {
     assert.equal(small.db.get('SELECT n FROM send_counts WHERE account_id = ?', a.id).n, 1);
   } finally {
     await small.stop();
+  }
+});
+
+test('send: the Sent copy needs room in the mailbox', async () => {
+  const tight = await startTestApp({ limits: { mailboxBytes: 2000 } });
+  try {
+    const a = await newAccount(tight, { credits: 100 });
+    const box = await newMailbox(a);
+    const send = (extra) => a.api.post('/api/mail/send', sendBody({ id: box.mailbox.addressId, address: box.address }, { to: ['ok@elsewhere.example'], ...extra }));
+    const big = await makeCopy(a, { meta: { subject: 'Hi' }, body: { text: 'x'.repeat(3000) } });
+    const res = await send({ copy: big });
+    assert.equal(res.status, 409);
+    assert.equal(errorCode(res), 'limit_reached');
+    assert.equal(tight.services.mail.outbox.length, 0, 'nothing was sent');
+    // A small copy fits. The same message without a copy goes out too.
+    const small = await makeCopy(a, { meta: { subject: 'Hi' }, body: { text: 'short' } });
+    assert.match((await send({ copy: small })).data.id, /^[A-Za-z0-9_-]{22}$/);
+    assert.deepEqual((await send({})).data, { id: null });
+    assert.equal(tight.services.mail.outbox.length, 2);
+  } finally {
+    await tight.stop();
   }
 });
 
@@ -814,6 +842,18 @@ test('development routes: inbound mail only for own addresses; no routes outside
     assert.equal((await p.api.post('/api/dev/inbound-mail', { to: pBox.address })).status, 404);
     assert.equal((await p.api.get('/api/dev/outbox')).status, 404);
     assert.equal((await client(production).get('/api/config')).data.dev, false);
+
+    // Without a relay and outside development, mail to other servers is refused with a clear error.
+    // The server does not answer "sent" for a message that goes nowhere.
+    const from = { id: pBox.mailbox.addressId, address: pBox.address };
+    const out = await p.api.post('/api/mail/send', sendBody(from, { to: ['far@elsewhere.example', pBox.address] }));
+    assert.equal(out.status, 503);
+    assert.equal(errorCode(out), 'no_relay');
+    assert.equal(production.services.mail.outbox.length, 0);
+    assert.deepEqual((await listMessages(p)).messages, []);
+    // Mail between addresses of this server still works.
+    assert.equal((await p.api.post('/api/mail/send', sendBody(from, { to: [pBox.address] }))).status, 201);
+    assert.equal((await listMessages(p)).messages.length, 1);
   } finally {
     await production.stop();
   }

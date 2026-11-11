@@ -37,17 +37,22 @@ function messageIds(value, name) {
   return list.map((v) => need.string(v, name, { min: 0, max: 998 }).trim()).filter((v) => MESSAGE_ID.test(v));
 }
 
+// The type that the browser gives for a file can be empty or can have parameters.
+// Only a plain "type/subtype" goes in the message. Everything else becomes the generic type.
+function contentTypeOf(value) {
+  if (value === undefined || value === null) return 'application/octet-stream';
+  const base = need.string(value, 'attachments.contentType', { min: 0, max: 255 }).split(';')[0].trim().toLowerCase();
+  return CONTENT_TYPE.test(base) ? base : 'application/octet-stream';
+}
+
 function attachmentList(value, maxBytes) {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value) || value.length > MAX_ATTACHMENTS) throw fail(400, 'bad_request', 'The value "attachments" is not valid.');
   return value.map((item) => {
     if (item === null || typeof item !== 'object') throw fail(400, 'bad_request', 'The value "attachments" is not valid.');
-    const contentType = item.contentType === undefined || item.contentType === null || item.contentType === ''
-      ? 'application/octet-stream'
-      : need.string(String(item.contentType).toLowerCase(), 'attachments.contentType', { min: 3, max: 255, pattern: CONTENT_TYPE });
     return {
       filename: need.string(item.filename, 'attachments.filename', { min: 1, max: 255, pattern: NO_CONTROL }),
-      contentType,
+      contentType: contentTypeOf(item.contentType),
       content: need.bytes(item.content, 'attachments.content', { min: 0, max: maxBytes }),
     };
   });

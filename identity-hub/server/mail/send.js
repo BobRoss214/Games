@@ -47,7 +47,10 @@ export function registerSend(app, { data, inbound, compose, outbox }) {
     })
     : null;
   if (relay) app.onStop(() => relay.close());
-  else if (config.production) log.warn('No mail relay is set (SMTP_RELAY_URL). Mail to other servers is not sent.');
+  // The simulated outbox is a development tool. Outside development nobody can read it, and
+  // to answer "sent" for a message that goes nowhere would mislead the user.
+  const canSendOut = Boolean(relay) || config.dev;
+  if (!canSendOut) log.warn('No mail relay is set (SMTP_RELAY_URL). Mail to other servers is refused.');
 
   // The simulated outbox lives in memory. It keeps the newest messages, within a size limit.
   function trimOutbox() {
@@ -102,6 +105,7 @@ export function registerSend(app, { data, inbound, compose, outbox }) {
     // Our own addresses are checked before anything is sent.
     const local = recipients.filter((r) => ownDomains.has(r.domain)).map((r) => r.address);
     const external = recipients.filter((r) => !ownDomains.has(r.domain)).map((r) => r.address);
+    if (external.length > 0 && !canSendOut) throw fail(503, 'no_relay', 'This server cannot send mail to other servers yet.');
     for (const address of local) {
       const verdict = inbound.check(address);
       if (verdict.ok) continue;
