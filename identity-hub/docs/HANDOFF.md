@@ -2,14 +2,15 @@
 
 Read this file first in a new session. It is the working memory of the build.
 
-## State (updated in the third work period)
-- `npm test`: 263 pass. `npm run test:e2e`: 29 files, 296 checks pass (agents' full runs; the lead ran the new files one by one).
-- DONE and verified: core, login, mail, phone, payments; web app; random identifiers generator (was "made-up details"); identity groups; plug-in points; `docs/UI-GUIDE.md`; Help pages; tutorial; "Test my recovery key"; export screens + viewer (`/open-export`); voicemail screens; "My stats" (`/stats`); "Who leaked me" (`/leaks`).
-- IN WORK when this note was written:
-  - Web app owner (a26c8a8a4e94020bb): "why?" buttons, home warnings, code helper in screens, "possibly leaked" hint, own-domain warning, one-shot option, refused number, username/password on the generator card, colour dot, timeline, door look, Settings list; plus requests from the other agents (data fields in lib/data.js, welcome link hook, top-bar slot, vaultChange cost, exported openers, tab title, #anchors).
-  - Mail agent (acdfaf31207927c39): blocked senders, automatic deletion, newsletter panel, Burn (features/blocks.js, autodelete.js, unsubscribe.js, burn.js; e2e 22-25).
-  - Phone agent (a11580da0ffdd9d37): quick jump (features/quickjump.js; e2e 26).
-- THEN: one final pass by the documents agent (a170f5620ffc15bb8): add every new feature to Help text, "why?" texts, tutorial where it fits, SECURITY.md (also: the tutorial vault entry changes are visible to the server as timing), SETUP-GUIDE where the operator is concerned, a word-list test over all screens; README refresh by the lead.
+## State (updated in the fourth work period)
+- `npm test`: 272 pass. `npm run test:e2e`: 34 files, 338 checks pass (run by the lead).
+- ALL planned feature screens are built and verified: website, random identifiers generator, identities, Help, "Why?" buttons, tutorial, recovery key test, home warnings, code helper, "Possibly leaked", "Who leaked me", "My stats", blocked senders, automatic deletion, alias end date, "Stop after the first mail", refused-mail number, export + viewer, voicemail, own-domain warning, Burn, door look, colour dot, history, username and password maker, quick jump, newsletter panel.
+- IN WORK when this note was written (the last round):
+  - Phone agent (a11580da0ffdd9d37): the "own phone" provider on the server (server/phone/providers/ownphone.js, webhook /api/hooks/ownphone/:token, server/tools/ownphone.js, tests with test/fake-smsgate.js).
+  - Documents agent (a170f5620ffc15bb8): final help pass (new WHY keys, tips, tutorial step `more`, SECURITY.md, test/web-words.test.js). NEXT for it: setup guide part + Docker compose profile for own phone (SMSGate private server + MariaDB, separate host name), call forwarding by hand (**21*number#), battery settings, limits.
+  - Web app owner (a26c8a8a4e94020bb): follow-ups (quick jump hooks, ended alias, icons, Why buttons for its features, tidy features.css) and the own-phone screens ("Get a number" from the pool, "Phone online / offline", "Waiting for the phone", calls explanation).
+  - Mail agent (acdfaf31207927c39): dev route for the retention job, smaller facts.js, tutorial step `more`, Why buttons in its features.
+- AFTER that, by the lead: README refresh; final full test run; final report to the user with: what was tested; what was tested with simulated providers only (Twilio, BTCPay); Docker never built; own phone tested with the fake gateway only, never on a real phone.
 - LAST: the "own phone" provider (see the second half of this file).
 - Never tested: real Twilio, real BTCPay, Docker build, a real phone.
 - RENAME by the user (later than the notes below): the feature "made-up details" is now called "Random identifiers generator"; its values are "random identifiers". Internal names (`persona`, key `made-up-details`) stay. Where the notes below say "made-up details", read the new name.

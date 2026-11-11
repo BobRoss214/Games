@@ -100,6 +100,9 @@ export async function createApp(overrides = {}, env = process.env) {
       // What the phone provider can do. A provider with no calls has voice and voicemail false.
       voice: !!app.services.phone?.capabilities?.voice,
       voicemail: !!app.services.phone?.capabilities?.voicemail,
+      // "Own phone" provider: numbers come from a fixed pool, so there is no search by area code.
+      ownPhone: config.phone.provider === 'ownphone',
+      searchByArea: app.services.phone?.capabilities?.searchByArea !== false,
     },
     phoneCountries: config.phone.countries,
     prices: config.prices,

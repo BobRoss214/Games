@@ -61,7 +61,7 @@ Message envelope (mail):
 
 | Route | Result |
 |---|---|
-| `GET /api/config` | `{ appName, dev, signup: "open"\|"closed", powBits, graceDays, renewDays, mailDomains: [], personalDomains: [], voicemailMaxSeconds, features: { phone, pay, mockPhone, mockPay, mockMail, voice, voicemail }, phoneCountries: [], prices: { mailboxMonth, numberMonth, textOut, callMinute, voicemail }, limits: { mailboxes, aliases (0 = no limit), numbers, phones, sendPerDay, maxMessageBytes } }` |
+| `GET /api/config` | `{ appName, dev, signup: "open"\|"closed", powBits, graceDays, renewDays, mailDomains: [], personalDomains: [], voicemailMaxSeconds, features: { phone, pay, mockPhone, mockPay, mockMail, voice, voicemail, ownPhone, searchByArea }, phoneCountries: [], prices: { mailboxMonth, numberMonth, textOut, callMinute, voicemail }, limits: { mailboxes, aliases (0 = no limit), numbers, phones, sendPerDay, maxMessageBytes } }` |
 | `GET /api/events` **(auth)** | Server-sent events. Each event: `event: change`, `data: {"type": "mail"\|"text"\|"call"\|"balance"\|"mailbox"\|"number"\|"aliases"\|"phones", ...}`. The app then reloads that kind of data. |
 
 Prices are in credits. 100 credits = 1.00 USD.
