@@ -11,8 +11,7 @@ import * as auth from './auth/index.js';
 import * as mail from './mail/index.js';
 import * as phone from './phone/index.js';
 import * as pay from './pay/index.js';
-import * as billing from './billing/index.js';
-import * as dev from './dev/index.js';
+import { createRenewables } from './core/renew.js';
 
 export async function createApp(overrides = {}, env = process.env) {
   const config = loadConfig(env, overrides);
@@ -33,7 +32,8 @@ export async function createApp(overrides = {}, env = process.env) {
 
   const app = {
     config, log, db, paydb, keys, store, events, http,
-    services: {}, // modules put their service objects here: app.services.mail, .phone, .pay, .billing
+    services: {}, // modules put their service objects here: app.services.mail, .phone, .pay
+    renewables: null, // monthly renewal engine, see core/renew.js
     onStart: (fn) => startHooks.push(fn),
     onStop: (fn) => stopHooks.push(fn),
     // fn(accountId) runs before an account is deleted. Use it to release provider resources.
@@ -101,8 +101,10 @@ export async function createApp(overrides = {}, env = process.env) {
     return HANDLED;
   });
 
+  app.renewables = createRenewables({ store, config, log, events });
+  app.every('renew', 3600, () => app.renewables.run());
   app.every('purge-sessions', 3600, async () => store.purgeExpiredSessions());
 
-  for (const mod of [auth, mail, phone, pay, billing, dev]) await mod.register(app);
+  for (const mod of [auth, mail, phone, pay]) await mod.register(app);
   return app;
 }
