@@ -173,7 +173,11 @@ export function createHooks(app, ph) {
     },
     async bridge(c) {
       check(c);
-      return answer(provider.voiceReply(bridgeCall(c.query.t)));
+      const actions = bridgeCall(c.query.t);
+      // No connection: the call ends here. Close it now as "failed" with no charge. If not, the
+      // end report of the provider would count the seconds that the real phone was on the line.
+      if (!actions.some((a) => a.dial)) finishCall({ callId: provider.parseVoice(c).callId, status: 'failed', seconds: 0 });
+      return answer(provider.voiceReply(actions));
     },
     async status(c) {
       check(c);

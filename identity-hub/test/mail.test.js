@@ -410,6 +410,128 @@ test('messages: read, pages, filters, seen flag, delete', async () => {
   assert.equal((await client(app).get('/api/messages')).status, 401);
 });
 
+test('messages: filter by address ids (the view of an identity group)', async () => {
+  const a = await newAccount(app, { credits: 300 });
+  const b = await newAccount(app, { credits: 100 });
+  const box1 = await newMailbox(a);
+  const box2 = await newMailbox(a);
+  const al1 = await newAlias(a, box1.mailbox.id);
+  const al2 = await newAlias(a, box2.mailbox.id);
+  const al3 = await newAlias(a, box1.mailbox.id);
+  const boxB = await newMailbox(b);
+  const alB = await newAlias(b, boxB.mailbox.id);
+
+  // Incoming: 3 for alias 1, 2 for alias 2 (in the other mailbox), 1 for alias 3, 1 for the inbox address, 2 for account B.
+  for (const [who, to, n] of [[a, al1.address, 3], [a, al2.address, 2], [a, al3.address, 1], [a, box1.address, 1], [b, alB.address, 2]]) {
+    for (let i = 0; i < n; i++) await inject(who, to, { subject: `to ${to} ${i}` });
+  }
+  // One sent message from alias 2, with a Sent copy.
+  const copy = await makeCopy(a, { meta: { subject: 'sent from alias 2' }, body: { text: 'x' } });
+  const sent = await a.api.post('/api/mail/send', sendBody({ id: al2.alias.id, address: al2.address }, { to: ['ok@elsewhere.example'], copy }));
+  assert.equal(sent.status, 201);
+  // The Sent copy has the id of the from-address.
+  assert.equal(app.db.get('SELECT address_id FROM messages WHERE id = ?', sent.data.id).address_id, al2.alias.id);
+
+  // Known times: one second for each message, in the order of arrival. Two messages share a second.
+  const base = now() - 1000;
+  const rows = app.db.all('SELECT id FROM messages WHERE account_id = ? ORDER BY rowid', a.id);
+  rows.forEach((r, i) => app.db.run('UPDATE messages SET at = ? WHERE id = ?', base + (i === 1 ? 0 : i), r.id));
+
+  const list = (query) => listMessages(a, query);
+  const idsOf = (res) => res.messages.map((m) => m.id);
+  const inOrder = (messages) => [...messages].sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : -1)).map((m) => m.id);
+
+  // One id.
+  const one = await list(`?addressIds=${al1.alias.id}`);
+  assert.equal(one.messages.length, 3);
+  assert.equal(one.more, false);
+  assert.ok(one.messages.every((m) => m.addressId === al1.alias.id && m.mailboxId === box1.mailbox.id));
+  assert.deepEqual(idsOf(one), inOrder(one.messages), 'newest first');
+
+  // Several ids across two mailboxes. The Sent copy of alias 2 is in the list.
+  const group = `${al1.alias.id},${al2.alias.id}`;
+  const both = await list(`?addressIds=${group}`);
+  assert.equal(both.messages.length, 6);
+  assert.deepEqual(idsOf(both), inOrder(both.messages));
+  assert.deepEqual([...new Set(both.messages.map((m) => m.mailboxId))].sort(), [box1.mailbox.id, box2.mailbox.id].sort());
+  assert.ok(both.messages.every((m) => [al1.alias.id, al2.alias.id].includes(m.addressId)));
+  assert.ok(idsOf(both).includes(sent.data.id));
+  // The same messages as the list without a filter, minus the other addresses.
+  const everything = await list('');
+  assert.equal(everything.messages.length, 8);
+  assert.deepEqual(idsOf(both), everything.messages.filter((m) => [al1.alias.id, al2.alias.id].includes(m.addressId)).map((m) => m.id));
+
+  // The address of an inbox works like an alias. An id two times in the list changes nothing.
+  assert.equal((await list(`?addressIds=${box1.mailbox.addressId}`)).messages.length, 1);
+  assert.deepEqual(idsOf(await list(`?addressIds=${group},${al1.alias.id}`)), idsOf(both));
+  assert.equal((await list(`?addressIds=${[al1, al2, al3].map((x) => x.alias.id).join(',')},${box1.mailbox.addressId}`)).messages.length, 8);
+
+  // With `direction`.
+  const incoming = await list(`?addressIds=${group}&direction=in`);
+  assert.equal(incoming.messages.length, 5);
+  assert.ok(incoming.messages.every((m) => m.direction === 'in'));
+  assert.deepEqual(idsOf(await list(`?addressIds=${group}&direction=out`)), [sent.data.id]);
+  assert.deepEqual(idsOf(await list(`?addressIds=${al1.alias.id}&direction=out`)), []);
+
+  // With `mailboxId`: both filters apply.
+  const inBox1 = await list(`?addressIds=${group}&mailboxId=${box1.mailbox.id}`);
+  assert.deepEqual(idsOf(inBox1), idsOf(one));
+  assert.equal((await list(`?addressIds=${al1.alias.id}&mailboxId=${box2.mailbox.id}`)).messages.length, 0);
+  assert.equal((await a.api.get(`/api/messages?addressIds=${group}&mailboxId=${boxB.mailbox.id}`)).status, 404);
+
+  // Pages across the filter: `before` and `beforeId` of the last message give the next page.
+  for (const size of [1, 2, 4, 5]) {
+    const seen = [];
+    let query = `?addressIds=${group}&limit=${size}`;
+    for (;;) {
+      const res = await list(query);
+      assert.ok(res.messages.length <= size);
+      seen.push(...idsOf(res));
+      assert.equal(res.more, seen.length < 6, `limit ${size} after ${seen.length}`);
+      if (!res.more) break;
+      const last = res.messages[res.messages.length - 1];
+      query = `?addressIds=${group}&limit=${size}&before=${last.at}&beforeId=${last.id}`;
+    }
+    assert.deepEqual(seen, idsOf(both), `limit ${size}`);
+  }
+  assert.equal((await list(`?addressIds=${group}&before=${base}`)).messages.length, 0);
+  assert.equal((await list(`?addressIds=${group}&limit=6`)).more, false);
+
+  // An id of a different account, or an id that does not exist, matches nothing. It is no error.
+  assert.deepEqual(await list(`?addressIds=${alB.alias.id}`), { messages: [], more: false });
+  assert.deepEqual(await list(`?addressIds=${'Q'.repeat(22)}`), { messages: [], more: false });
+  assert.deepEqual(idsOf(await list(`?addressIds=${alB.alias.id},${al1.alias.id},${'Q'.repeat(22)}`)), idsOf(one));
+  // Account B asks with the ids of account A: nothing. With its own id: its own two messages.
+  assert.deepEqual(await listMessages(b, `?addressIds=${group},${box1.mailbox.addressId}`), { messages: [], more: false });
+  const ownB = await listMessages(b, `?addressIds=${alB.alias.id},${al1.alias.id}`);
+  assert.equal(ownB.messages.length, 2);
+  assert.ok(ownB.messages.every((m) => m.addressId === alB.alias.id && m.mailboxId === boxB.mailbox.id));
+  assert.equal((await client(app).get(`/api/messages?addressIds=${group}`)).status, 401);
+
+  // The list must be 1 to 50 well-formed ids.
+  const many = (n) => Array.from({ length: n }, (_, i) => String(i).padStart(22, 'A')).join(',');
+  assert.equal((await a.api.get(`/api/messages?addressIds=${many(49)},${al1.alias.id}`)).data.messages.length, 3);
+  for (const bad of [many(51), '', ',', `${al1.alias.id},`, `,${al1.alias.id}`, 'short', `${al1.alias.id};${al2.alias.id}`, `${al1.alias.id}, ${al2.alias.id}`, 'x'.repeat(23)]) {
+    const res = await a.api.get(`/api/messages?addressIds=${encodeURIComponent(bad)}`);
+    assert.equal(res.status, 400, `"${bad.slice(0, 30)}"`);
+    assert.equal(errorCode(res), 'bad_request');
+  }
+
+  // Messages of a deleted alias stay in the mailbox, but they have no address id and are in no such list.
+  assert.equal((await a.api.del(`/api/aliases/${al1.alias.id}`)).status, 204);
+  assert.deepEqual(await list(`?addressIds=${al1.alias.id}`), { messages: [], more: false });
+  assert.equal((await list(`?addressIds=${group}`)).messages.length, 3);
+  assert.equal((await list(`?mailboxId=${box1.mailbox.id}`)).messages.length, 5);
+
+  // The filter has an index, and the database reads it in order (no sort step).
+  const plan = app.db.all(
+    'EXPLAIN QUERY PLAN SELECT id FROM messages WHERE account_id = ? AND address_id = ? AND direction = ? AND (at < ? OR (at = ? AND id < ?)) ORDER BY at DESC, id DESC LIMIT ?',
+    a.id, al2.alias.id, 'in', 1, 1, 'x', 3,
+  ).map((r) => r.detail).join(' | ');
+  assert.match(plan, /messages_address/);
+  assert.doesNotMatch(plan, /TEMP B-TREE/);
+});
+
 test('send: from an alias to an alias of a different account (inside the server)', async () => {
   const a = await newAccount(app, { credits: 200 });
   const b = await newAccount(app, { credits: 200 });

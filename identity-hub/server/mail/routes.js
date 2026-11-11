@@ -8,12 +8,27 @@ import { chooseAddress, taken } from './address.js';
 
 const ID = /^[A-Za-z0-9_-]{22}$/;
 const MAX_ENC_BYTES = 2048;
+const MAX_ADDRESS_IDS = 50;
 
 const notFound = () => fail(404, 'not_found', 'Not found.');
 // An id that is not well formed cannot exist. It gets the same answer as an unknown id.
 const idParam = (v) => { if (typeof v !== 'string' || !ID.test(v)) throw notFound(); return v; };
 const encField = (v) => need.optional(v, need.bytes, 'enc', { min: 1, max: MAX_ENC_BYTES });
 const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
+// "id,id,id" from the query -> the different ids. The list must have 1 to 50 well-formed ids.
+// An empty list is an error and not "no filter": a view of a group must never show all mail by mistake.
+function addressIdList(value) {
+  const ids = typeof value === 'string' ? value.split(',') : [];
+  if (ids.length < 1 || ids.length > MAX_ADDRESS_IDS || !ids.every((id) => ID.test(id))) {
+    throw fail(400, 'bad_request', 'The value "addressIds" is not valid.');
+  }
+  return [...new Set(ids)];
+}
+
+// The order of the message list: new to old, and the same second by id from high to low.
+// Ids are ASCII text, so this is the same order that the database uses.
+const newestFirst = (x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0);
 
 export function registerRoutes(app, { data }) {
   const { http, db, store, config, events } = app;
@@ -213,7 +228,20 @@ export function registerRoutes(app, { data }) {
       }
     }
     const limit = q.limit === undefined || q.limit === '' ? 50 : queryInt(q.limit, 'limit', 1, 100);
-    const rows = db.all(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE ${where.join(' AND ')} ORDER BY at DESC, id DESC LIMIT ?`, ...params, limit + 1);
+    const addressIds = q.addressIds === undefined ? null : addressIdList(q.addressIds);
+    let rows;
+    if (addressIds) {
+      // One query for each address. Each query has the account id, so an id of a different account matches nothing.
+      // Each one reads the index (account_id, address_id, at, id) in order and stops after one page.
+      // The newest messages of all lists together are the page.
+      where.splice(1, 0, 'address_id = ?');
+      const sql = `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE ${where.join(' AND ')} ORDER BY at DESC, id DESC LIMIT ?`;
+      rows = [];
+      for (const addressId of addressIds) rows.push(...db.all(sql, params[0], addressId, ...params.slice(1), limit + 1));
+      rows.sort(newestFirst);
+    } else {
+      rows = db.all(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE ${where.join(' AND ')} ORDER BY at DESC, id DESC LIMIT ?`, ...params, limit + 1);
+    }
     return { messages: rows.slice(0, limit).map(messageView), more: rows.length > limit };
   });
 

@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS messages (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS messages_account ON messages(account_id, at, id);
 CREATE INDEX IF NOT EXISTS messages_mailbox ON messages(mailbox_id, at, id);
+CREATE INDEX IF NOT EXISTS messages_address ON messages(account_id, address_id, at, id);
 CREATE INDEX IF NOT EXISTS messages_unread ON messages(mailbox_id, direction, seen);
 CREATE INDEX IF NOT EXISTS messages_size ON messages(mailbox_id, size);
 

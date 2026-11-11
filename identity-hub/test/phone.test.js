@@ -719,10 +719,10 @@ test('click-to-call: the real phone rings first, the bridge webhook connects it 
   assert.equal((await calls(a, num)).length, 0);
 
   // The real phone answers: the provider asks the bridge webhook what to do.
-  const wrongToken = await hook('bridge', { callId: first.ref }, undefined, '?t=' + 'A'.repeat(43));
+  const wrongToken = await hook('bridge', { callId: 'some-other-call' }, undefined, '?t=' + 'A'.repeat(43));
   assert.equal(wrongToken.status, 200);
   assert.deepEqual(wrongToken.data.actions, [{ hangup: true }]);
-  assert.deepEqual((await hook('bridge', { callId: first.ref })).data.actions, [{ hangup: true }]);
+  assert.deepEqual((await hook('bridge', { callId: 'some-other-call' })).data.actions, [{ hangup: true }]);
   const bridge = await hook('bridge', { callId: first.ref }, undefined, answerUrl.search);
   assert.equal(bridge.status, 200);
   assert.deepEqual(bridge.data.actions, [{ dial: { number: to, callerId: num.plain, timeout: 25, timeLimit: 1980, actionUrl: STATUS_URL } }]);
@@ -758,6 +758,21 @@ test('click-to-call: the real phone rings first, the bridge webhook connects it 
   assert.equal(failed.status, 502);
   assert.equal(failed.data.error.code, 'provider_error');
   assert.equal(app.db.get('SELECT COUNT(*) AS n FROM live_calls').n, 0);
+
+  // The real phone answers, but the call cannot be connected any more (the number was suspended in
+  // between). The call is logged as failed. The seconds that the real phone was on the line cost nothing.
+  await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to });
+  const ref5 = mock.outbox.calls.at(-1).ref;
+  const url5 = new URL(mock.ringing.get(ref5).answerUrl);
+  app.db.run("UPDATE numbers SET status = 'suspended' WHERE id = ?", num.id);
+  const refusedBridge = await hook('bridge', { callId: ref5 }, undefined, url5.search);
+  app.db.run("UPDATE numbers SET status = 'active' WHERE id = ?", num.id);
+  assert.deepEqual(refusedBridge.data.actions, [{ say: 'This call cannot be connected.' }, { hangup: true }]);
+  await hook('status', { callId: ref5, status: 'answered', seconds: 8 });
+  const log5 = await calls(a, num);
+  assert.equal(log5.length, 4);
+  assert.deepEqual({ direction: log5[0].direction, seconds: log5[0].seconds, status: log5[0].status }, { direction: 'out', seconds: 0, status: 'failed' });
+  assert.equal(app.store.balance(a.id), 91);
 });
 
 test('delete: the number is released at the provider; its texts and calls go away', async () => {

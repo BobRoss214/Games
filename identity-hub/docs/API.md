@@ -168,7 +168,7 @@ Errors when an address is made (`POST /api/mailboxes`, `POST /api/aliases`):
 | `POST /api/aliases` **(auth)** | `{ mailboxId, localPart?, domain?, enc? }` | 201 `{ alias, address }`. Free. 404 `not_found` (mailbox), 409 `taken`, 409 `limit_reached`, 400 `bad_request`. Rate limit 120/hour per account. |
 | `PATCH /api/aliases/:id` **(auth)** | `{ enabled?, mailboxId?, enc? }` (at least one; `enc: null` removes the label) | `{ alias }`. 400 `bad_request` if no value is given. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
 | `DELETE /api/aliases/:id` **(auth)** | — | 204. Messages stay in the mailbox. Their `addressId` becomes null. |
-| `GET /api/messages` **(auth)** | `?mailboxId=&direction=in\|out&before=<at>&beforeId=&limit=` (limit 1 to 100, default 50) | `{ messages: [{ id, mailboxId, addressId, direction, at, seen, size, attachments (count), sealedKey, encMeta }], more: bool }` newest first. 400 `bad_request` for a bad query value. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
+| `GET /api/messages` **(auth)** | `?mailboxId=&addressIds=<id,id,…>&direction=in\|out&before=<at>&beforeId=&limit=` (limit 1 to 100, default 50; `addressIds` 1 to 50 ids) | `{ messages: [{ id, mailboxId, addressId, direction, at, seen, size, attachments (count), sealedKey, encMeta }], more: bool }` newest first. 400 `bad_request` for a bad query value. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
 | `GET /api/messages/:id` **(auth)** | — | `{ message: { ...same fields, body: b64u (part 0) } }` |
 | `GET /api/messages/:id/parts/:index` **(auth)** | index ≥ 1 | 200 `application/octet-stream` (the encrypted attachment). 404 `not_found` if the part does not exist. |
 | `PATCH /api/messages/:id` **(auth)** | `{ seen: bool }` | 204 |
@@ -195,6 +195,13 @@ Message notes:
 - Pages: send `before` = `at` and `beforeId` = `id` of the last message of the page before. The answer has the messages after this position.
   `before` alone gives the messages with `at < before` (it skips other messages of the same second). `beforeId` alone has no effect.
 - `limit` below 1, above 100, or not a number: 400 `bad_request`. `direction` other than `in` or `out`: 400 `bad_request`.
+- `addressIds` is a list of address ids with commas between them, for example `addressIds=<id1>,<id2>` (no spaces). The ids are alias ids and inbox address ids (`mailbox.addressId`).
+  The answer has only the messages with an `addressId` from the list, from all mailboxes of the account. This is the list for a group of aliases.
+  - It works together with the other values: with `mailboxId` both filters apply; `direction`, `before`, `beforeId`, `limit`, and `more` work as without it.
+  - A Sent copy has the id of its from-address, so it is in the list when this address is in `addressIds` (use `direction=in` to leave Sent copies out).
+  - An id that does not exist, or an id of a different account, matches nothing. It gives no error. An id two times in the list changes nothing.
+  - 400 `bad_request`: more than 50 ids, an id that is not well formed, or an empty list (`addressIds=`). To get all messages, leave `addressIds` out.
+  - Messages of a deleted alias have `addressId: null`. They are in no such list; they are still in the list of their mailbox.
 - `at` = the time when the server stored the message. `seen` is a boolean; a Sent copy is stored with `seen: true`.
 - `size` = stored bytes of the message in encrypted form (sealed key + meta + all parts). The mailbox size limit uses the sum of `size`.
 - `addressId` = the address that got the message (direction `in`) or sent it (direction `out`). It is null after this alias was deleted.
