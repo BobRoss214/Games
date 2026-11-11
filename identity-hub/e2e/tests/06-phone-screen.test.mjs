@@ -23,6 +23,7 @@ async function measure(page) {
       const b = el.getBoundingClientRect();
       if (b.width === 0 || b.height === 0) continue;
       if (el.tagName === 'A' && getComputedStyle(el).display === 'inline') continue; // a link inside a sentence
+      if (el.classList.contains('tag-link')) continue; // a small mark with a 44px touch area around it (CSS ::before)
       if (b.height < 40) small.push(`${el.tagName.toLowerCase()}.${String(el.className).split(' ').slice(0, 2).join('.')} ${Math.round(b.width)}x${Math.round(b.height)} "${(el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 24)}"`);
     }
     return { scrollW: document.documentElement.scrollWidth, vw, wide: wide.slice(0, 5), small: [...new Set(small)].slice(0, 8) };

@@ -61,6 +61,9 @@ echo "this is a command"
 | port | A numbered door of the server. Mail uses port 25. The web uses ports 80 and 443. |
 | relay | A program that delivers outgoing mail to other mail servers. |
 | text | A short message to or from a phone number (SMS). |
+| inbox | A place for the mail of one user in Postern. It has its own address. |
+| alias | One more address of a user. Mail to an alias goes to an inbox. |
+| credit | The money of a user in Postern. The price settings use credits: 100 credits are 1.00 US dollar. |
 | provider | A company that sells you a service. |
 
 **How to change a setting.** Many steps tell you to change settings and apply the change. This is the procedure:
@@ -825,15 +828,23 @@ The built-in list has the premium numbers `+1900` and `+1976`. It also has 21 ar
 
 To change the limits:
 
-1. Open the `.env` file (see "How to change a setting").
+1. Open the `.env` file:
+   ```
+   cd /opt/postern/deploy && nano .env
+   ```
 2. To permit one more country, add its prefix to `PHONE_ALLOWED_PREFIXES`. Example for the United Kingdom: `PHONE_ALLOWED_PREFIXES=+1,+44`
 3. To block more numbers, write your complete list in `PHONE_BLOCKED_PREFIXES`. Your list replaces the built-in list. Start with this line and add your prefixes:
    ```
    PHONE_BLOCKED_PREFIXES=+1900,+1976,+1242,+1246,+1264,+1268,+1284,+1345,+1441,+1473,+1649,+1658,+1664,+1721,+1758,+1767,+1784,+1809,+1829,+1849,+1868,+1869,+1876
    ```
-4. Save the file and apply the change.
-5. In the Twilio Console, find the settings with the name "Geo permissions". There is one page for calls and one page for texts.
-6. Permit only the countries that you permit in Postern.
+4. Save the file: press Ctrl+O, then press Enter.
+5. Close the editor: press Ctrl+X.
+6. Apply the change:
+   ```
+   docker compose up -d
+   ```
+7. In the Twilio Console, find the settings with the name "Geo permissions". There is one page for calls and one page for texts.
+8. Permit only the countries that you permit in Postern.
 
 **Check:** in Postern, try to send a text to a number that is not permitted. Postern must show "You cannot text or call this number from here."
 
@@ -846,19 +857,40 @@ Notes:
 
 ### F7. Voicemail
 
-A caller who does not get an answer can leave a voicemail. Each user decides if a number has voicemail.
+A caller who does not reach the user can leave a voicemail. Voicemail is off by default.
+Each user switches it on or off for each number in the app.
 
-**Check this:** the voicemail function was not complete when the authors wrote this part. The API document did not describe it. Test it before you tell your users about it.
+Postern uses voicemail for a call only if all three conditions are true:
+
+- The number has voicemail on.
+- The number is active (not paused).
+- The balance of the user pays for one voicemail.
+
+The call must also be one of these: a call that Postern does not send on to a real phone, or a call that the real phone did not answer.
+
+The caller hears: "The person you called is not available. Please leave a message after the tone."
+The greeting has no name and no number.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `PRICE_VOICEMAIL` | `5` | The price of each recorded voicemail, in credits. `5` is 0.05 USD. The user pays it. `0` = free. |
+| `PRICE_VOICEMAIL` | `5` | The price of each stored voicemail, in credits. `5` is 0.05 USD. The user pays it. `0` = free. |
 | `VOICEMAIL_MAX_SECONDS` | `120` | The longest voicemail, in seconds. |
 
 What the phone provider hears and keeps:
 
-- The phone provider makes the recording. Thus the provider hears the complete message. Postern cannot prevent this.
-- **Check this:** by design, Postern copies each recording, encrypts it for the user, and then deletes it at the provider. The authors did not test this.
+- The phone provider plays the greeting and makes the recording. Thus the provider hears the complete message. Postern cannot prevent this.
+- Postern copies the recording, encrypts it for the user, and stores it. Then Postern deletes the recording at the provider.
+- If the provider does not delete the recording, Postern tries again each hour, for 30 days.
+- The provider can keep records of each call under its own rules: who called which number, when, and for how long.
+- The provider can also have its own backups for some time. Postern cannot delete those.
+- Postern does not ask the provider for a written copy of the message.
+
+Facts for you as the operator:
+
+- Postern keeps the voicemails in `accounts.db`. Thus they are in your backups (Part I7).
+- The automatic deletion of old texts does not delete voicemails. A user deletes a voicemail together with its call.
+- **Check this:** the authors did not test voicemail with a real Twilio account.
+- **Check this:** the server has the voicemail function. When the authors wrote this part, the app did not show a switch for it.
 - **Check this:** Twilio can charge you for recordings. Set `PRICE_VOICEMAIL` higher than your cost.
 
 **Check:** call a number that has voicemail on and leave a message. The message must appear in Postern.
@@ -937,14 +969,16 @@ You do not operate these functions. Each user sets them in the app. This table t
 | End date for an alias | After the date, the alias gets no mail and cannot send mail. The alias stays in the list. | Nothing. The user decides. |
 | Blocked senders for an address | Postern refuses mail from a blocked sender to that address. Other addresses still get mail from the sender. | `LIMIT_ADDRESS_BLOCKS`: the largest number of blocked senders for one address. The default is `200`. |
 | A real phone for a number | Postern sends calls and texts on to the real phone. The server can read the number of the real phone. | `LIMIT_PHONES` and the destination limits (Part F6). |
+| Voicemail for a number | A caller can leave a message. See Part F7. | `PRICE_VOICEMAIL` and `VOICEMAIL_MAX_SECONDS`. |
 
 Facts for you as the operator:
 
 - The automatic deletion works when the app of the user is closed. It also works for a paused inbox and for a paused number.
 - The deletion is final. The database writes zeros over deleted data. You cannot bring the data back from the server.
 - A backup that you made before the deletion still contains the data. Part I7 tells you how long backups stay.
-- Postern keeps a blocked sender only in encrypted form. You cannot read the block lists of your users.
+- Postern keeps a blocked sender only in encrypted form. You cannot read the lists of blocked senders.
 - Postern does not write a refused sender to its log.
+- **Check this:** the server has all functions of this table. When the authors wrote this part, the app did not show blocked senders and voicemail.
 
 ---
 

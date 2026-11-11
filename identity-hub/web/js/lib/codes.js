@@ -60,6 +60,7 @@ const PROMO_NEAR = /%\s?off|\bdiscount|\bcoupon|\bpromo|\bvoucher|\bcheckout\b|f
 const STATE_BEFORE = /(?:^|[\s,])[A-Z]{2}\s$/;
 // A new sentence starts between the two places. A line break alone is no new sentence.
 const SENTENCE_BREAK = /[.!?]["')\]]?\s+\p{L}/u;
+const SENTENCE_END = /[.!?]["')\]]?\s/;
 // "code is", "code:", "código es" directly before the number, and "is your" directly after it.
 const STRONG_BEFORE = /(?:code|pin|otp|c[óo]digo|codice|clave|passcode)\s*(?:is|est|es|ist|lautet|è|é|:|=|-|–)?\s*:?\s*$/i;
 const STRONG_AFTER = /^\s+(?:is|est|es|ist|é|è)\s+(?:your|the|ton|votre|tu|su|ihr|dein|seu|il)\b/i;
@@ -149,7 +150,12 @@ function scan(text) {
       if (k.end > start) break;
       if (start - k.end <= BEFORE_WINDOW) before = k;
     }
-    if (before && SENTENCE_BREAK.test(text.slice(before.end, start))) before = null;
+    if (before) {
+      const between = text.slice(before.end, start);
+      // A keyword counts in its own sentence only. "Ticket 99887 closed. 482913 is your code": the ticket is a different sentence.
+      // A positive keyword also reaches a number that stands alone after the sentence ("...to finish signing in.\n\n482913").
+      if (before.positive ? SENTENCE_BREAK.test(between) : SENTENCE_END.test(between)) before = null;
+    }
     if (before && !before.positive) continue; // "order 482913"
     if (before && (!mixed || start - before.end <= MIXED_WINDOW)) score = start - before.end;
 

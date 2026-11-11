@@ -283,7 +283,10 @@
 .tag-link .icon { color: var(--accent); }
 .tag .icon { flex-shrink: 0; }
 .tag-warn { gap: 0.25rem; }
-@media (max-width: 720px) { .tag-link { height: 1.75rem; padding: 0 0.5rem; } }
+@media (max-width: 720px) {
+  .tag-link { height: 1.75rem; padding: 0 0.5rem; position: relative; }
+  .tag-link::before { content: ""; position: absolute; inset: -0.5rem -0.25rem; } /* a 44px touch area around the small mark */
+}
 
 /* ---------- radio list (choose one, with a note under each choice) ---------- */
 .radio-list { display: flex; flex-direction: column; border: 1px solid var(--line-2); border-radius: var(--r-lg); overflow: hidden; max-height: 18rem; overflow-y: auto; }
