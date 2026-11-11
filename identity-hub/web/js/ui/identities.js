@@ -106,7 +106,7 @@ export async function openNewInbox() {
   const label = field({ label: 'Label', optional: true, placeholder: 'for example: Personal', maxlength: 60, hint: 'Only you see this.' });
   const name = nameChoice();
   const made = await formDialog({
-    title: 'New inbox', description: 'An inbox is a real mailbox with its own address. You read and send mail here.',
+    title: 'New inbox', description: 'An inbox has its own address. You read and send mail here.',
     submitLabel: price ? `Make inbox for ${money(price)}` : 'Make inbox',
     build: () => h('div', { class: 'stack' },
       label.el, name.el,
@@ -195,7 +195,7 @@ export function openNewChooser() {
     title: 'New', size: 'md',
     content: (api) => h('div', { class: 'choices' },
       option('alias', 'Alias', 'An extra address that delivers to an inbox. Make one for each shop or site.', 'Free', () => { api.close(); openNewAlias(); }),
-      option('inbox', 'Inbox', 'A real mailbox with its own address. Read and send mail.', prices.mailboxMonth ? `${money(prices.mailboxMonth)} / 30 days` : 'Free', () => { api.close(); openNewInbox(); }),
+      option('inbox', 'Inbox', 'Its own address. Read and send mail here.', prices.mailboxMonth ? `${money(prices.mailboxMonth)} / 30 days` : 'Free', () => { api.close(); openNewInbox(); }),
       phoneOn ? option('phone', 'Number', 'A phone number for texts and calls. Forward it to your real phone if you like.', prices.numberMonth ? `${money(prices.numberMonth)} / 30 days` : 'Free', () => { api.close(); openGetNumber(); }) : null,
     ),
   });

@@ -45,7 +45,7 @@ function checklist(state) {
   const hasBox = state.mailboxes.length > 0;
   const steps = [
     f.pay ? { done: state.balance > 0 || hasBox || state.numbers.length > 0, title: 'Add funds', text: 'Pay with Bitcoin or Monero. An inbox and a number cost a little each month.', action: linkButton('Add funds', '/funds', { size: 'sm' }) } : null,
-    { done: hasBox, title: 'Make an inbox', text: 'A real mailbox with its own address.', action: button('Make inbox', { size: 'sm', onClick: () => openNewInbox() }) },
+    { done: hasBox, title: 'Make an inbox', text: 'Its own address. You read and send mail here.', action: button('Make inbox', { size: 'sm', onClick: () => openNewInbox() }) },
     { done: state.aliases.length > 0, title: 'Make an alias', text: 'An extra address for one shop or one site. Free.', action: button('Make alias', { size: 'sm', onClick: () => openNewAlias() }) },
     f.phone ? { done: state.numbers.length > 0, title: 'Get a number', text: 'A phone number for texts and calls.', action: button('Get a number', { size: 'sm', onClick: () => openGetNumber() }) } : null,
   ].filter(Boolean);

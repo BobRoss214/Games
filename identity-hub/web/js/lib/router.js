@@ -76,7 +76,7 @@ export function startRouter() {
     const a = e.target instanceof Element ? e.target.closest('a[data-link]') : null;
     if (!a) return;
     const href = a.getAttribute('href');
-    if (!href || !href.startsWith('/')) return;
+    if (!href || !href.startsWith('/') || href.startsWith('//')) return; // paths of this app only
     e.preventDefault();
     navigate(href);
   });

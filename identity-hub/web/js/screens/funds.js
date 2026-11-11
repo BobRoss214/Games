@@ -45,7 +45,7 @@ export function fundsScreen({ scope }) {
       status.textContent = 'Making a private payment. This takes a moment…';
       runBusy(submit, async () => {
         const made = await startPurchase({ units, method });
-        if (made.checkoutUrl) toast('Invoice made. Open the payment page to pay.', { kind: 'ok' });
+        if (made.checkoutUrl) toast('The payment is ready. Open the payment page to pay.', { kind: 'ok' });
       }).finally(() => { status.hidden = true; });
     } },
       h('div', { class: 'stack stack-2' },
@@ -187,7 +187,7 @@ export function fundsScreen({ scope }) {
         !payOn ? null : section({ title: 'Why payments are private' },
           h('div', { class: 'private-note' },
             icon('shield', { size: 20 }),
-            h('p', { class: 'read small' }, 'You pay an invoice that has no link to your account. When it is paid, your browser gets credit tokens that only it can open, and adds them to your balance. The payment system never learns which account the money went to. The account system never learns which invoice paid for it.'),
+            h('p', { class: 'read small' }, 'You pay an invoice that has no link to your account. When it is paid, your browser gets credit that only it can use, and adds it to your balance. The payment system never learns which account the money went to. The account system never learns which invoice paid for it.'),
           ),
         ),
       ),

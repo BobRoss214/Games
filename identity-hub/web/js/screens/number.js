@@ -27,6 +27,7 @@ export function numberScreen({ params, scope }) {
 
   // ---------- texts ----------
   let texts = null;         // null = loading
+  let textsMore = false;    // the server has older texts
   let textsError = '';
   let openPeer = null;      // the other party of the open conversation (memory only, never in the URL)
   const unreadIds = new Set(); // texts that were unread when this screen loaded them
@@ -37,9 +38,14 @@ export function numberScreen({ params, scope }) {
   async function loadTexts() {
     const token = ++textsToken;
     try {
+      // Keep as many texts loaded as before (older pages stay on screen after a refresh).
       const res = await listTexts(id, { limit: 200 });
       if (scope.disposed || token !== textsToken) return;
-      texts = res.texts;
+      const fresh = new Set(res.texts.map((t) => t.id));
+      const oldest = res.texts.length ? res.texts[res.texts.length - 1].at : 0;
+      const older = (texts || []).filter((t) => !fresh.has(t.id) && t.at < oldest);
+      texts = [...res.texts, ...older];
+      textsMore = older.length ? textsMore : res.more;
       textsError = '';
       // The server marks all texts of the number as seen at one time. Keep the marks for this visit.
       const unseen = texts.filter((t) => t.direction === 'in' && !t.seen);
@@ -53,6 +59,16 @@ export function numberScreen({ params, scope }) {
     paintTexts();
   }
   const isTextsVisible = () => !tabsEl || tabsEl.active === 'texts';
+
+  async function loadOlderTexts() {
+    if (!texts || !texts.length) return;
+    const res = await listTexts(id, { before: texts[texts.length - 1].at, limit: 200 });
+    if (scope.disposed) return;
+    const have = new Set(texts.map((t) => t.id));
+    texts = [...texts, ...res.texts.filter((t) => !have.has(t.id))];
+    textsMore = res.more;
+    paintTexts();
+  }
 
   function openThread(peer) {
     openPeer = peer;
@@ -164,6 +180,7 @@ export function numberScreen({ params, scope }) {
             ),
           ));
         })),
+      textsMore ? h('div', { class: 'list-more' }, button('Show older texts', { size: 'sm', onClick: (e, btn) => runBusy(btn, loadOlderTexts) })) : null,
     );
 
     let conversation;
@@ -213,6 +230,7 @@ export function numberScreen({ params, scope }) {
 
   // ---------- calls ----------
   let calls = null;
+  let callsMore = false;
   let callsError = '';
   const callsPane = h('div', { class: 'calls' });
 
@@ -221,12 +239,23 @@ export function numberScreen({ params, scope }) {
       const res = await listCalls(id);
       if (scope.disposed) return;
       calls = res.calls;
+      callsMore = res.more;
       callsError = '';
     } catch (err) {
       if (scope.disposed) return;
       callsError = err.message;
       if (calls === null) calls = [];
     }
+    paintCalls();
+  }
+
+  async function loadOlderCalls() {
+    if (!calls || !calls.length) return;
+    const res = await listCalls(id, { before: calls[calls.length - 1].at });
+    if (scope.disposed) return;
+    const have = new Set(calls.map((c) => c.id));
+    calls = [...calls, ...res.calls.filter((c) => !have.has(c.id))];
+    callsMore = res.more;
     paintCalls();
   }
 
@@ -289,7 +318,7 @@ export function numberScreen({ params, scope }) {
           { label: 'Delete', icon: 'trash', danger: true, onSelect: async () => { try { await deleteCall(c.id); await loadCalls(); } catch (err) { reportError(err); } } },
         ] }),
       );
-    }))));
+    })), callsMore ? h('div', { class: 'list-more' }, button('Show older calls', { size: 'sm', onClick: (e, btn) => runBusy(btn, loadOlderCalls) })) : null));
   }
 
   // ---------- settings ----------

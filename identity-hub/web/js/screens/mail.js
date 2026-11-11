@@ -364,7 +364,7 @@ export function mailScreen({ params, scope }) {
       replace(listHead); replace(listBody); replace(boxesPane);
       replace(viewPane, h('div', { class: 'mail-view-empty' }, emptyState({
         title: 'No inbox yet',
-        text: 'An inbox is a real mailbox with its own address. You read and send mail here.',
+        text: 'An inbox has its own address. You read and send mail here.',
         action: button('Make inbox', { kind: 'primary', iconName: 'plus', onClick: () => openNewInbox() }),
       })));
       return;

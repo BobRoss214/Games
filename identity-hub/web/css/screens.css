@@ -58,7 +58,7 @@
 .plain-list .icon { color: var(--accent); margin-top: 2px; }
 
 .progress { height: 0.375rem; border-radius: 999px; background: var(--sunken); overflow: hidden; border: 1px solid var(--line); }
-.progress-bar { height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width 300ms linear; }
+.progress-bar { height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width var(--t-med) linear; }
 
 .keycard { border: 3px double var(--line-input); border-radius: var(--r-lg); background: var(--surface); padding: var(--s-5); }
 .keycard-label { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 600; margin-bottom: var(--s-4); }
@@ -378,6 +378,7 @@ a.id-value:hover { color: var(--accent); text-decoration: underline; }
 .calls-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); margin-bottom: var(--s-4); flex-wrap: wrap; }
 .calls-head p { flex: 1 1 18rem; }
 .call-list { display: flex; flex-direction: column; }
+.list-more { display: flex; justify-content: center; padding: var(--s-3); border-top: 1px solid var(--line); }
 .call-row { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4); border-top: 1px solid var(--line); min-height: 3.5rem; }
 .call-row:first-child { border-top: 0; }
 .call-icon { color: var(--accent); }
@@ -410,6 +411,7 @@ a.id-value:hover { color: var(--accent); text-decoration: underline; }
 .pay-main { display: flex; flex-direction: column; }
 .pay-amount { font-size: var(--fs-lg); font-weight: 500; }
 .pay-state { display: inline-flex; align-items: center; gap: var(--s-2); font-weight: 500; }
+@media (min-width: 721px) { .pay-state { white-space: nowrap; } }
 .pay-state.is-done { color: var(--accent); }
 .pay-state.is-warn { color: var(--warn); }
 .pay-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; justify-content: flex-end; }

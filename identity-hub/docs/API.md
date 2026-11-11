@@ -325,42 +325,182 @@ The user can still change and delete a suspended mailbox and its aliases.
 
 ## 5. Phone module (`server/phone/`)
 
+The provider is `config.phone.provider`: `mock`, `twilio`, or `off`.
+
 | Route | Body / query | Result |
 |---|---|---|
-| `GET /api/numbers/search` **(auth)** | `?country=US&areaCode=415` | `{ numbers: [{ number, locality, region, country, sms, voice }] }` (max 20). Rate limit 30/minute. |
-| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, unread }] }` |
-| `POST /api/numbers` **(auth)** | `{ number, enc? }` | 201 `{ number: {…}, plain: "+1…" }`. Charges `prices.numberMonth` (kind `number`). If the provider purchase fails, the charge is returned (kind `refund`). |
-| `PATCH /api/numbers/:id` **(auth)** | `{ enc?, forwardPhoneId? (null clears), forwardTexts?, forwardCalls? }` | `{ number }`. `forwardPhoneId` must be a verified phone of this account. |
-| `DELETE /api/numbers/:id` **(auth)** | — | 204. Releases the number at the provider. Deletes its texts and calls. |
-| `GET /api/numbers/:id/texts` **(auth)** | `?before=<at>&limit=` (max 200, default 100) | `{ texts: [{ id, direction: "in"\|"out", at, seen, sealed }], more }` newest first |
-| `POST /api/numbers/:id/texts` **(auth)** | `{ number, to, body }` (`number` = our own number in plain form; body max 1600 chars) | 201 `{ text }`. Charges `prices.textOut` (kind `text`). Rate limit 30/minute. |
+| `GET /api/numbers/search` **(auth)** | `?country=US&areaCode=415` | `{ numbers: [{ number, locality, region, country, sms, voice }] }` (max 20). `country` must be one of `phoneCountries` (if absent: the first one). `areaCode` is optional, 1 to 6 digits. 400 `bad_request`, 502 `provider_error`. Rate limit 30/minute. |
+| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, unread }] }`, oldest first. `unread` = count of incoming texts that are not seen. |
+| `POST /api/numbers` **(auth)** | `{ number, enc? }` | 201 `{ number: {…}, plain: "+1…" }`. Charges `prices.numberMonth` (kind `number`). 409 `taken`, 409 `limit_reached`, 402, 502 `provider_error`. See "Buying a number". |
+| `PATCH /api/numbers/:id` **(auth)** | `{ enc?, forwardPhoneId? (null clears), forwardTexts?, forwardCalls? }` | `{ number }`. 404 `not_found`, 409 `conflict`, 409 `no_voice`. See "Forwarding". |
+| `DELETE /api/numbers/:id` **(auth)** | — | 204. Releases the number at the provider, then deletes it with its texts and calls. No credit is given back. 502 `provider_error` if the provider fails; then the number stays. |
+| `GET /api/numbers/:id/texts` **(auth)** | `?before=<at>&limit=` (limit 1 to 200, default 100; a larger value counts as 200) | `{ texts: [{ id, direction: "in"\|"out", at, seen, sealed, status }], more }` newest first. See "Pages" and "Status of a sent text". |
+| `POST /api/numbers/:id/texts` **(auth)** | `{ number, to, body }` (`number` = our own number in plain form; body 1 to 1600 characters) | 201 `{ text }`. Charges `prices.textOut` (kind `text`). 400 `bad_destination`, 409 `suspended`, 409 `conflict` (the number has no texts), 402, 502 `provider_error` (the charge comes back, no text is stored). Rate limit 30/minute. |
 | `POST /api/numbers/:id/texts/seen` **(auth)** | — | 204. Marks all texts of this number as seen. |
 | `DELETE /api/texts/:id` **(auth)** | — | 204 |
-| `GET /api/numbers/:id/calls` **(auth)** | `?before=&limit=` | `{ calls: [{ id, direction, at, seconds, status: "answered"\|"missed"\|"failed", sealed }], more }` |
-| `POST /api/numbers/:id/calls` **(auth)** | `{ number, to }` | 201 `{ ok: true }`. Click-to-call: the provider calls the linked real phone, then connects it to `to` with the VoIP number as caller ID. Needs a verified forward phone on this number (409 `no_phone`). |
+| `GET /api/numbers/:id/calls` **(auth)** | `?before=&limit=` (as for texts) | `{ calls: [{ id, direction: "in"\|"out", at, seconds, status: "answered"\|"missed"\|"failed", sealed }], more }` newest first. `at` is the start of the call. |
+| `POST /api/numbers/:id/calls` **(auth)** | `{ number, to }` | 201 `{ ok: true }`. Click-to-call: the provider calls the linked real phone, then connects it to `to` with the VoIP number as caller ID. 409 `no_phone` (no verified forward phone on this number), 409 `no_voice`, 409 `suspended`, 400 `bad_destination`, 402 (balance below `prices.callMinute`), 502 `provider_error`. Rate limit 10/minute. |
 | `DELETE /api/calls/:id` **(auth)** | — | 204 |
-| `GET /api/phones` **(auth)** | — | `{ phones: [{ id, sealedNumber, enc, verified, createdDay }] }` |
-| `POST /api/phones` **(auth)** | `{ number, enc?, via: { numberId, number } }` | 201 `{ phone }`. Sends a 6-digit code by text from the VoIP number `via` (charges `textOut`). 409 `no_number` if the account has no active VoIP number. Rate limit 5/hour. |
-| `POST /api/phones/:id/verify` **(auth)** | `{ code }` | `{ phone }`. 400 `bad_code`. Max 5 tries, code valid 10 minutes. |
-| `DELETE /api/phones/:id` **(auth)** | — | 204. Clears forwarding that used it. |
+| `GET /api/phones` **(auth)** | — | `{ phones: [{ id, sealedNumber, enc, verified, createdDay }] }`, oldest first |
+| `POST /api/phones` **(auth)** | `{ number, enc?, method?: "text"\|"call", via: { numberId, number } }` | 201 `{ phone }`. Sends a 6-digit code to the real phone from the VoIP number `via`, by text (default) or by a call that speaks the code. See "Linking a real phone". Rate limit 5/hour. |
+| `POST /api/phones/:id/verify` **(auth)** | `{ code }` | `{ phone }`. 400 `bad_code`. Max 5 tries, code valid 10 minutes. Rate limit 20 in 10 minutes. |
+| `DELETE /api/phones/:id` **(auth)** | — | 204. Each number that forwarded to it gets `forwardPhoneId: null`, `forwardTexts: false`, `forwardCalls: false`. |
 
-Real phone numbers: the server must read them to forward calls and texts. Store `keys.srvEncrypt(number, 'phone')`,
+Rules for all routes:
+- Where a body has our own number in plain form (`number`, `via.number`), the server checks it against the stored HMAC of the number with that ID. If it does not match: 400 `bad_request` ("The number does not match.").
+- Unknown and foreign IDs give 404 `not_found`.
+- A suspended number can be read, changed and deleted. It receives nothing, and it cannot send or call (409 `suspended`).
+- The module publishes these events: `number`, `text`, `call` (with `numberId` when one number changed), `phones`, `balance`. `POST …/texts/seen` publishes `text` only if a text changed.
+
+Error codes of this module:
+
+| Code | Status | When |
+|---|---|---|
+| `taken` | 409 | The number cannot be bought ("This number is not available. Choose a different one."). |
+| `limit_reached` | 409 | The account has `limits.numbers` numbers or `limits.phones` phones. |
+| `suspended` | 409 | A text or a call from a suspended number. |
+| `no_phone` | 409 | Click-to-call from a number with no verified forward phone. |
+| `no_number` | 409 | A phone link, and the account has no active VoIP number, or `via` is suspended. |
+| `no_voice` | 409 | A call function, and the number or the provider has no voice ("This number cannot make or get calls through Postern."). |
+| `conflict` | 409 | The forward phone is not verified. The phone is linked already. The number has no texts. |
+| `bad_destination` | 400 | The destination is not permitted ("You cannot text or call this number from here."). |
+| `bad_code` | 400 | The code is wrong, too old, or used up. |
+| `provider_error` | 502 | The provider refused the request or did not answer. The message is plain text and has no number in it. |
+| `phone_off` | 503 | The provider is `off`. |
+| `bad_signature` | 403 | A webhook with a wrong or missing signature. |
+
+### Buying a number
+
+- An account can buy only a number that one of its own searches returned in the last 30 minutes. All other numbers give 409 `taken`. This stops a purchase of any number that the provider sells (a different country, a costly number type).
+- The search results are in memory. After a restart of the server, the user must search again.
+- A number that an account on this server has is not in the search results.
+- `country`, `sms` and `voice` of the new number come from the search result. With a provider that has no voice, `voice` is false.
+- Order: limit (409 `limit_reached`), search result (409 `taken`), charge (402), purchase at the provider. If the purchase fails, the charge comes back (kind `refund`): 409 `taken` if the provider says that the number is gone, 502 `provider_error` for other failures.
+- The server handles the purchases of one account one after the other. Two requests at the same time cannot both pass the limit.
+
+### Pages
+
+- `before` is the `at` value of the last row of the page before.
+- Rows of the same second are never split over two pages. For that reason a page can be longer than `limit`.
+- `more` is true if older rows exist.
+
+### Status of a sent text
+
+- `status` of an outgoing text: `"queued"` (the provider accepted the text and will try later), `"sent"`, `"delivered"`, or `"failed"`. `status` of an incoming text: null.
+- The status moves forward only: `queued` → `sent` → `delivered` or `failed`. `delivered` and `failed` are final. A report that comes two times or in the wrong order changes nothing.
+- `failed` means: the provider accepted the text and reported later that it was not delivered. The charge comes back (kind `refund`), one time. The text stays in the list.
+- If the provider refuses a text at once, the answer is 502 `provider_error`, no text is stored, and the charge comes back.
+- Each change of status publishes `text`. A refund publishes `balance`.
+- The code text of a phone link and a forwarded text have no row. If the provider reports that one of them failed, the charge comes back too.
+- The server waits 7 days for the final status of a text. After that, a report changes nothing.
+- The mock provider gives `sent` at once. Twilio gives `queued` and reports the result later.
+
+### Destination limits
+
+- `config.phone.allowedPrefixes` and `config.phone.blockedPrefixes` (`PHONE_ALLOWED_PREFIXES`, `PHONE_BLOCKED_PREFIXES`) limit the numbers that a user can choose.
+- The server checks `to` in `POST …/texts` and `POST …/calls`, and `number` in `POST /api/phones`.
+- The number must start with one of the allowed prefixes and with none of the blocked prefixes. If not: 400 `bad_destination`. An empty allowed list permits all numbers. `+1` and `1` mean the same prefix.
+- Default: allowed `+1`; blocked `+1900`, `+1976`, and the Caribbean area codes inside `+1`.
+- Forwarded texts and calls go to a linked phone. That phone passed the check when it was linked.
+- Incoming texts and calls are not checked.
+
+### Linking a real phone
+
+The server must read a real phone number to forward calls and texts. It stores `keys.srvEncrypt(number, 'phone')`,
 plus `sealedNumber` for display. The provider reference of a VoIP number is stored with `keys.srvEncrypt(ref, 'ref')`.
 
-Provider webhooks (no cookie; the provider signature is mandatory; reply 403 if it is wrong):
-- `POST /api/hooks/phone/text` — incoming text. Seal `{ peer, body }`, store, publish `text`. If `forwardTexts` and the phone is verified and the balance allows `textOut`: send `"<peer>: <body>"` to the real phone from the VoIP number and charge.
-- `POST /api/hooks/phone/voice` — incoming call. If `forwardCalls`, verified phone, and balance ≥ `callMinute`: answer with a dial instruction to the real phone (timeout 25 s). If not: say "The person you called is not available." and hang up; record a missed call.
-- `POST /api/hooks/phone/bridge` — click-to-call, runs when the real phone answers: dial the destination with the VoIP number as caller ID.
-- `POST /api/hooks/phone/status` — call ended. Record the call (`seconds`, `status`), charge `ceil(seconds / 60) × callMinute` (never more than the balance), publish `call`.
+`POST /api/phones`:
+- 409 `no_number` if the account has no active VoIP number, or if `via` is suspended.
+- `via` must be a number of the account (404 `not_found`), and `via.number` must match it (400 `bad_request`).
+- `number` must not be a VoIP number of the same account (400 `bad_request`). The destination limits apply (400 `bad_destination`).
+- `method: "text"` (default): the text is "Your Postern code is 123456. Do not share it." (the name is `config.appName`). `via` must have texts (409 `conflict`). Charges `prices.textOut` (kind `text`). If the provider refuses the text (502 `provider_error`) or reports later that it failed, the charge comes back.
+- `method: "call"`: the provider calls the real phone from `via`. When the phone answers, a voice says "Your Postern code is 4, 8, 2, 9, 1, 3." two times, and the call ends. `via` must have voice (409 `no_voice`). Charges `prices.callMinute` one time (kind `call`); 402 if the balance is lower. The charge comes back only if the provider cannot start the call (502 `provider_error`). The call is not in the call log.
+- Other values of `method`: 400 `bad_request`.
+- A phone that is linked and verified: 409 `conflict`.
+- A phone that is linked and not verified: the same request sends a new code. The answer is 201 with the same `id`. The charge is taken again. The old code stops working. This is how the app sends a code again.
+- More than `limits.phones` phones: 409 `limit_reached`.
 
-Provider adapters in `server/phone/providers/`: `mock.js` (in memory; used by tests and development) and `twilio.js` (REST with `fetch`, form-encoded webhooks, `X-Twilio-Signature` check, TwiML answers). Service object: `app.services.phone = { provider, … }`.
+`POST /api/phones/:id/verify`:
+- The server stores only SHA-256 of `"<phone id>:<code>"`. The code is valid for 10 minutes.
+- After 5 wrong codes the code is used up. A new code (see above) starts again at 0.
+- Wrong, too old, and used up all give 400 `bad_code`. The message says which.
+- A value that is not 6 digits gives 400 `bad_code` and does not count as a try.
+- A phone that is verified already: the answer is the phone.
+
+### Forwarding
+
+`PATCH /api/numbers/:id`:
+- `forwardPhoneId` must be a verified phone of this account: 404 `not_found` if it is unknown, 409 `conflict` if it is not verified.
+- `forwardPhoneId: null` also sets `forwardTexts` and `forwardCalls` to false.
+- `forwardCalls: true` gives 409 `no_voice` if the number or the provider has no voice.
+- The two switches can be set while there is no phone. Then nothing is forwarded.
+
+Forwarded texts:
+- An incoming text is stored first. Then, if `forwardTexts` is on, the phone is verified, and the balance allows `prices.textOut`, the server sends `"<peer>: <body>"` (max 1600 characters) to the real phone from the VoIP number and charges `prices.textOut` (kind `text`).
+- A text from the linked phone itself is not forwarded.
+- One number forwards 30 texts each minute at most. This stops a loop of two numbers that forward to each other.
+- If the provider refuses the forwarded text, the charge comes back.
+
+### Provider webhooks
+
+No cookie. The provider signature is mandatory: 403 `bad_signature` if it is wrong or absent.
+The server calculates the signature with `config.publicUrl` + path + query string, never with the Host header.
+A webhook for a number that is unknown or suspended gets the same answer as a webhook for a good number, and nothing is stored.
+
+- `POST /api/hooks/phone/text` — incoming text. Seal `{ peer, body }`, store, publish `text`, then forward (see "Forwarding"). `peer` is the sender as the provider gives it (max 32 characters; `"unknown"` if empty). The body is cut at 1600 characters. A text with a message ID that was stored before is ignored.
+- `POST /api/hooks/phone/text-status` — the provider reports the status of a text that the server sent (see "Status of a sent text").
+- `POST /api/hooks/phone/voice` — incoming call.
+  - The call is forwarded if `forwardCalls` is on, the number has voice, the phone is verified, the caller is not the linked phone itself, and the balance is not below `prices.callMinute`.
+  - Forwarded: the answer is a dial instruction to the real phone: ring time 25 seconds, caller ID = the number of the caller (none if the caller hides the number), and a time limit.
+  - Not forwarded: the caller hears "The person you called is not available.", the call ends, and a missed call is recorded.
+  - A call ID that is in the call log already is ignored.
+- `POST /api/hooks/phone/bridge?t=<token>` — click-to-call, runs when the real phone answers: dial the destination with the VoIP number as caller ID (ring time 25 seconds, with a time limit). The token is valid for 5 minutes. If the token is unknown, the number is suspended, or the balance is below `prices.callMinute`, the call ends and is recorded as `failed` with no charge.
+- `POST /api/hooks/phone/say-code?token=<token>` — phone link by call, runs when the real phone answers: speak the code two times, then end the call. The token is valid for 5 minutes. An unknown token ends the call.
+- `POST /api/hooks/phone/status` — a call ended. Record the call (`seconds`, `status`), charge `ceil(seconds / 60) × prices.callMinute` (kind `call`, never more than the balance), publish `call`.
+  - Only the first final report for a call counts. A second report for the same call changes nothing and charges nothing.
+  - `seconds` is the time that the two parties were connected. A call that was not answered has 0 seconds and no charge.
+
+The time limit of a dial instruction is the count of full minutes that the balance pays for (at least 1 minute, at most 4 hours). The provider ends the call at the limit. If `prices.callMinute` is 0, the limit is 4 hours.
+
+The call webhooks (`voice`, `bridge`, `say-code`, `status`) exist only if the provider has voice.
+
+### Provider adapters
+
+Adapters are in `server/phone/providers/`. The comment at the top of `mock.js` is the interface.
+
+- `capabilities = { voice, asyncText, searchByArea }` (all boolean):
+  - `voice`: the provider can make and receive calls. If false: the search and the number list show `voice: false`, new numbers are stored with no voice, and each call function gives 409 `no_voice` (`forwardCalls: true`, click-to-call, phone link by call).
+  - `asyncText`: the result of a text can come after the send request.
+  - `searchByArea`: the search can filter by area code. If false, `areaCode` is ignored.
+  - `mock`: `{ voice: true, asyncText: false, searchByArea: true }`. `twilio`: `{ voice: true, asyncText: true, searchByArea: true }`. With provider `off`: all false.
+- `sendText({ from, to, body, statusUrl })` returns `{ ref, status }` with status `queued` or `sent`. A later result arrives at the `text-status` webhook, or the adapter calls `app.services.phone.reportTextStatus`.
+- `mock.js`: in memory; used by tests and development. Webhook bodies are JSON. The header `x-mock-signature` must be `keys.sign('mock-hook', rawBody)`.
+- `twilio.js`: REST with `fetch`, form-encoded webhooks, `X-Twilio-Signature` check, TwiML answers.
+  - Each text carries `StatusCallback` = the `text-status` webhook. `MessageStatus` `queued` → `queued`; `sending`, `sent` → `sent`; `delivered` → `delivered`; `undelivered`, `failed` → `failed`. Also: `accepted` and `scheduled` count as `queued`, `read` as `delivered`, `canceled` as `failed`. Other values are ignored.
+  - A call status `completed` is `answered`; `busy`, `no-answer`, `canceled` are `missed`; `failed` is `failed`. The result of a `<Dial>` (`DialCallStatus`, `DialCallDuration`) comes before the result of the whole call, so it is the one that counts.
+  - Optional settings: `messagingServiceSid` (each new number is added to this Messaging Service, and texts name it), `bundleSid` and `addressSid` (sent with each purchase).
+
+Service object: `app.services.phone = { provider, name, capabilities, reportTextStatus({ ref, status, errorText? }) → bool }`.
+- `reportTextStatus` is the function behind the `text-status` webhook. `ref` is the message ID that `sendText` returned. It returns true if the report changed something. `errorText` is for the server log only.
+- With the mock provider the object also has `mock` (the adapter), `outbox`, `simulateText({ to, from, body })`, `simulateCall({ to, from, seconds?, answered? })`, `answerCall(ref, { answered?, peerAnswered?, seconds? })` and `reportText(ref, status, errorText?)`.
+- With provider `off`, `provider` is null.
+
+Provider `off`:
+- `GET /api/numbers`, `GET /api/phones`, the text and call lists, `PATCH`, `POST …/texts/seen`, the delete routes for texts, calls and phones, and `POST …/verify` work.
+- Search, purchase, `DELETE /api/numbers/:id`, send, call, and phone link give 503 `phone_off`.
+- There are no webhooks, and numbers are not renewed or charged.
 
 Dev routes (register only if `config.dev` and the provider is `mock`):
 - `POST /api/dev/inbound-text` **(auth)** `{ numberId, number, from, body }` → 204
-- `POST /api/dev/inbound-call` **(auth)** `{ numberId, number, from, seconds? }` → 204 (simulates a full call: forwarded and answered if forwarding is on, otherwise missed)
-- `GET /api/dev/phone-outbox` **(auth)** → `{ texts: [{ from, to, body, at }], calls: [{ from, to, at }] }` (what the mock provider "sent")
+- `POST /api/dev/inbound-call` **(auth)** `{ numberId, number, from, seconds? }` → 204 (simulates a full call: forwarded and answered if forwarding is on, otherwise missed; `seconds` is 30 if absent)
+- `GET /api/dev/phone-outbox` **(auth)** → `{ texts: [{ from, to, body, at }], calls: [{ from, to, at, say? }] }` (what the mock provider "sent"). Own entries only: the sender is a number of the account, or the destination is a linked phone of the account. `say` is the text that a phone-link call spoke. It is there after the simulated phone answered.
 
-Renewal: register a renewable of kind `number`. `expire` releases the number at the provider and deletes it.
+More behaviour of the mock provider:
+- A text to a number of an account on the same server arrives there as an incoming text.
+- In development, a call that the mock provider starts (click-to-call, phone link by call) is answered after 800 ms. `config.phone.mockAutoAnswer`: `false` = never, a number = milliseconds.
+
+Renewal: the module registers a renewable of kind `number`. A number that is due is charged `prices.numberMonth` for 30 more days. If the balance is too low, the number is suspended. After `config.graceDays`, `expire` releases the number at the provider and deletes it; if the provider fails, the number stays and the next run tries again.
+When an account is deleted, its numbers are released at the provider first. A release that fails is tried again each hour.
 
 ## 6. Payments (`server/pay/`)
 
@@ -369,25 +509,85 @@ The payment database (`app.paydb`) must not contain account IDs. The account dat
 
 Credit tokens: one token = `config.pay.unitCredits` (100) credits = 1.00 USD. See `shared/blind.js` and `server/core/blindsign.js`.
 
+The provider is `config.pay.provider`: `mock`, `btcpay`, or `off`.
+
 | Route | Body | Result |
 |---|---|---|
-| `GET /api/pay/info` | — | `{ enabled, provider: "mock"\|"btcpay"\|"off", unitCredits, minUnits, maxUnits, methods: [{ id, label }], key: { id, n, e } }` |
-| `POST /api/pay/invoices` | `{ units, method, keyId, blinded: [b64u × units] }` | 201 `{ invoice: { id, status: "pending", units, amountUsd, method, checkoutUrl, expiresAt } }`. Rate limit 10/hour per IP. |
-| `GET /api/pay/invoices/:id` | — | `{ invoice: { id, status: "pending"\|"paid"\|"expired", units, amountUsd, method, checkoutUrl, expiresAt, keyId, signed: [b64u × units] \| null } }` |
-| `POST /api/hooks/btcpay` | BTCPay webhook, raw body, header `BTCPay-Sig` | 200. The server then asks BTCPay for the invoice state. It does not trust the webhook body. |
-| `POST /api/billing/redeem` **(auth)** | `{ keyId, tokens: [{ token, sig }] }` (max 200) | `{ credited, balance }`. Each token is accepted one time (409 `token_spent` if all tokens were used before; partially new sets credit only the new ones). Then `app.renewables.run(accountId)` and publish `balance`. |
-| `GET /api/billing` **(auth)** | — | `{ balance, prices, ledger: [{ delta, kind, day }] }` (ledger kinds: `topup`, `mailbox`, `number`, `text`, `call`, `refund`) |
+| `GET /api/pay/info` | — | `{ enabled, provider: "mock"\|"btcpay"\|"off", unitCredits, minUnits, maxUnits, methods: [{ id, label }], key: { id, n, e } }`. With provider `off`: `enabled: false`, `methods: []`. |
+| `POST /api/pay/invoices` | `{ units, method, keyId, blinded: [b64u × units] }` | 201 `{ invoice: { id, status: "pending", units, amountUsd, method, checkoutUrl, expiresAt } }`. 400 `bad_request`, 400 `bad_key`, 503 `pay_off`, 502 `provider_error`. Rate limit 10/hour per IP. |
+| `GET /api/pay/invoices/:id` | — | `{ invoice: { id, status: "pending"\|"paid"\|"expired", units, amountUsd, method, checkoutUrl, expiresAt, keyId, signed: [b64u × units] \| null } }`. 404 `not_found`. |
+| `POST /api/hooks/btcpay` | BTCPay webhook, raw body, header `BTCPay-Sig` | 200 `{}`. 403 `bad_signature`. The server then asks BTCPay for the invoice state. It does not trust the webhook body. The route exists only with provider `btcpay`. |
+| `POST /api/billing/redeem` **(auth)** | `{ keyId, tokens: [{ token, sig }] }` (1 to 200) | `{ credited, balance }`. 400 `bad_token`, 400 `bad_request`, 409 `token_spent`. Rate limit 30/minute. See "Redeem". |
+| `GET /api/billing` **(auth)** | — | `{ balance, prices, ledger: [{ delta, kind, day }] }`, newest first, 100 lines at most (ledger kinds: `topup`, `mailbox`, `number`, `text`, `call`, `refund`) |
 
-- `methods` ids: `BTC-LN` ("Bitcoin Lightning"), `XMR-CHAIN` ("Monero"), `BTC-CHAIN` ("Bitcoin on-chain"). The mock provider offers all three.
+- `methods` ids: `BTC-LN` ("Bitcoin Lightning"), `XMR-CHAIN` ("Monero"), `BTC-CHAIN` ("Bitcoin on-chain"). The mock provider offers all three. BTCPay offers the ids in `config.pay.btcpay.methods`; an id with no known label uses the id as its label.
 - `invoice.id` is 22 random characters. It is the only way to read the invoice. Signed values are useless without the secret blinding values in the browser.
-- The server signs the blinded values only when the provider says that the invoice is settled.
-- Paid invoices are deleted after 30 days. Expired invoices are deleted after 1 day. The spent-token table keeps only `SHA-256(token)`.
-- The server checks pending invoices at the provider every minute, and also when the browser reads a pending invoice (not more than one check each 10 seconds per invoice).
+- `amountUsd` is a number and equal to `units`.
+- `checkoutUrl` is the payment page of the provider, or null (mock provider; or the provider gave a link that is not a web address).
+- `expiresAt` is `config.pay.invoiceMinutes` (60) after the request.
+- `signed` is null until the invoice is paid.
+
+### Invoice requests
+
+`POST /api/pay/invoices` gives 400 `bad_request` if:
+- `units` is not an integer from `minUnits` to `maxUnits`,
+- `method` is not one of the offered methods,
+- the count of `blinded` values is not `units`,
+- a blinded value is not exactly as long as the key modulus (256 bytes), or is not below the modulus.
+
+`keyId` must be the key that `GET /api/pay/info` shows now. If not: 400 `bad_key`. The app must load the info again.
+With provider `off`: 503 `pay_off`. If the provider cannot make the invoice: 502 `provider_error`.
+
+### When the server signs
+
+The server signs the blinded values of an invoice only if both of these are true:
+1. The provider itself says that the invoice is settled (BTCPay: status `Settled`). A webhook body or a caller is not sufficient.
+2. The amount and the currency that the provider reports for the invoice are what the server asked for: `units` × 1.00 USD.
+
+If the provider says "settled" for a different amount or currency, nothing is signed and the invoice does not change. The server writes one warning with the invoice ID to its log.
+
+The server asks the provider:
+- every minute for each pending invoice,
+- when the browser reads a pending invoice (not more than one time each 10 seconds for each invoice),
+- when a BTCPay webhook arrives (any event type; the invoice is found by `invoiceId`).
+
+If the provider does not answer, the invoice stays as it is and can still be read.
+
+### Expiry and deletion
+
+- A pending invoice becomes `expired` when the provider says so (BTCPay: `Expired`, `Invalid`, or the invoice is gone), or when the provider says "not paid" and `expiresAt` was more than 120 seconds ago.
+- While the provider sees a payment that is not final (BTCPay: `Processing`), the invoice stays `pending`, also after `expiresAt`.
+- An expired invoice is still signed if a BTCPay webhook arrives for it and BTCPay then says that it is settled.
+- Paid invoices are deleted 30 days after the payment. Expired invoices are deleted 1 day after `expiresAt`. An invoice that is pending 30 days after `expiresAt` is deleted too.
+- The tokens of a deleted invoice can still be redeemed.
+
+### Redeem
+
+`POST /api/billing/redeem` (tokens are bearer values: any account can redeem them):
+- `token` is 32 bytes, `sig` is 256 bytes. `keyId` is the key that signed them. Tokens of an older key stay valid.
+- 400 `bad_request` if `keyId` is absent, or `tokens` is absent, empty, or longer than 200.
+- 400 `bad_token` if the key is unknown, a value has the wrong size, or a signature is not valid. Then nothing is spent, also not the good tokens of the same request.
+- The same token two times in one request counts one time.
+- A token that was spent before is skipped. If all tokens were spent before: 409 `token_spent`.
+- Order: (1) check all signatures; (2) mark the new tokens as spent, in one transaction of the payment database; (3) add `count × unitCredits` to the balance (kind `topup`). If step 3 fails, the tokens are free again.
+- Then `app.renewables.run(accountId)` and publish `balance`. `balance` in the answer is the balance after the renewals.
+- The spent-token table keeps only `SHA-256(token)`. It has no time and no account.
+- Redeem and `GET /api/billing` also work with provider `off`.
+
+### Keys, providers, service
+
+- The first start makes one RSA-2048 key. The database keeps the private key encrypted with the server data key (`keys.srvEncrypt`).
+- `rotateKey()` makes a new key for new invoices. Older keys stay valid for redeem.
+- Provider adapters are in `server/pay/providers/`: `mock.js` (an invoice is pending until `markPaid`) and `btcpay.js` (Greenfield API with `fetch`). The comment at the top of `mock.js` is the interface. `getStatus(ref)` returns `{ state, amount, currency }`.
+- BTCPay: the invoice request is `{ amount: "10.00", currency: "USD", metadata: { orderId: <invoice id> }, checkout: { paymentMethods: [method], expirationMinutes, redirectURL: <publicUrl>/funds } }` with the header `Authorization: token <apiKey>`. The webhook signature is `BTCPay-Sig: sha256=<hex HMAC-SHA256(webhookSecret, raw body)>`.
 
 Dev route (register only if `config.dev` and the provider is `mock`):
-- `POST /api/dev/pay-invoice` `{ id }` → 204. Marks the mock invoice as paid.
+- `POST /api/dev/pay-invoice` `{ id }` → 204. Marks the mock invoice as paid and signs it. 404 `not_found` if the invoice does not exist.
 
-Service object: `app.services.pay = { signer, markPaid(invoiceId), … }`.
+Service object: `app.services.pay = { signer, provider, settle(invoiceId), refresh(invoiceId), checkPending(), purge(), rotateKey(), markPaid(invoiceId) → bool }`.
+- `signer` is the active key. `provider` is null with provider `off`.
+- `settle` is the only function that signs. It is safe to call it many times.
+- `markPaid` works with the mock provider only. It returns false if there is no such invoice.
 
 ## 7. Browser flow summary
 
