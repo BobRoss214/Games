@@ -2,7 +2,7 @@
 // Mail from that sender to that address is refused; everything else keeps working.
 // The blocked value is not stored in plain form: a keyed hash for matching, and a copy
 // that only the browser of the account can open.
-import { fail, reply, need, b64u } from '../core/http.js';
+import { fail, reply, b64u } from '../core/http.js';
 import { today } from '../core/db.js';
 import { randomId } from '../core/keys.js';
 import { blockValue } from './address.js';

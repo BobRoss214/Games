@@ -67,7 +67,7 @@ function setAccount(account) {
 }
 
 function resetData() {
-  store.set({ mailboxes: null, aliases: null, numbers: null, phones: null, purchases: [], prefs: {} });
+  store.set({ mailboxes: null, aliases: null, numbers: null, phones: null, identities: null, purchases: [], prefs: {} });
 }
 
 // Called once at start. Decides: signed out, locked, or signed in.

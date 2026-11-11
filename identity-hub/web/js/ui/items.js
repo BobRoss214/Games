@@ -1,4 +1,5 @@
-// Dialogs for inboxes, aliases and numbers. Home, Mail, Aliases and Numbers all use them.
+// Dialogs for the items of an account: inboxes, aliases and numbers.
+// (An "identity" is something else: a named group of aliases and numbers. See ui/identity.js.)
 import { h, replace } from '../lib/dom.js';
 import { store } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
@@ -12,6 +13,7 @@ import {
   mailboxName, findMailbox, renewDays,
 } from '../lib/data.js';
 import { searchNumbers } from '../lib/phone.js';
+import { openNewIdentity } from './identity.js';
 
 const config = () => store.get('config') || { mailDomains: [], prices: {}, features: {}, phoneCountries: [] };
 const LOCAL_PART = /^[a-z0-9](?:[a-z0-9._-]{1,62}[a-z0-9])$/;
@@ -67,7 +69,8 @@ function nameChoice() {
 }
 
 // ---- new alias ----
-export async function openNewAlias({ mailboxId = '' } = {}) {
+// identityId: the new alias goes straight into this identity (optional).
+export async function openNewAlias({ mailboxId = '', identityId = '' } = {}) {
   const boxes = (store.get('mailboxes') || []).filter((m) => m.status === 'active');
   if (boxes.length === 0) {
     const all = store.get('mailboxes') || [];
@@ -93,7 +96,7 @@ export async function openNewAlias({ mailboxId = '' } = {}) {
     onSubmit: async () => {
       const n = name.read();
       if (!n) return false;
-      return createAlias({ mailboxId: target.value, label: label.value.trim(), ...n });
+      return createAlias({ mailboxId: target.value, label: label.value.trim(), identityId, ...n });
     },
     onError: (err) => { if (err.code === 'taken') { name.local.setError(err.message); return true; } return false; },
   });
@@ -123,7 +126,8 @@ export async function openNewInbox() {
 }
 
 // ---- get a number ----
-export function openGetNumber() {
+// identityId: the new number goes straight into this identity (optional).
+export function openGetNumber({ identityId = '' } = {}) {
   const c = config();
   if (!c.features.phone) { toast('Phone numbers are turned off on this server.'); return; }
   const price = c.prices.numberMonth || 0;
@@ -142,13 +146,13 @@ export function openGetNumber() {
         label.el,
         price ? h('p', { class: 'price-note' }, icon('funds', { size: 16 }), h('span', null, `You pay ${money(price)} now, then ${money(price)} every ${renewDays()} days while you keep the number.`)) : null,
       ),
-      onSubmit: async () => buyNumber({ number: n.number, label: label.value.trim() }),
+      onSubmit: async () => buyNumber({ number: n.number, label: label.value.trim(), identityId }),
       onError: (err, inner) => { if (err.status === 402) { inner.close(); api.close(); needFunds(err); return true; } return false; },
     });
     if (!res || !res.number) return;
     api.close();
     toast('Number added', { kind: 'ok' });
-    if (res.number.id) navigate(`/numbers/${res.number.id}`);
+    if (res.number.id && !identityId) navigate(`/numbers/${res.number.id}`);
   }
 
   openDialog({
@@ -197,6 +201,7 @@ export function openNewChooser() {
       option('alias', 'Alias', 'An extra address that delivers to an inbox. Make one for each shop or site.', 'Free', () => { api.close(); openNewAlias(); }),
       option('inbox', 'Inbox', 'Its own address. Read and send mail here.', prices.mailboxMonth ? `${money(prices.mailboxMonth)} / ${renewDays()} days` : 'Free', () => { api.close(); openNewInbox(); }),
       phoneOn ? option('phone', 'Number', 'A phone number for texts and calls. Forward it to your real phone if you like.', prices.numberMonth ? `${money(prices.numberMonth)} / ${renewDays()} days` : 'Free', () => { api.close(); openGetNumber(); }) : null,
+      option('folder', 'Identity', 'A named group, for example "Facebook". Put the aliases and numbers you use in one place in it.', 'Free', () => { api.close(); openNewIdentity(); }),
     ),
   });
 }

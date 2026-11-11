@@ -67,13 +67,17 @@ const MAX_PARENT_DOMAINS = 8;
 // The texts that can block a sender: its address, its domain, and the parent domains
 // ("mail.shop.example" is also blocked by a block of "shop.example"). Each text has its kind in front.
 // The sender comes from a stranger, so it is not checked against the strict pattern. It is only compared.
+// Spellings that mean the same domain give the same texts: upper case, a dot at the end, the
+// international form. A very long local part does not hide the domain.
 export function senderBlockTexts(sender) {
   const address = String(sender || '').toLowerCase();
   const at = address.lastIndexOf('@');
-  if (at < 1 || address.length > 320) return [];
-  const domain = toAscii(address.slice(at + 1)) || address.slice(at + 1);
+  const rawDomain = address.slice(at + 1).replace(/\.+$/, '');
+  if (at < 1 || rawDomain.length < 1 || rawDomain.length > 253) return [];
+  const domain = toAscii(rawDomain) || rawDomain;
   const labels = domain.split('.');
-  const texts = [`address:${address.slice(0, at)}@${domain}`, `domain:${domain}`];
+  const texts = [`domain:${domain}`];
+  if (at <= 64) texts.push(`address:${address.slice(0, at)}@${domain}`);
   // Parent domains with two labels or more, the shortest first. A very long name is not followed to the end.
   for (let i = labels.length - 2; i >= 1 && texts.length < 2 + MAX_PARENT_DOMAINS; i--) texts.push(`domain:${labels.slice(i).join('.')}`);
   return texts;

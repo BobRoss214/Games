@@ -8,9 +8,12 @@ import { button, iconButton, emptyState, skeletonRows, pageHeader, field, select
 import { menuButton } from '../ui/menu.js';
 import { formDialog, confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
-import { findNumber, findPhone, updateNumber, loadNumbers, phoneName, renewDays, graceDays } from '../lib/data.js';
-import { listTexts, sendText, markTextsSeen, deleteText, listCalls, startCall, deleteCall, threadsOf } from '../lib/phone.js';
-import { confirmDeleteItem } from '../ui/identities.js';
+import { findNumber, findPhone, updateNumber, loadNumbers, phoneName, renewDays, graceDays, setItemPersona } from '../lib/data.js';
+import { listTexts, sendText, markTextsSeen, deleteText, listCalls, startCall, deleteCall, threadsOf, takeNumberOpen } from '../lib/phone.js';
+import { personaCard } from '../ui/persona.js';
+import { openPutInIdentity, takeOutOfIdentity } from '../ui/identity.js';
+import { findIdentity } from '../lib/identities.js';
+import { confirmDeleteItem } from '../ui/items.js';
 import { openLinkPhone } from './numbers.js';
 import { openTestTools } from './testtools.js';
 
@@ -357,6 +360,8 @@ export function numberScreen({ params, scope }) {
       } catch (err) { reportError(err); paintSettings(); }
     });
     const hasTarget = !!current;
+    const groupNow = number.identityId ? findIdentity(number.identityId) : null;
+    const rowItem = () => ({ kind: 'number', id, display: phoneText(number.number), identityId: groupNow ? groupNow.id : '' });
 
     // Automatic deletion of old texts.
     const KEEP = [1, 7, 30, 90, 365];
@@ -400,6 +405,17 @@ export function numberScreen({ params, scope }) {
           ),
       ),
       h('section', { class: 'stack stack-3' },
+        h('h2', { class: 'section-title' }, 'Identity'),
+        h('div', { class: 'sheet sheet-pad settings-identity' },
+          h('p', { class: 'grow' }, groupNow ? ['This number is in the identity ', h('a', { href: `/identities/${groupNow.id}`, 'data-link': true }, groupNow.name), '.'] : 'This number is in no identity. An identity is a named group of aliases and numbers.'),
+          h('div', { class: 'row row-wrap row-2' },
+            button(groupNow ? 'Move to another identity' : 'Put in identity', { size: 'sm', onClick: () => openPutInIdentity(rowItem()) }),
+            groupNow ? button('Take out', { size: 'sm', onClick: () => takeOutOfIdentity(rowItem()) }) : null,
+          ),
+        ),
+      ),
+      h('section', { class: 'sheet sheet-pad' }, personaCard({ persona: number.persona, headingLevel: 'h2', onSave: (next) => setItemPersona('number', id, next) })),
+      h('section', { class: 'stack stack-3' },
         h('div', null,
           h('h2', { class: 'section-title' }, 'Old texts'),
           h('p', { class: 'section-lede' }, 'The server can delete old texts of this number by itself. It checks each hour, also when this app is closed. Deleted texts cannot come back. Calls are not deleted.'),
@@ -432,6 +448,7 @@ export function numberScreen({ params, scope }) {
     if (!number || !headRegion) return;
     const phone = number.forwardPhoneId ? findPhone(number.forwardPhoneId) : null;
     const forwards = phone && phone.verified && (number.forwardTexts || number.forwardCalls);
+    const group = number.identityId ? findIdentity(number.identityId) : null;
     replace(headRegion,
       h('a', { class: 'back-link', href: '/numbers', 'data-link': true }, icon('chevronLeft', { size: 16 }), 'Numbers'),
       h('div', { class: 'page-head-row' },
@@ -444,6 +461,7 @@ export function numberScreen({ params, scope }) {
             number.label ? h('span', null, number.label) : h('span', { class: 'faint' }, 'No label'),
             number.status !== 'active' ? tag('Paused', 'warn') : null,
             h('span', { class: 'number-route' }, forwards ? [icon('arrowRight', { size: 14 }), `forwards to ${phoneName(phone)}`] : 'in app only'),
+            group ? h('a', { class: 'tag tag-link', href: `/identities/${group.id}`, 'data-link': true, title: `In the identity ${group.name}` }, icon('folder', { size: 12 }), h('span', { class: 'truncate' }, group.name)) : null,
           ),
         ),
       ),
@@ -460,6 +478,10 @@ export function numberScreen({ params, scope }) {
     ] });
     replace(root, headRegion, tabsEl);
     paintHead();
+    // Another screen asked for one conversation, or for another tab.
+    const open = takeNumberOpen(id);
+    if (open && open.peer) openPeer = open.peer;
+    if (open && open.tab && open.tab !== 'texts') tabsEl.select(open.tab);
     loadTexts();
   }
 
@@ -484,7 +506,7 @@ export function numberScreen({ params, scope }) {
     replace(root, pageHeader({ title: 'Numbers' }), h('div', { class: 'sheet' }, emptyState({ title: 'Numbers are turned off', text: 'This server has no phone provider.' })));
     return root;
   }
-  scope.add(store.subscribe(['numbers', 'phones'], sync));
+  scope.add(store.subscribe(['numbers', 'phones', 'identities'], sync));
   scope.add(bus.on('text', () => { if (built) loadTexts(); }));
   scope.add(bus.on('call', () => { if (built && calls !== null) loadCalls(); }));
   sync();

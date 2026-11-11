@@ -23,6 +23,8 @@ import { numbersScreen } from './screens/numbers.js';
 import { numberScreen } from './screens/number.js';
 import { fundsScreen } from './screens/funds.js';
 import { settingsScreen } from './screens/settings.js';
+import { identityScreen } from './screens/identity.js';
+import { noticeUnknownIdentities } from './lib/identities.js';
 import { openTestTools } from './screens/testtools.js';
 
 const root = document.getElementById('app');
@@ -49,6 +51,7 @@ defineRoutes([
   { path: '/aliases', name: 'aliases', title: 'Aliases', layout: 'shell', nav: 'aliases', screen: aliasesScreen },
   { path: '/numbers', name: 'numbers', title: 'Numbers', layout: 'shell', nav: 'numbers', screen: numbersScreen },
   { path: '/numbers/:id', name: 'number', title: 'Number', layout: 'shell', nav: 'numbers', screen: numberScreen },
+  { path: '/identities/:id', name: 'identity', title: 'Identity', layout: 'shell', nav: 'home', screen: identityScreen },
   { path: '/funds', name: 'funds', title: 'Funds', layout: 'shell', nav: 'funds', screen: fundsScreen },
   { path: '/settings', name: 'settings', title: 'Settings', layout: 'shell', nav: 'settings', screen: settingsScreen },
   { path: '/not-found', name: 'notfound', title: 'Not found', layout: 'auto', screen: notFoundScreen },
@@ -103,6 +106,8 @@ function onPhase(phase) {
   }
 }
 store.subscribe(['phase'], (s) => onPhase(s.phase));
+// An alias or a number names an identity that this tab does not know yet (made in another tab).
+store.subscribe(['aliases', 'numbers', 'identities'], (s) => { if (s.phase === 'in') noticeUnknownIdentities(s); });
 
 // A request said "not signed in": the session ended on the server.
 setSignedOutHandler(() => {

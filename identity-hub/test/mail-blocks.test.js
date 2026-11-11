@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { startTestApp, client, newAccount, unb64u } from './helpers.js';
 import { errorCode, newMailbox, newAlias, listMessages, openMessage, smtpSend, smtpTalk, databaseHas } from './mail-helpers.js';
 import * as C from '../shared/crypto.js';
+import { blockValue, senderBlockTexts } from '../server/mail/address.js';
 
 let app;
 before(async () => { app = await startTestApp(); });
@@ -29,6 +30,35 @@ async function setup(target = app) {
 }
 
 const refusedAsBlocked = (e) => e.responseCode === 550 && /5\.7\.1/.test(e.response);
+
+test('blocks: the texts that are compared for a sender', () => {
+  assert.deepEqual(senderBlockTexts('x@spam.example'), ['domain:spam.example', 'address:x@spam.example']);
+  // Parent domains with two labels or more. The last label alone is never compared.
+  assert.deepEqual(senderBlockTexts('News@Deep.Mail.Spam.Example'),
+    ['domain:deep.mail.spam.example', 'address:news@deep.mail.spam.example', 'domain:spam.example', 'domain:mail.spam.example']);
+  // Spellings of the same domain give the same texts.
+  const plain = senderBlockTexts('x@mail.spam.example');
+  assert.deepEqual(senderBlockTexts('X@MAIL.SPAM.EXAMPLE'), plain);
+  assert.deepEqual(senderBlockTexts('x@mail.spam.example.'), plain, 'a dot at the end');
+  assert.deepEqual(senderBlockTexts('x@mail.spam.example...'), plain);
+  assert.deepEqual(senderBlockTexts('x@b\u00fccher.example'), senderBlockTexts('x@xn--bcher-kva.example'));
+  // A very long local part gives no address text, but the domain is still compared.
+  assert.deepEqual(senderBlockTexts(`${'a'.repeat(500)}@spam.example`), ['domain:spam.example']);
+  assert.deepEqual(senderBlockTexts(`${'a'.repeat(100000)}@mail.spam.example`), ['domain:mail.spam.example', 'domain:spam.example']);
+  // A name with many labels is followed for the 8 shortest parents only.
+  const deep = senderBlockTexts(`x@${Array.from({ length: 30 }, (_, i) => `l${i}`).join('.')}.spam.example`);
+  assert.equal(deep.length, 10);
+  assert.ok(deep.includes('domain:spam.example') && deep.includes('domain:l29.spam.example'));
+  // No sender, or a text that is no address.
+  for (const none of ['', null, undefined, 'no-at-sign', '@spam.example', 'x@', 'x@.', `x@${'a'.repeat(254)}.example`]) assert.deepEqual(senderBlockTexts(none), [], String(none).slice(0, 20));
+  // Odd text after the "@" is compared as it is. It is not read like a web address.
+  assert.deepEqual(senderBlockTexts('x@spam.example/path'), ['domain:spam.example/path', 'address:x@spam.example/path']);
+  assert.deepEqual(senderBlockTexts('x@[127.0.0.1]').slice(0, 2), ['domain:[127.0.0.1]', 'address:x@[127.0.0.1]']);
+
+  // The value of a block and the texts of a sender meet: a stored value is always one of the texts of a matching sender.
+  assert.ok(senderBlockTexts('Shop@B\u00fccher.Example.').includes(`address:${blockValue('address', 'shop@b\u00fccher.example')}`));
+  assert.ok(senderBlockTexts('x@www.spam.example').includes(`domain:${blockValue('domain', 'Spam.Example')}`));
+});
 
 test('blocks: add, list, the same again, remove; counts on aliases and mailboxes', async () => {
   const { account: a, box, one, two } = await setup();
@@ -107,7 +137,8 @@ test('blocks: values are checked; international domains are stored in their ASCI
     assert.equal(errorCode(res), 'bad_request');
   }
   const badDomains = ['', 'com', 'localhost', '.spam.example', 'spam.example.', 'spam..example', 'user@spam.example', '@spam.example', 'spa m.example', '-spam.example',
-    'spam-.example', 'spam.example/path', 'https://spam.example', '*.spam.example', 'spam.1', `${'x'.repeat(64)}.example`, 7, null, ['spam.example']];
+    'spam-.example', 'spam.example/path', 'spam.example?x=1', 'spam.example#top', 'spam.example:25', 'https://spam.example', '*.spam.example', 'spam.1',
+    '%73pam.example', 'spam%2eexample', '0x7f.1', '127.0.0.1', '[::1]', 'spam\\.example', 'spam_shop.example', `${'x'.repeat(64)}.example`, 7, null, ['spam.example']];
   for (const value of badDomains) {
     const res = await post({ kind: 'domain', value });
     assert.equal(res.status, 400, `domain ${JSON.stringify(value)}`);
@@ -280,6 +311,14 @@ test('smtp: a domain block catches subdomains and no look-alike', async () => {
   await smtpSend(app, { from: 'two@firm.example', to: oneB.address, subject: 'yes', text: 'x' });
   await smtpSend(app, { from: 'one@mail.firm.example', to: oneB.address, subject: 'yes too', text: 'x' });
   assert.deepEqual((await subjects(b)).sort(), ['yes', 'yes too']);
+
+  // Spellings that mean the same domain do not get around the block: a dot at the end, a very long name before the "@".
+  const longName = await app.services.mail.deliverLocal({ to: [to], raw: Buffer.from(`From: <${'a'.repeat(400)}@mail.spam.example>\r\nTo: ${to}\r\n\r\nx\r\n`) });
+  assert.deepEqual(longName, { accepted: [], rejected: [to] });
+  const dotted = await app.services.mail.deliverLocal({ from: 'x@spam.example.', to: [to], raw: Buffer.from(`From: x@elsewhere.example\r\nTo: ${to}\r\n\r\nx\r\n`) });
+  assert.deepEqual(dotted, { accepted: [], rejected: [to] });
+  const dottedHeader = await app.services.mail.deliverLocal({ to: [to], raw: Buffer.from(`From: <x@Mail.Spam.Example.>\r\nTo: ${to}\r\n\r\nx\r\n`) });
+  assert.deepEqual(dottedHeader, { accepted: [], rejected: [to] });
 
   // An international domain is matched in both spellings.
   await block(b, oneB.alias.id, 'domain', 'bücher.example');

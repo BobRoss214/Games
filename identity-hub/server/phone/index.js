@@ -14,6 +14,7 @@ import { createMockProvider } from './providers/mock.js';
 import { createTwilioProvider } from './providers/twilio.js';
 import { ProviderError } from './providers/errors.js';
 import { createDelivery } from './delivery.js';
+import { createVoicemail } from './voicemail.js';
 import { createHooks } from './hooks.js';
 import { registerRoutes } from './routes.js';
 import { registerDevRoutes } from './dev.js';
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS numbers (
   forward_texts INTEGER NOT NULL DEFAULT 0,
   forward_calls INTEGER NOT NULL DEFAULT 0,
   created_day TEXT NOT NULL,
-  retention_days INTEGER              -- delete the texts of this number after so many days; NULL = keep them
+  retention_days INTEGER,             -- delete the texts of this number after so many days; NULL = keep them
+  voicemail INTEGER NOT NULL DEFAULT 0 -- 1: a caller who does not reach the user can leave a message
 ) STRICT;
 CREATE INDEX IF NOT EXISTS numbers_account ON numbers(account_id);
 CREATE INDEX IF NOT EXISTS numbers_due ON numbers(paid_until);
@@ -78,7 +80,8 @@ CREATE TABLE IF NOT EXISTS calls (
   seconds INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL CHECK (status IN ('answered', 'missed', 'failed')),
   sealed BLOB NOT NULL,               -- { peer }, sealed to the account
-  call_hmac BLOB                      -- keys.indexHmac('call', call id of the provider)
+  call_hmac BLOB,                     -- keys.indexHmac('call', call id of the provider)
+  vm_until INTEGER                    -- the caller got the voicemail greeting; a recording is accepted until this time
 ) STRICT;
 CREATE INDEX IF NOT EXISTS calls_number ON calls(number_id, at);
 CREATE INDEX IF NOT EXISTS calls_account ON calls(account_id);
@@ -99,8 +102,22 @@ CREATE INDEX IF NOT EXISTS live_calls_number ON live_calls(number_id);
 CREATE TABLE IF NOT EXISTS release_later (
   id INTEGER PRIMARY KEY,
   provider_ref BLOB NOT NULL,
-  since INTEGER NOT NULL
+  since INTEGER NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'number' -- 'number', or 'recording' (a voicemail recording that must go)
 ) STRICT;
+-- A voicemail belongs to one call. The audio is encrypted for the account in the form of a
+-- mail message: sealed_key, enc_meta and audio come from sealEnvelope() (see voicemail.js).
+CREATE TABLE IF NOT EXISTS voicemails (
+  call_id TEXT PRIMARY KEY REFERENCES calls(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  sealed_key BLOB NOT NULL,
+  enc_meta BLOB NOT NULL,             -- { peer, seconds, contentType }
+  audio BLOB NOT NULL,                -- part 1 of the envelope: the encrypted audio
+  size INTEGER NOT NULL,              -- bytes of the encrypted audio
+  seconds INTEGER NOT NULL,
+  rec_hmac BLOB NOT NULL              -- keys.indexHmac('rec', recording id of the provider)
+) STRICT;
+CREATE INDEX IF NOT EXISTS voicemails_account ON voicemails(account_id);
 -- Texts that the provider accepted and that wait for their final status (see delivery.js).
 -- The final status removes the row.
 CREATE TABLE IF NOT EXISTS text_sends (
@@ -119,6 +136,9 @@ const MIGRATIONS = [
   ['calls', 'call_hmac', 'BLOB'],
   ['texts', 'status', 'TEXT'],
   ['numbers', 'retention_days', 'INTEGER'],
+  ['numbers', 'voicemail', 'INTEGER NOT NULL DEFAULT 0'],
+  ['calls', 'vm_until', 'INTEGER'],
+  ['release_later', 'kind', "TEXT NOT NULL DEFAULT 'number'"],
 ];
 // Indexes on those columns. They can be made only after the columns exist.
 const INDEXES = `
@@ -134,7 +154,8 @@ const BRIDGE_SECONDS = 5 * 60;
 const SAY_CODE_SECONDS = 5 * 60;
 const LIVE_CALL_SECONDS = 12 * 3600;
 const TEXT_SEND_SECONDS = 7 * 86400;
-const NO_CAPABILITIES = { voice: false, asyncText: false, searchByArea: false };
+const RECORDING_RETRY_SECONDS = 30 * 86400;
+const NO_CAPABILITIES = { voice: false, voicemail: false, asyncText: false, searchByArea: false };
 
 function migrate(db) {
   db.exec(TABLES);
@@ -204,6 +225,7 @@ export async function register(app) {
       textStatus: `${config.publicUrl}/api/hooks/phone/text-status`,
       voice: `${config.publicUrl}/api/hooks/phone/voice`,
       status: `${config.publicUrl}/api/hooks/phone/status`,
+      recording: `${config.publicUrl}/api/hooks/phone/recording`,
       bridge: (token) => `${config.publicUrl}/api/hooks/phone/bridge?t=${encodeURIComponent(token)}`,
       sayCode: (token) => `${config.publicUrl}/api/hooks/phone/say-code?token=${encodeURIComponent(token)}`,
     },
@@ -299,8 +321,9 @@ export async function register(app) {
         throw err;
       }
     },
-    releaseLater(providerRef) {
-      db.run('INSERT INTO release_later (provider_ref, since) VALUES (?, ?)', providerRef, nowSec());
+    // providerRef: keys.srvEncrypt(ref, 'ref'). kind: 'number' or 'recording'.
+    releaseLater(providerRef, kind = 'number') {
+      db.run('INSERT INTO release_later (provider_ref, since, kind) VALUES (?, ?, ?)', providerRef, nowSec(), kind);
     },
 
     // Deletes texts of one number: one text (textId), or all texts older than a time (before).
@@ -356,6 +379,7 @@ export async function register(app) {
   app.services.phone = service;
   if (off) return;
 
+  ph.voicemail = createVoicemail(app, ph);
   const hooks = createHooks(app, ph);
   if (name === 'mock') {
     provider.attach(hooks);
@@ -412,11 +436,24 @@ export async function register(app) {
     db.run('DELETE FROM text_sends WHERE at < ?', now - TEXT_SEND_SECONDS);
     // A call with no status report after many hours will not get one.
     db.run('DELETE FROM live_calls WHERE at < ?', now - LIVE_CALL_SECONDS);
-    for (const row of db.all('SELECT id, provider_ref FROM release_later ORDER BY RANDOM() LIMIT 50')) {
+    ph.voicemail.sweep();
+    // Numbers and voicemail recordings that could not be removed at the provider before.
+    for (const row of db.all('SELECT id, provider_ref, kind FROM release_later ORDER BY RANDOM() LIMIT 50')) {
       try {
-        await ph.releaseAtProvider(row);
+        if (row.kind === 'recording') {
+          try {
+            await provider.deleteRecording(keys.srvDecrypt(row.provider_ref, 'ref').toString('utf8'));
+          } catch (err) {
+            if (!(err instanceof ProviderError && err.notFound)) throw err;
+          }
+        } else {
+          await ph.releaseAtProvider(row);
+        }
         db.run('DELETE FROM release_later WHERE id = ?', row.id);
       } catch { /* the next run tries again */ }
     }
+    // The provider keeps a recording for a limited time itself. Stop after a month.
+    const stale = db.run("DELETE FROM release_later WHERE kind = 'recording' AND since < ?", now - RECORDING_RETRY_SECONDS).changes;
+    if (stale) log.error(`${stale} voicemail recording(s) could not be deleted at the provider in 30 days`);
   });
 }

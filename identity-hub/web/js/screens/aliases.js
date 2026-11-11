@@ -3,16 +3,16 @@ import { h, replace, debounce } from '../lib/dom.js';
 import { store } from '../lib/store.js';
 import { icon } from '../ui/icons.js';
 import { button, chips, emptyState, skeletonRows, pageHeader } from '../ui/components.js';
-import { identityItems, identityList, matchesSearch } from '../ui/rows.js';
-import { openNewAlias, openNewInbox } from '../ui/identities.js';
+import { rowItems, itemRows, matchesSearch } from '../ui/rows.js';
+import { openNewAlias, openNewInbox } from '../ui/items.js';
 
 export function aliasesScreen({ scope }) {
   let filter = 'all';
   let search = '';
   let box = 'all';
 
-  const listRegion = h('div', { class: 'sheet id-sheet' });
-  const tools = h('div', { class: 'id-tools' });
+  const listRegion = h('div', { class: 'sheet item-sheet' });
+  const tools = h('div', { class: 'item-tools' });
   const searchInput = h('input', { class: 'input search-input', type: 'search', placeholder: 'Search aliases and labels', 'aria-label': 'Search aliases and labels', autocomplete: 'off', spellcheck: 'false' });
   searchInput.addEventListener('input', debounce(() => { search = searchInput.value; paint(); }, 80));
 
@@ -24,7 +24,7 @@ export function aliasesScreen({ scope }) {
     if (key === toolsKey) return;
     toolsKey = key;
     if (box !== 'all' && !boxes.some((m) => m.id === box)) box = 'all';
-    const boxSelect = boxes.length > 1 ? h('div', { class: 'select-wrap id-box-filter' },
+    const boxSelect = boxes.length > 1 ? h('div', { class: 'select-wrap item-box-filter' },
       h('select', { class: 'input select', 'aria-label': 'Show aliases of', onChange: (e) => { box = e.target.value; paint(); } },
         h('option', { value: 'all', selected: box === 'all' }, 'All inboxes'),
         boxes.map((m) => h('option', { value: m.id, selected: box === m.id }, m.label || m.address))),
@@ -68,7 +68,7 @@ export function aliasesScreen({ scope }) {
     }
     tools.hidden = false;
     paintTools(state);
-    const items = identityItems(state).filter((it) => it.kind === 'alias')
+    const items = rowItems(state).filter((it) => it.kind === 'alias')
       .filter((it) => (filter === 'on' ? it.enabled : filter === 'off' ? !it.enabled : true))
       .filter((it) => box === 'all' || it.mailboxId === box)
       .filter((it) => matchesSearch(it, search))
@@ -82,7 +82,7 @@ export function aliasesScreen({ scope }) {
       }));
       return;
     }
-    replace(listRegion, identityList(items, { showReceived: true }));
+    replace(listRegion, itemRows(items, { showReceived: true }));
   }
 
   scope.add(store.subscribe(['mailboxes', 'aliases'], paint));

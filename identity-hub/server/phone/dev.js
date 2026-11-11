@@ -22,10 +22,13 @@ export function registerDevRoutes(app, ph) {
   });
 
   // A full call: forwarded and answered if forwarding is on, otherwise missed.
+  // voicemail: true = nobody answers, and the caller leaves a message of `seconds` (a short
+  // tone) if the number has voicemail on.
   http.post('/api/dev/inbound-call', { auth: true }, async (c) => {
     const to = ownPlain(c);
-    const seconds = need.optional(c.body.seconds, need.int, 'seconds', { min: 0, max: 86400 }) ?? 30;
-    await mock.simulateCall({ to, from: e164(c.body.from, 'from'), seconds });
+    const voicemail = need.optional(c.body.voicemail, need.bool, 'voicemail') === true;
+    const seconds = need.optional(c.body.seconds, need.int, 'seconds', { min: 0, max: 86400 }) ?? (voicemail ? 5 : 30);
+    await mock.simulateCall({ to, from: e164(c.body.from, 'from'), seconds, voicemail });
   });
 
   // What the mock provider "sent" for this account. The outbox is shared by all accounts,

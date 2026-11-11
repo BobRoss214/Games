@@ -34,6 +34,7 @@ export const store = createStore({
   aliases: null,
   numbers: null,
   phones: null,
+  identities: null,     // named groups of aliases and numbers (encrypted in the vault)
   purchases: [],        // pending private payments (see lib/pay.js)
   prefs: {},            // small encrypted preferences from the vault
   theme: 'system',

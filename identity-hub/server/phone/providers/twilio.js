@@ -12,6 +12,7 @@ const REFUSED = {
   search: 'The telephone provider could not search for numbers.',
   buy: 'The telephone provider did not sell this number.',
   release: 'The telephone provider did not release this number.',
+  recording: 'The telephone provider did not give or delete the recording.',
   sendText: 'The telephone provider refused this text.',
   startCall: 'The telephone provider refused this call.',
 };
@@ -51,6 +52,14 @@ export function twiml(actions = []) {
       if (d.timeLimit) attrs += ` timeLimit="${xml(d.timeLimit)}"`;
       if (d.actionUrl) attrs += ` action="${xml(d.actionUrl)}" method="POST"`;
       inner += `<Dial${attrs}><Number>${xml(d.number)}</Number></Dial>`;
+    } else if (a.record) {
+      // A tone, then the caller speaks. No transcription is requested: no machine at Twilio reads the message.
+      const r = a.record;
+      let attrs = ` maxLength="${xml(r.maxSeconds)}" playBeep="true" trim="trim-silence"`;
+      // Without an action Twilio asks the address of the current document again when the recording ends.
+      if (r.actionUrl) attrs += ` action="${xml(r.actionUrl)}" method="POST"`;
+      attrs += ` recordingStatusCallback="${xml(r.doneUrl)}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"`;
+      inner += `<Record${attrs}/>`;
     } else if (a.hangup) inner += '<Hangup/>';
   }
   return '<?xml version="1.0" encoding="UTF-8"?>' + (inner ? `<Response>${inner}</Response>` : '<Response/>');
@@ -70,6 +79,8 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl, messaging
   const messagingRoot = root === 'https://api.twilio.com' ? 'https://messaging.twilio.com' : root;
   const auth = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
   const str = (v) => (typeof v === 'string' ? v : '');
+  // A recording id goes into the address of a request. Accept the form of Twilio only.
+  const RECORDING = /^RE[0-9a-f]{32}$/;
 
   function toError(op, status, data) {
     const code = data && Number.isInteger(data.code) ? data.code : 0;
@@ -106,7 +117,7 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl, messaging
     name: 'twilio',
     webhookBody: 'form',
     // Twilio accepts a text first and reports the result later (see parseTextStatus).
-    capabilities: { voice: true, asyncText: true, searchByArea: true },
+    capabilities: { voice: true, voicemail: true, asyncText: true, searchByArea: true },
 
     async search({ country, areaCode, limit = 20 }) {
       const query = { SmsEnabled: 'true', VoiceEnabled: 'true', PageSize: String(limit) };
@@ -212,6 +223,56 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl, messaging
     },
     voiceReply(actions) {
       return { contentType: 'text/xml; charset=utf-8', body: twiml(actions) };
+    },
+
+    // The recordingStatusCallback of a <Record>: CallSid, RecordingSid, RecordingUrl, RecordingDuration, RecordingStatus.
+    parseRecording(c) {
+      const b = c.body || {};
+      const secs = Number.parseInt(b.RecordingDuration, 10);
+      return {
+        callId: str(b.CallSid), recordingRef: str(b.RecordingSid), seconds: Number.isInteger(secs) && secs > 0 ? secs : 0,
+        url: str(b.RecordingUrl), ready: b.RecordingStatus === undefined || b.RecordingStatus === 'completed',
+      };
+    },
+    // Downloads the audio as MP3. The address is built from our own API address and the recording
+    // id. The url of the webhook is not used: the server never sends a request (and never its
+    // password) to a host that came in with a request.
+    async fetchRecording({ ref }, { maxBytes = 5 * 1024 * 1024 } = {}) {
+      if (!RECORDING.test(str(ref))) throw new ProviderError(REFUSED.recording, { notFound: true });
+      let res;
+      try {
+        res = await fetch(`${base}/Recordings/${ref}.mp3`, { headers: { authorization: auth }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      } catch {
+        throw new ProviderError(DOWN);
+      }
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        throw toError('recording', res.status, null);
+      }
+      const tooLarge = () => new ProviderError(REFUSED.recording, { tooLarge: true });
+      if (Number(res.headers.get('content-length')) > maxBytes) {
+        await res.body?.cancel().catch(() => {});
+        throw tooLarge();
+      }
+      // The length header can be absent or wrong. Count the bytes while they arrive.
+      const chunks = [];
+      let size = 0;
+      try {
+        for await (const chunk of res.body) {
+          size += chunk.length;
+          if (size > maxBytes) throw tooLarge();
+          chunks.push(chunk);
+        }
+      } catch (err) {
+        if (err instanceof ProviderError) throw err;
+        throw new ProviderError(DOWN);
+      }
+      const type = str(res.headers.get('content-type')).split(';')[0].trim().toLowerCase();
+      return { bytes: Buffer.concat(chunks), contentType: /^audio\/[a-z0-9.+-]{1,40}$/.test(type) ? type : 'audio/mpeg' };
+    },
+    async deleteRecording(ref) {
+      if (!RECORDING.test(str(ref))) throw new ProviderError(REFUSED.recording, { notFound: true });
+      await call('recording', 'DELETE', `/Recordings/${ref}.json`);
     },
     textReply() {
       return { contentType: 'text/xml; charset=utf-8', body: twiml([]) };

@@ -118,6 +118,7 @@ export function loadConfig(env = process.env, overrides = {}) {
       numbers: int(env.LIMIT_NUMBERS, 25),
       phones: int(env.LIMIT_PHONES, 5),
       sendPerDay: int(env.LIMIT_SEND_PER_DAY, 100), // 0 = no limit
+      addressBlocks: int(env.LIMIT_ADDRESS_BLOCKS, 200), // blocked senders for each address
       mailboxBytes: int(env.LIMIT_MAILBOX_BYTES, 1024 * 1024 * 1024),
       requestsPerMinute: int(env.LIMIT_REQUESTS_PER_MINUTE, 900),
     },

@@ -1,11 +1,15 @@
-// Home: the one dashboard. Counts, every identity in one list, and recent activity.
+// Home: the one dashboard. Counts, identities (named groups) first, then the aliases and
+// numbers that are in no identity, then inboxes. Recent mail and texts on the side.
 import { h, region, replace, debounce } from '../lib/dom.js';
 import { store, bus } from '../lib/store.js';
 import { money, shortTime, phoneText, plural } from '../lib/format.js';
 import { icon } from '../ui/icons.js';
 import { button, chips, emptyState, skeletonRows, pageHeader, linkButton, copyButton } from '../ui/components.js';
-import { identityItems, identityList, matchesSearch } from '../ui/rows.js';
-import { openNewChooser, openNewAlias, openNewInbox, openGetNumber } from '../ui/identities.js';
+import { rowItems, itemRows, matchesSearch } from '../ui/rows.js';
+import { openNewChooser, openNewAlias, openNewInbox, openGetNumber } from '../ui/items.js';
+import { openNewIdentity } from '../ui/identity.js';
+import { forwardingOf } from '../lib/identities.js';
+import { fullName } from '../lib/persona/index.js';
 import { listMessages, personShort } from '../lib/mail.js';
 import { listTexts } from '../lib/phone.js';
 import { setPref, mailboxName, findMailbox } from '../lib/data.js';
@@ -27,7 +31,14 @@ function stats(state) {
   const off = aliases.filter((a) => !a.enabled).length;
   const unreadMail = boxes.reduce((n, m) => n + (m.unread || 0), 0);
   const unreadTexts = numbers.reduce((n, m) => n + (m.unread || 0), 0);
-  return h('div', { class: 'stats' },
+  const groups = state.identities || [];
+  const grouped = aliases.filter((a) => groups.some((g) => g.id === a.identityId)).length + numbers.filter((n) => groups.some((g) => g.id === n.identityId)).length;
+  return h('div', { class: 'stats stats-5' },
+    h('div', { class: 'stat' },
+      h('span', { class: 'stat-label' }, 'Identities'),
+      loading || state.identities === null ? h('span', { class: 'skeleton skeleton-block' }) : h('span', { class: 'stat-value mono' }, String(groups.length)),
+      h('span', { class: 'stat-note' }, loading ? '\u00a0' : groups.length ? `${plural(grouped, 'item')} inside` : 'Named groups'),
+    ),
     statTile({ label: 'Inboxes', value: String(boxes.length), note: unreadMail ? `${unreadMail} unread` : 'No unread mail', href: '/mail', loading }),
     statTile({ label: 'Aliases', value: String(aliases.length), note: off ? `${off} turned off` : 'All on', href: '/aliases', loading }),
     f.phone
@@ -70,44 +81,99 @@ export function homeScreen({ scope }) {
   let recent = null;          // null = loading
   let recentError = '';
   let aliasUnread = new Map();
+  const phoneOn = !!store.get('config').features.phone;
 
-  // ---- identities ----
-  const listRegion = h('div', { class: 'sheet id-sheet' });
+  // ---- identities, then the rest ----
+  const listRegion = h('div', { class: 'home-lists' });
+
+  function identityCard(g, members, state) {
+    const aliases = members.filter((m) => m.kind === 'alias');
+    const numbers = members.filter((m) => m.kind === 'number');
+    const unread = members.reduce((n, m) => n + (m.unread || 0), 0);
+    const forwards = forwardingOf(numbers.map((m) => m.raw), state);
+    return h('li', null,
+      h('a', { class: 'identity-card', href: `/identities/${g.id}`, 'data-link': true, dataset: { identity: g.id } },
+        h('span', { class: 'identity-card-top' },
+          icon('folder', { size: 18 }),
+          h('span', { class: 'identity-card-name truncate' }, g.name),
+          unread > 0 ? h('span', { class: 'badge', 'aria-label': `${unread} unread` }, unread > 99 ? '99+' : String(unread)) : null,
+        ),
+        g.note ? h('span', { class: 'identity-card-note' }, g.note) : null,
+        h('span', { class: 'identity-card-count' }, members.length ? `${plural(aliases.length, 'address', 'addresses')}, ${plural(numbers.length, 'number')}` : 'Empty'),
+        forwards.length ? h('span', { class: 'tag tag-warn identity-card-forward' }, icon('phone', { size: 12 }), 'Forwards to real phone') : null,
+      ),
+    );
+  }
+
   const paintList = () => {
     const state = store.get();
-    if (state.mailboxes === null || state.aliases === null || state.numbers === null) { replace(listRegion, skeletonRows(5)); return; }
-    const all = identityItems(state, aliasUnread);
-    if (all.length === 0) {
-      replace(listRegion, emptyState({
+    if (state.mailboxes === null || state.aliases === null || state.numbers === null || state.identities === null) { replace(listRegion, h('div', { class: 'sheet item-sheet' }, skeletonRows(5))); return; }
+    const all = rowItems(state, aliasUnread);
+    const groups = state.identities;
+    if (all.length === 0 && groups.length === 0) {
+      replace(listRegion, h('div', { class: 'sheet item-sheet' }, emptyState({
         title: phoneOn ? 'No addresses or numbers yet' : 'No addresses yet',
         text: 'Make an inbox first. Then add an alias for each place that asks for your email.',
         action: button('Make inbox', { kind: 'primary', iconName: 'plus', onClick: () => openNewInbox() }),
-      }));
+      })));
       return;
     }
-    const shown = all.filter((it) => {
+    const kindOk = (it) => {
       if (filter === 'email' && it.kind === 'number') return false;
       if (filter === 'numbers' && it.kind !== 'number') return false;
       if (filter === 'off' && !it.off) return false;
-      return matchesSearch(it, search);
-    });
-    if (shown.length === 0) {
-      replace(listRegion, emptyState({
+      return true;
+    };
+    const needle = search.toLowerCase().trim();
+
+    // Identities: shown when the group itself matches, or when something inside matches.
+    const cards = [];
+    for (const g of groups) {
+      const members = all.filter((it) => it.identityId === g.id);
+      const filtered = members.filter(kindOk);
+      if (filter !== 'all' && filtered.length === 0) continue;
+      const own = `${g.name} ${g.note} ${g.persona ? fullName(g.persona) : ''}`.toLowerCase();
+      if (needle && !own.includes(needle) && !filtered.some((it) => matchesSearch(it, search))) continue;
+      cards.push(identityCard(g, members, state));
+    }
+    const loose = all.filter((it) => it.kind !== 'inbox' && !it.identityId).filter(kindOk).filter((it) => matchesSearch(it, search));
+    const boxes = all.filter((it) => it.kind === 'inbox').filter(kindOk).filter((it) => matchesSearch(it, search));
+
+    if (cards.length === 0 && loose.length === 0 && boxes.length === 0) {
+      replace(listRegion, h('div', { class: 'sheet item-sheet' }, emptyState({
         title: search ? 'Nothing matches your search' : filter === 'off' ? 'Nothing is turned off' : filter === 'numbers' ? 'No numbers yet' : 'Nothing here',
         text: search ? 'Check the spelling, or clear the search.' : filter === 'numbers' ? 'Get a number for texts and calls.' : '',
         compact: true, figure: false,
         action: search ? button('Clear search', { onClick: () => { searchInput.value = ''; search = ''; paintList(); searchInput.focus(); } })
-          : filter === 'numbers' && state.config.features.phone ? button('Get a number', { onClick: () => openGetNumber() }) : null,
-      }));
+          : filter === 'numbers' && phoneOn ? button('Get a number', { onClick: () => openGetNumber() }) : null,
+      })));
       return;
     }
-    replace(listRegion, identityList(shown));
-  };
-  scope.add(store.subscribe(['mailboxes', 'aliases', 'numbers', 'phones'], paintList));
 
-  const phoneOn = !!store.get('config').features.phone;
-  const searchLabel = phoneOn ? 'Search addresses, numbers and labels' : 'Search addresses and labels';
-  const searchInput = h('input', { class: 'input search-input', type: 'search', placeholder: searchLabel, 'aria-label': searchLabel, autocomplete: 'off', spellcheck: 'false' });
+    const plain = filter === 'all' && !needle;
+    replace(listRegion,
+      (cards.length || plain) ? h('section', { class: 'home-section', 'aria-labelledby': 'identities-title' },
+        h('div', { class: 'section-head' },
+          h('h2', { class: 'section-title', id: 'identities-title' }, 'Identities'),
+          button('New identity', { size: 'sm', iconName: 'plus', onClick: () => openNewIdentity() }),
+        ),
+        cards.length ? h('ul', { class: 'identity-cards' }, cards)
+          : h('p', { class: 'identity-invite small muted' }, 'An identity is a named group, for example “Facebook”. Put the aliases and numbers that you use in one place in it, and see all their mail and texts together.'),
+      ) : null,
+      loose.length ? h('section', { class: 'home-section', 'aria-labelledby': 'loose-title' },
+        h('div', { class: 'section-head' }, h('h2', { class: 'section-title', id: 'loose-title' }, 'Not in an identity')),
+        h('div', { class: 'sheet item-sheet' }, itemRows(loose)),
+      ) : null,
+      boxes.length ? h('section', { class: 'home-section', 'aria-labelledby': 'boxes-title' },
+        h('div', { class: 'section-head' }, h('h2', { class: 'section-title', id: 'boxes-title' }, 'Inboxes')),
+        h('div', { class: 'sheet item-sheet' }, itemRows(boxes)),
+      ) : null,
+    );
+  };
+  scope.add(store.subscribe(['mailboxes', 'aliases', 'numbers', 'phones', 'identities'], paintList));
+
+  const searchLabel = phoneOn ? 'Search identities, addresses, numbers and labels' : 'Search identities, addresses and labels';
+  const searchInput = h('input', { class: 'input search-input', type: 'search', placeholder: 'Search', 'aria-label': searchLabel, title: searchLabel, autocomplete: 'off', spellcheck: 'false' });
   searchInput.addEventListener('input', debounce(() => { search = searchInput.value; paintList(); }, 80));
   const chipOptions = [{ value: 'all', label: 'All' }, { value: 'email', label: 'Email' }];
   if (phoneOn) chipOptions.push({ value: 'numbers', label: 'Numbers' });
@@ -199,11 +265,10 @@ export function homeScreen({ scope }) {
   const el = h('div', { class: 'page' },
     pageHeader({ title: 'Home', actions: button('New', { kind: 'primary', iconName: 'plus', onClick: () => openNewChooser() }) }),
     region(scope, store, ['mailboxes', 'aliases', 'numbers', 'balance', 'prefs'], checklist),
-    region(scope, store, ['mailboxes', 'aliases', 'numbers', 'balance'], stats),
+    region(scope, store, ['mailboxes', 'aliases', 'numbers', 'balance', 'identities'], stats),
     h('div', { class: 'home-grid' },
-      h('section', { class: 'home-ids', 'aria-labelledby': 'ids-title' },
-        h('div', { class: 'section-head' }, h('h2', { class: 'section-title', id: 'ids-title' }, phoneOn ? 'Addresses and numbers' : 'Addresses')),
-        h('div', { class: 'id-tools' },
+      h('div', { class: 'home-items' },
+        h('div', { class: 'item-tools' },
           h('div', { class: 'search-wrap' }, icon('search', { size: 16, cls: 'search-icon' }), searchInput),
           filterChips,
         ),

@@ -32,13 +32,17 @@ export function registerRoutes(app, ph) {
     id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), country: r.country, sms: r.sms === 1, voice: ph.hasVoice(r),
     status: r.status, paidUntil: r.paid_until, createdDay: r.created_day,
     forwardPhoneId: r.forward_phone_id, forwardTexts: r.forward_texts === 1, forwardCalls: r.forward_calls === 1,
-    retentionDays: r.retention_days ?? null, unread: r.unread || 0,
+    retentionDays: r.retention_days ?? null, voicemail: r.voicemail === 1, unread: r.unread || 0,
   });
   const loadNumber = (accountId, id) => numberView(db.get(`SELECT ${NUMBER_COLS} FROM numbers n WHERE n.id = ? AND n.account_id = ?`, id, accountId));
   const phoneView = (r) => ({ id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), verified: r.verified === 1, createdDay: r.created_day });
   // status: the delivery status of a text that we sent. An incoming text has none.
   const textView = (r) => ({ id: r.id, direction: r.direction, at: r.at, seen: r.seen === 1, sealed: b64u(r.sealed), status: r.direction === 'out' ? r.status || 'sent' : null });
-  const callView = (r) => ({ id: r.id, direction: r.direction, at: r.at, seconds: r.seconds, status: r.status, sealed: b64u(r.sealed) });
+  // v: the voicemail row of the call, if it has one. The audio itself comes from GET /api/calls/:id/voicemail.
+  const callView = (r, v) => ({
+    id: r.id, direction: r.direction, at: r.at, seconds: r.seconds, status: r.status, sealed: b64u(r.sealed),
+    voicemail: v ? { seconds: v.seconds, size: v.size, sealedKey: b64u(v.sealed_key), encMeta: b64u(v.enc_meta) } : null,
+  });
 
   function ownPhone(accountId, id) {
     const row = db.get('SELECT * FROM phones WHERE id = ? AND account_id = ?', idOf(id), accountId);
@@ -149,6 +153,13 @@ export function registerRoutes(app, ph) {
     const texts = need.optional(b.forwardTexts, need.bool, 'forwardTexts');
     const calls = need.optional(b.forwardCalls, need.bool, 'forwardCalls');
     if (calls === true) ph.requireVoice(num);
+    // Voicemail needs calls: a number and a provider with voice, and a provider that can record.
+    const voicemail = need.optional(b.voicemail, need.bool, 'voicemail');
+    if (voicemail === true) {
+      ph.requireVoice(num);
+      if (!ph.capabilities.voicemail) throw fail(409, 'no_voicemail', 'Voicemail is not available for this number.');
+    }
+    if (voicemail !== undefined) { sets.push('voicemail = ?'); args.push(voicemail ? 1 : 0); }
     // Auto-delete of texts: null = off, or a count of days. The hourly job does the deleting.
     if (b.retentionDays === null) sets.push('retention_days = NULL');
     else if (b.retentionDays !== undefined) {
@@ -239,8 +250,27 @@ export function registerRoutes(app, ph) {
 
   http.get('/api/numbers/:id/calls', { auth: true }, (c) => {
     const num = ph.ownNumber(c.account.id, c.params.id);
-    const { rows, more } = page('calls', 'id, direction, at, seconds, status, sealed', c.account.id, num.id, c.query, { def: 100, max: 200 });
-    return { calls: rows.map(callView), more };
+    const accountId = c.account.id;
+    const { rows, more } = page('calls', 'id, direction, at, seconds, status, sealed', accountId, num.id, c.query, { def: 100, max: 200 });
+    // The voicemails of the calls on this page (the page is one range of time).
+    const voicemails = new Map();
+    if (rows.length) {
+      const found = db.all(
+        `SELECT call_id, seconds, size, sealed_key, enc_meta FROM voicemails WHERE account_id = ?
+         AND call_id IN (SELECT id FROM calls WHERE account_id = ? AND number_id = ? AND at >= ? AND at <= ?)`,
+        accountId, accountId, num.id, rows.at(-1).at, rows[0].at,
+      );
+      for (const v of found) voicemails.set(v.call_id, v);
+    }
+    return { calls: rows.map((r) => callView(r, voicemails.get(r.id))), more };
+  });
+
+  // The encrypted audio of a voicemail: part 1 of the message envelope. The browser opens it
+  // with the content key (sealedKey of the call's voicemail) and openAttachment(key, bytes, 1).
+  http.get('/api/calls/:id/voicemail', { auth: true }, (c) => {
+    const row = db.get('SELECT audio FROM voicemails WHERE call_id = ? AND account_id = ?', idOf(c.params.id), c.account.id);
+    if (!row) throw fail(404, 'not_found', 'This call has no voicemail.');
+    return reply(200, Buffer.from(row.audio), { 'content-type': 'application/octet-stream' });
   });
 
   // Click-to-call: the provider calls the linked real phone. When it answers, the

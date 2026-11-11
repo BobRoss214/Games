@@ -7,7 +7,7 @@ import { openDialog, confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { allAddresses } from '../lib/data.js';
 import { sendMail, attachmentLimit, personText } from '../lib/mail.js';
-import { openNewInbox } from '../ui/identities.js';
+import { openNewInbox } from '../ui/items.js';
 import { bus } from '../lib/store.js';
 import { htmlToText } from '../lib/sanitize.js';
 

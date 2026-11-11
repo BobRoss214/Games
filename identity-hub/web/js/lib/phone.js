@@ -48,6 +48,16 @@ export async function deleteCall(id) {
   await api.del(`/api/calls/${id}`);
 }
 
+// One-time hand-over from another screen: "open this number on this conversation" or "on the call log".
+// The other party is kept in memory only. It never goes into the URL.
+let pendingOpen = null; // { numberId, peer?, tab? }
+export function setNumberOpen(open) { pendingOpen = open; }
+export function takeNumberOpen(numberId) {
+  const o = pendingOpen && pendingOpen.numberId === numberId ? pendingOpen : null;
+  pendingOpen = null;
+  return o;
+}
+
 // Groups texts by the other party. Returns threads, newest first.
 export function threadsOf(texts) {
   const map = new Map();

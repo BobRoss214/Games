@@ -14,7 +14,22 @@ The security design is in [SECURITY.md](SECURITY.md).
 
 ## How to use this guide
 
-**Do the parts in sequence: A, B, C, D, E, F, G, H.** Parts E and F are optional.
+**Do the parts in sequence: A, B, C, D, E, F, G, H, I.** Parts E, F and H are optional.
+
+| Section or part | Subject |
+|---|---|
+| Section 1 | What you need |
+| Section 2 | Plain facts before you start |
+| Part A | Rent a server |
+| Part B | Buy a domain and set the DNS records |
+| Part C | Install Docker and start Postern |
+| Part D | Outgoing mail |
+| Part E | Payments with BTCPay Server (optional) |
+| Part F | Phone numbers with Twilio (optional) |
+| Part G | First sign-up and tests |
+| Part H | Use your own domain for aliases (optional) |
+| Part I | Backups and updates |
+| Part J | Troubleshooting |
 
 **A grey box is a command.** Type it exactly, or copy it. Then press Enter.
 
@@ -22,7 +37,7 @@ The security design is in [SECURITY.md](SECURITY.md).
 echo "this is a command"
 ```
 
-**"Check"** tells you how to make sure that a step was successful. Do not continue if a check fails. Look in Part I.
+**"Check"** tells you how to make sure that a step was successful. Do not continue if a check fails. Look in Part J.
 
 **"Check this"** marks a fact that the authors could not confirm. Confirm it yourself before you depend on it.
 
@@ -81,6 +96,7 @@ Costs are estimates from November 2026. Check the price of each provider before 
 | Item | What it is for | Cost (estimate) | Does it ask for identity data? | Does it take crypto? |
 |---|---|---|---|---|
 | Domain name | The web address and the email addresses | 10 to 20 USD each year | Usually yes. Most sellers ask for a name and an address. Some sellers register the domain in their own name. **Check this** for the seller that you select. | Some sellers do. IncogNET sells domains for crypto `[E3]`. |
+| Second domain name (optional) | Aliases on a domain that websites do not refuse (Part H) | 10 to 20 USD each year | Same as the first domain name | Same as the first domain name |
 | Server for Postern (VPS) | Runs Postern and receives mail on port 25 | 5 to 15 USD each month | FlokiNET and IncogNET: reported no. **Check this.** | Yes: Monero and Bitcoin at the hosts in Part A. |
 | Second server for BTCPay Server (optional) | Runs your payment system | 10 to 40 USD each month. Minimum 2 GB memory and 80 GB disk for Bitcoin `[B12]`. Monero needs more disk. **Check this.** | Same as above | Same as above |
 | BTCPay Server (optional) | Makes payment requests. Receives Lightning and Monero. | The software is free. | No. You install it yourself. | Not applicable |
@@ -139,20 +155,22 @@ Read this section completely. It tells you what Postern cannot do for you.
 18. **A new server address has no reputation.** Large mail providers can put your first messages in the spam folder. Correct DNS records help. Time helps. No setting removes this problem fully.
 19. **Most server hosts in Part A block outgoing mail ports on a new server.** You must ask the host to open them `[E1][E3][E4]`.
 
+20. **A domain that only one person uses ties the aliases on it together.** Each website can see that the addresses are on the same private domain. On a server for one person, this is true for each domain. See Part H.
+
 ### Payments
 
-20. **A third-party BTCPay host can see your payment data. Lightning payments go to the wallet of the host** `[B13]`. Use your own BTCPay Server.
-21. **The Monero plugin uses one wallet for all stores of a BTCPay Server** `[B10]`. This is one more reason to use your own BTCPay Server.
-22. **The name of the Monero payment method (`XMR-CHAIN`) is not confirmed** `[B9]`. Part E tells you how to confirm it.
-23. **If payments are off, users cannot get credits.** Then you must set the four `PRICE_` settings to `0`, or nobody can make a mailbox.
-24. **If prices are 0 and sign-up is open, each visitor can buy phone numbers with your Twilio money.** Close the sign-up (Part G).
+21. **A third-party BTCPay host can see your payment data. Lightning payments go to the wallet of the host** `[B13]`. Use your own BTCPay Server.
+22. **The Monero plugin uses one wallet for all stores of a BTCPay Server** `[B10]`. This is one more reason to use your own BTCPay Server.
+23. **The name of the Monero payment method (`XMR-CHAIN`) is not confirmed** `[B9]`. Part E tells you how to confirm it.
+24. **If payments are off, users cannot get credits.** Then you must set the four `PRICE_` settings to `0`, or nobody can make a mailbox.
+25. **If prices are 0 and sign-up is open, each visitor can buy phone numbers with your Twilio money.** Close the sign-up (Part G).
 
 ### Your responsibility
 
-25. **You cannot make the server secret (`SECRET_KEY`) a second time.** If you lose it, Postern cannot find the addresses and numbers of your users.
-26. **A user who loses the recovery key and all passkeys loses the account.** You cannot reset it.
-27. **A backup keeps deleted data.** Data that a user deletes stays in old backups until you delete those backups.
-28. **You are the operator of a communication service.** The laws of your country can apply to you. This guide gives no legal advice.
+26. **You cannot make the server secret (`SECRET_KEY`) a second time.** If you lose it, Postern cannot find the addresses and numbers of your users.
+27. **A user who loses the recovery key and all passkeys loses the account.** You cannot reset it.
+28. **A backup keeps deleted data.** Data that a user deletes stays in old backups until you delete those backups.
+29. **You are the operator of a communication service.** The laws of your country can apply to you. This guide gives no legal advice.
 
 ---
 
@@ -291,7 +309,7 @@ Docker is a program that runs other programs in closed boxes ("containers"). Pos
    ```
    ss -ltn | grep -E ':(25|80|443) '; echo done
    ```
-   The result must show only the word `done`. If it shows more lines, see Part I, "address already in use".
+   The result must show only the word `done`. If it shows more lines, see Part J, "address already in use".
 5. Put the Postern project folder on the server at `/opt/postern`. If you have a Git address for the project:
    ```
    git clone YOUR-GIT-ADDRESS /opt/postern
@@ -429,7 +447,7 @@ Notes:
 
 - The address `smtp://relay:587/?tls.rejectUnauthorized=false` is safe only for the built-in relay. The connection stays inside your server.
 - Keep `DKIM_SELECTOR` and `DKIM_KEY_FILE` empty with the built-in relay. The built-in relay signs the mail.
-- The relay log is off, because the log shows the sender and the recipient of each message. Part I tells you how to enable it for a short time.
+- The relay log is off, because the log shows the sender and the recipient of each message. Part J tells you how to enable it for a short time.
 - **Check this:** the authors did not test the relay together with Postern.
 
 ### D2. Option 2: use a relay company
@@ -607,7 +625,7 @@ Do not install BTCPay Server on the same server as Postern with this guide. The 
 6. Select "Generate API Key".
 7. Copy the key. This is `BTCPAY_API_KEY`.
 
-**Check this:** the research did not confirm that these two permissions are sufficient `[B5]`. If payments fail with a permission error, see Part I.
+**Check this:** the research did not confirm that these two permissions are sufficient `[B5]`. If payments fail with a permission error, see Part J.
 
 ### E5. Make the webhook
 
@@ -805,9 +823,201 @@ To let a new person in later, set `SIGNUP=open`, let the person sign up, then cl
 
 ---
 
-## Part H. Backups and updates
+## Part H. Use your own domain for aliases (optional)
 
-### H1. What you must keep
+You can do this part at a later time. Do Part G first.
+
+### H1. When to do this
+
+Some websites refuse email addresses on alias domains that are well known.
+A domain that only you use is not on the lists of those websites. The websites do not refuse it.
+
+The simple method works: put the new domain in the setting `MAIL_DOMAINS`.
+Each account on the server can then make aliases on each domain in that setting.
+For a server that only you use, this is all that is necessary.
+Postern cannot give a domain to one account only.
+
+> **Warning: a domain that only you use ties its aliases together.**
+>
+> Each website can see that your addresses are on the same private domain.
+> Thus the websites can tell that the addresses belong to one person.
+>
+> - A domain of your own is **better** against "this website blocks alias domains".
+> - A domain of your own is **worse** for privacy than a domain that many people share.
+>
+> Use an alias on your own domain only for a website that refuses your other addresses.
+
+If you are the only user of your server, the warning is also true for your first domain.
+You can then put your first domain in `MAIL_PERSONAL_DOMAINS` too (H3).
+
+Example values in this part:
+
+| Example | Meaning |
+|---|---|
+| `my-own-domain.example` | The new domain. Only you use it. |
+| `example.com` | Your first domain, from Part B. It stays the default domain. |
+| `mail.example.com` | The name of your server. It does not change. |
+
+### H2. Add the DNS records for the new domain
+
+1. Buy the new domain from a domain seller.
+2. Open the DNS page of the new domain.
+3. Add record a from the table below (type MX).
+4. Add record b (type TXT, SPF).
+5. Add record d (type TXT, DMARC).
+6. Do not add record c now. You get its value in H4.
+7. Wait 15 minutes. DNS changes are not immediate.
+
+The table has the same form as the table in Part B. The records have letters, so that you do not confuse them with the records of Part B.
+
+| No. | Type | Name (short / full) | Value | Purpose |
+|---|---|---|---|---|
+| a | MX | `@` / `my-own-domain.example` | `mail.example.com` with priority `10` | Mail for the new domain goes to your server. |
+| b | TXT | `@` / `my-own-domain.example` | `v=spf1 mx -all` | SPF: only your mail server sends mail for the new domain. |
+| c | TXT | `mail._domainkey` / `mail._domainkey.my-own-domain.example` | `v=DKIM1; k=rsa; p=MIIBIjANBgkq...` (long) | DKIM: the public key that proves your signature. From H4. |
+| d | TXT | `_dmarc` / `_dmarc.my-own-domain.example` | `v=DMARC1; p=none` | DMARC: tells other servers that you use SPF and DKIM. |
+
+Notes:
+
+- **No other records.** The new domain does not need an A record, an AAAA record or a PTR record. Your server keeps its name and its address.
+- **Record a** points to the server name in your first domain. This is correct.
+- **With a relay company,** the company gives you the values for record b and record c.
+
+**Check:** run these commands on the server. Replace the example name.
+
+```
+dig +short MX my-own-domain.example
+dig +short TXT my-own-domain.example
+dig +short TXT _dmarc.my-own-domain.example
+```
+
+The results must be, in sequence: `10 mail.example.com.`; `"v=spf1 mx -all"`; `"v=DMARC1; p=none"`.
+An empty result means that the record is not active. Wait, then try again.
+
+### H3. Add the domain to Postern
+
+1. Change these two settings and apply the change (see "How to change a setting"):
+   ```
+   MAIL_DOMAINS=example.com,my-own-domain.example
+   MAIL_PERSONAL_DOMAINS=my-own-domain.example
+   ```
+   Keep your first domain at the start of `MAIL_DOMAINS`. Put a comma between the domains. Do not add spaces.
+   If you use the built-in relay (Part D1), set this third setting in the same edit:
+   ```
+   RELAY_DOMAINS="example.com my-own-domain.example"
+   ```
+
+The last command of the procedure is `docker compose up -d`. It starts Postern and the relay again with the new settings.
+
+What the three settings do:
+
+| Setting | Effect |
+|---|---|
+| `MAIL_DOMAINS` | The domains for new addresses. Postern uses the first domain when you do not select a domain. |
+| `MAIL_PERSONAL_DOMAINS` | The app shows the warning from H1 for each domain in this list. Each domain must also be in `MAIL_DOMAINS`. |
+| `RELAY_DOMAINS` | The built-in relay sends mail only for the domains in this list. This list uses spaces, not commas. |
+
+If `RELAY_DOMAINS` is empty and `MAIL_DOMAINS` has two domains, the built-in relay can refuse all outgoing mail.
+
+**Check:** the result of this command must contain `"mailDomains":["example.com","my-own-domain.example"]` and `"personalDomains":["my-own-domain.example"]`.
+
+```
+curl -s https://mail.example.com/api/config
+```
+
+### H4. Add the DKIM record
+
+The DKIM record of the new domain uses the same selector as the record of your first domain.
+The value depends on the program that signs your outgoing mail.
+
+| Who signs your outgoing mail? | Name of record c | Value of record c |
+|---|---|---|
+| The built-in relay (Part D1) | `mail._domainkey` | The relay makes a key for the new domain. Do procedure 1. |
+| Postern (`DKIM_SELECTOR` and `DKIM_KEY_FILE` have values, Part D2) | Your selector and `._domainkey`. Example: `postern._domainkey` | The same value as for your first domain. Postern uses one key for all domains. Do procedure 2. |
+| A relay company (Part D2) | The company gives you the name. | Add the new domain in your account at the company. The company gives you the value. |
+
+**Procedure 1: the built-in relay signs.**
+
+1. Show the DKIM records of the relay:
+   ```
+   docker compose exec relay sh -c 'for f in /var/lib/rspamd/dkim/*.txt /etc/opendkim/keys/*.txt; do [ -f "$f" ] && echo "== $f" && cat "$f"; done; true'
+   ```
+2. Find the line that starts with `==` and contains the name of the new domain.
+3. Find the text that starts with `v=DKIM1` below that line.
+4. Join the parts of this text into one line with no quotation marks.
+5. Add record c with this line as the value.
+
+**Check this:** the authors did not test the built-in relay with two domains. If the result has no entry for the new domain, wait one minute. Then do step 1 again.
+
+**Procedure 2: Postern signs.**
+
+1. Show the DKIM record of your first domain. Use your selector in place of `postern`.
+   ```
+   dig +short TXT postern._domainkey.example.com
+   ```
+2. Join the parts of the result into one line with no quotation marks.
+3. Add record c with the name `postern._domainkey` and with this line as the value.
+
+**Check:** the DKIM record of the new domain is active. The result of this command must start with `"v=DKIM1`. Use your selector in place of `mail`.
+
+```
+dig +short TXT mail._domainkey.my-own-domain.example
+```
+
+### H5. Make an alias on the new domain
+
+**Check this:** the names of buttons in the app can be different in your version.
+
+1. Open `https://mail.example.com` in your browser.
+2. Sign in.
+3. If the app was open before the change, load the page again.
+4. Open the page "Aliases".
+5. Select "New alias".
+6. Select "Choose the name myself".
+7. In the list "Domain", select `@my-own-domain.example`.
+8. Type a name in the field "Name". For a random name, keep the field empty.
+9. Select "Make alias".
+
+**Check:** the app shows the new alias. The address ends with `@my-own-domain.example`.
+
+Notes:
+
+- The list "Domain" shows each domain in `MAIL_DOMAINS`. The list appears only if the server has two domains or more.
+- If you do not select "Choose the name myself", Postern makes the alias on your first domain.
+- The dialog "New inbox" has the same list.
+- **Check this:** the app must show the warning from H1 for a domain in `MAIL_PERSONAL_DOMAINS`. The authors did not see this warning in the app when they wrote this part.
+- Do not remove a domain from `MAIL_DOMAINS` while you use addresses on it. Postern sends mail only from domains in this list.
+
+### H6. Test mail on the new domain
+
+1. From a different email account that you have, send a message to the new alias.
+2. Make sure that the message appears in Postern. This tests incoming mail.
+3. In Postern, open the page "Mail".
+4. Select "Write".
+5. In the field "From", select the new alias.
+6. Type the address of your different email account in the field for the recipient.
+7. Send the message.
+8. Open the message in the different email account. Look in the inbox and in the spam folder.
+9. Show the "original message" or the "headers" of the message.
+10. Find the words `spf=`, `dkim=` and `dmarc=` in the headers.
+
+**Check:** the headers show `spf=pass`, `dkim=pass` and `dmarc=pass`. The lines with `spf=` and `dkim=` must contain `my-own-domain.example`.
+
+After a successful check, change record d to `v=DMARC1; p=quarantine`.
+
+If a result is not `pass`, see Part J, "Mail from an address on the new domain".
+
+### H7. If your server has other users
+
+All users of the server can use each domain in `MAIL_DOMAINS`. Postern has no domains for one account only.
+Thus other users can also make aliases on `my-own-domain.example`.
+If you want a domain for yourself only, operate the server for yourself only: set `SIGNUP=closed` (Part G5).
+
+---
+
+## Part I. Backups and updates
+
+### I1. What you must keep
 
 | Thing | Where it is | How you keep it |
 |---|---|---|
@@ -823,7 +1033,7 @@ If `SECRET_KEY` is empty in your `.env` file, the server secret is the file `sec
 docker compose exec app cat /data/secret.key
 ```
 
-### H2. Make a backup
+### I2. Make a backup
 
 1. Go to the settings folder:
    ```
@@ -838,7 +1048,7 @@ docker compose exec app cat /data/secret.key
 
 The backup program copies the databases safely while Postern runs. It keeps the 7 newest backups.
 
-### H3. Make a backup each night
+### I3. Make a backup each night
 
 1. Tell the server to run the backup program each night at 03:30:
    ```
@@ -851,7 +1061,7 @@ The backup program copies the databases safely while Postern runs. It keeps the 
 tail -n 3 /var/log/postern-backup.log
 ```
 
-### H4. Copy the backups to a second place
+### I4. Copy the backups to a second place
 
 If you lose the server, you also lose each backup that is on the server.
 
@@ -864,7 +1074,7 @@ If you lose the server, you also lose each backup that is on the server.
 
 Do this at regular intervals, for example each week.
 
-### H5. Put a backup back (restore)
+### I5. Put a backup back (restore)
 
 Do this only if the data is lost or damaged. You lose all changes that users made after the backup.
 A credit token that a user spent after the backup can be spent a second time.
@@ -891,11 +1101,11 @@ A credit token that a user spent after the backup can be spent a second time.
 
 **Check this:** the authors did not test the restore command.
 
-### H6. Updates
+### I6. Updates
 
 Do these steps one time each month.
 
-1. Make a backup (H2).
+1. Make a backup (I2).
 2. Update the operating system:
    ```
    apt update && apt -y upgrade
@@ -931,7 +1141,7 @@ Notes:
 
 ---
 
-## Part I. Troubleshooting
+## Part J. Troubleshooting
 
 First look at the state and at the log of Postern. The log contains no user data.
 
@@ -949,10 +1159,13 @@ docker compose logs --tail 50 app
 | **Mail from outside does not arrive.** | DNS record 3 (MX) is wrong. Incoming port 25 is closed at the host. The address does not exist, or the alias is off. The mailbox is suspended or full. The message is too large. | Run `dig +short MX example.com`. Ask the host if incoming port 25 is open. Read the error message that the sender got: `550` = no such address, `450` = mailbox suspended, `452` = mailbox full, `552` = too large. |
 | **Mail from Postern does not arrive.** | `SMTP_RELAY_URL` is empty. Outgoing port 25 is blocked. The PTR record is missing. The sender domain is not in `RELAY_DOMAINS`. The other server refused the message. | Make sure that `/api/config` shows `"mockMail":false`. Do Check 4 of Part D1. Run `dig +short -x 203.0.113.10`. Then enable the relay log: set `RELAY_LOG_DRIVER=local`, run `docker compose up -d`, send one test message, and run `docker compose logs --tail 50 relay`. Look for `status=` and the reason after it. Set `RELAY_LOG_DRIVER=none` again after the test. |
 | **Mail from Postern goes to the spam folder.** | Your server address is new. SPF, DKIM or DMARC is not `pass`. The PTR record is not the same as `MAIL_HOSTNAME`. Your server address is on a block list. | Do Part G3, steps 5 to 7. Correct each result that is not `pass`. Search the web for "IP blocklist check" and test your address. Ask recipients to mark the message as "not spam". Send normal mail for some weeks. If nothing helps, use a relay company (Part D2) or a different server address. |
+| **A website refuses my alias address.** | The website has a list of alias domains that are well known. Your domain is on that list. | Do Part H: add a domain that only you use, and make the alias on that domain. Read the warning in Part H1 first. Use this alias only for that website. |
+| **Mail from an address on the new domain (Part H) does not arrive or is not `pass`. Mail from the first domain is good.** | The new domain is not in `RELAY_DOMAINS`. Record b (SPF) or record c (DKIM) of the new domain is missing or wrong. The relay company does not know the new domain. | Do the check of Part H3. With the built-in relay, make sure that `RELAY_DOMAINS` contains the two domains with a space between them. Do the checks of Part H2 and Part H4. With a relay company, add the new domain in your account at the company. |
+| **The list "Domain" does not show the new domain.** | The new domain is not in `MAIL_DOMAINS`. You did not apply the change. The browser shows an old page. | Do the check of Part H3. Run `docker compose up -d`. Load the page again in the browser. |
 | **A payment stays "waiting".** | The payment is not confirmed. On-chain Bitcoin and Monero need many minutes. The Lightning node has no incoming capacity. BTCPay Server is not ready. A BTCPay setting in the `.env` file is wrong. | Open the invoice in BTCPay Server. If the state is not "Settled", wait, or look at the wallet of the payer. If the state is "Settled" and Postern still waits after two minutes: look at the `app` log, then compare `BTCPAY_URL`, `BTCPAY_STORE_ID` and `BTCPAY_API_KEY` with BTCPay Server. In BTCPay Server, open the webhook and look at the list of deliveries. |
 | **Postern cannot make a payment request.** | A name in `BTCPAY_METHODS` is not a method of your store. The API key has the wrong permissions or the wrong store. | Do Part E6 again. Make a new API key as in Part E4. |
 | **A number purchase fails.** | The Twilio account is a trial account or has no money. The country needs identity documents (example: `GB`). A different customer bought the number. The Account SID or the Auth Token is wrong. | In the Twilio Console, open "Monitor", then "Logs", then "Errors". Add money. Remove the country from `PHONE_COUNTRIES`. Select a different number. Compare the two Twilio values in the `.env` file with the Twilio Console. Postern gives the credits back to the user after a failed purchase. |
-| **Texts fail with error 30034.** | The number is a US local number that is not registered for A2P 10DLC `[R2]`. | Do Part F3 and add the number to the Messaging Service of your campaign. Without registration, the number can only receive texts. Tell your users. |
+| **Texts fail with error 30034.** | The number is a US local number that is not registered for A2P 10DLC `[R2]`. `TWILIO_MESSAGING_SERVICE_SID` is empty. A user bought the number before you set `TWILIO_MESSAGING_SERVICE_SID`. | Do Part F3. Make sure that `TWILIO_MESSAGING_SERVICE_SID` has a value. In the Twilio Console, add each older number to the Messaging Service by hand. Without registration, a number can only receive texts. Tell your users. |
 | **Incoming texts or calls do not appear in Postern.** | Twilio cannot reach your server. `PUBLIC_URL` is not the address that Twilio uses, so the signature check fails. | In the Twilio Console, open "Monitor", then "Logs", then "Errors". An error with the status `403` means: `PUBLIC_URL` is wrong. A connection error means: the web page or the certificate has a problem. |
 | **The page does not update itself. You must load it again to see new mail.** | Caddy is older than version 2.11.7 `[N6]`, or a different proxy is in front of Caddy. | Run `docker compose exec caddy caddy version`. Run `docker compose pull --ignore-buildable`, then `docker compose up -d`. |
 | **`backup.sh` shows `BACKUP FAILED`.** | The `.env` file is missing. Docker does not run. The disk is full. | Read the lines above the message. Run `df -h` to see the free disk space. |

@@ -4,9 +4,10 @@
 //
 //   name                          'mock' | 'twilio'
 //   webhookBody                   'json' | 'form': how the provider encodes its webhook requests
-//   capabilities                  { voice, asyncText, searchByArea }, all boolean
+//   capabilities                  { voice, voicemail, asyncText, searchByArea }, all boolean
 //       voice: the provider can make and receive calls. If false, the "voice only" functions
 //              below are not necessary, and the module refuses calls with 409 no_voice.
+//       voicemail: the provider can record a caller (the "voicemail only" functions below).
 //       asyncText: the result of a text can arrive after sendText() has returned.
 //       searchByArea: search() can filter by area code.
 //
@@ -31,9 +32,21 @@
 //   parseVoice(c)  → { to, from, callId }
 //   parseStatus(c) → { callId, status: 'answered' | 'missed' | 'failed' | null, seconds }
 //   voiceReply(actions) → { contentType, body }
-//       actions: [{ say: 'text' }, { dial: { number, callerId, timeout, timeLimit, actionUrl } }, { hangup: true }]
-//       timeout: seconds to ring. timeLimit: the provider ends the connected call after this many seconds.
-//       actionUrl: the provider POSTs the result of the dial there (see parseStatus).
+//       actions: [{ say: 'text' }, { dial: { number, callerId, timeout, timeLimit, actionUrl } },
+//                 { record: { maxSeconds, doneUrl, actionUrl } }, { hangup: true }]
+//       dial.timeout: seconds to ring. dial.timeLimit: the provider ends the connected call after this many seconds.
+//       dial.actionUrl: the provider POSTs the result of the dial there (see parseStatus) and follows the answer.
+//       record: play a tone, record the caller for maxSeconds at most, then go on at actionUrl.
+//               When the recording can be fetched, the provider POSTs to doneUrl (see parseRecording).
+//
+//   Voicemail only:
+//   parseRecording(c) → { callId, recordingRef, seconds, url, ready }
+//       callId: the call that was recorded. recordingRef: the id of the recording. url: where the
+//       provider says the audio is ('' if it gives none). ready: false if this report is not "the recording is complete".
+//   fetchRecording({ ref, url }, { maxBytes }) → { bytes: Buffer, contentType }
+//       Must never fetch from a host that came with a request. Throws ProviderError with
+//       tooLarge = true if the audio is larger than maxBytes.
+//   deleteRecording(ref) → void   throws ProviderError with notFound = true if it is gone
 //
 // All async functions throw ProviderError (see errors.js) with a plain message.
 //
@@ -47,6 +60,31 @@ import { ProviderError } from './errors.js';
 
 const OUTBOX_MAX = 500;
 const CALLING_CODES = { US: '1', CA: '1', GB: '44', DE: '49', FR: '33', NL: '31', SE: '46', ES: '34', IT: '39', AU: '61', IE: '353', CH: '41', AT: '43' };
+// A short tone as a WAV file (8 kHz, mono, 16 bit). The mock "records" this, so that a
+// developer can really play a voicemail in the web app.
+export function toneWav({ seconds = 1, rate = 8000, hz = 440 } = {}) {
+  const count = Math.floor(seconds * rate);
+  const buf = Buffer.alloc(44 + count * 2);
+  buf.write('RIFF', 0, 'ascii');
+  buf.writeUInt32LE(36 + count * 2, 4);
+  buf.write('WAVEfmt ', 8, 'ascii');
+  buf.writeUInt32LE(16, 16); // size of the format block
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // one channel
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28); // bytes for each second
+  buf.writeUInt16LE(2, 32); // bytes for each sample
+  buf.writeUInt16LE(16, 34); // bits for each sample
+  buf.write('data', 36, 'ascii');
+  buf.writeUInt32LE(count * 2, 40);
+  for (let i = 0; i < count; i++) {
+    // Soft start and end, so that the tone does not click.
+    const edge = Math.min(1, i / 400, (count - i) / 400);
+    buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * hz * i) / rate) * 9000 * edge), 44 + i * 2);
+  }
+  return buf;
+}
+
 const AREAS = {
   212: ['New York', 'NY'], 312: ['Chicago', 'IL'], 415: ['San Francisco', 'CA'], 512: ['Austin', 'TX'],
   206: ['Seattle', 'WA'], 305: ['Miami', 'FL'], 416: ['Toronto', 'ON'], 604: ['Vancouver', 'BC'], 514: ['Montreal', 'QC'],
@@ -79,7 +117,9 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
   const ringing = new Map(); // call ref -> { from, to, answerUrl, statusUrl }
   const outbox = { texts: [], calls: [] };
   const released = [];
-  const planned = { search: [], buy: [], release: [], sendText: [], startCall: [] };
+  const recordings = new Map(); // recording ref -> { bytes, contentType }
+  const deletedRecordings = []; // refs, in the order of the delete calls
+  const planned = { search: [], buy: [], release: [], sendText: [], startCall: [], fetchRecording: [], deleteRecording: [] };
   const timers = new Set();
   const now = () => Math.floor(Date.now() / 1000);
   const newRef = (prefix) => prefix + randomBytes(12).toString('hex');
@@ -108,6 +148,13 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
   }
   const actionsOf = (out) => JSON.parse(String(out.body)).actions || [];
   const dialOf = (actions) => (actions.find((a) => a.dial) || {}).dial || null;
+  const recordOf = (actions) => (actions.find((a) => a.record) || {}).record || null;
+  // The caller speaks after the tone. The provider keeps the recording and reports it.
+  async function leaveMessage(record, callId, seconds) {
+    const ref = provider.addRecording();
+    await post(record.doneUrl, { callId, recordingRef: ref, seconds: Math.max(1, Math.min(seconds, record.maxSeconds)), url: `mock://recordings/${ref}` });
+    return ref;
+  }
   // A real provider cuts the call at the time limit of the dial.
   const cut = (seconds, dial) => (dial.timeLimit ? Math.min(seconds, dial.timeLimit) : seconds);
 
@@ -115,9 +162,11 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
     name: 'mock',
     webhookBody: 'json',
     // A test can set voice to false to act like a provider with no calls.
-    capabilities: { voice: true, asyncText: false, searchByArea: true },
+    capabilities: { voice: true, voicemail: true, asyncText: false, searchByArea: true },
     outbox,
     released,
+    recordings,
+    deletedRecordings,
     owned,
     ringing,
 
@@ -220,6 +269,33 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
       const status = ['answered', 'missed', 'failed'].includes(b.status) ? b.status : null;
       return { callId: str(b.callId), status, seconds: Number.isInteger(b.seconds) && b.seconds > 0 ? b.seconds : 0 };
     },
+    parseRecording(c) {
+      const b = c.body || {};
+      return { callId: str(b.callId), recordingRef: str(b.recordingRef), seconds: Number.isInteger(b.seconds) ? b.seconds : 0, url: str(b.url), ready: b.ready !== false };
+    },
+    // The mock has its recordings in memory. It never looks at the url.
+    async fetchRecording({ ref }, { maxBytes = Infinity } = {}) {
+      failIfPlanned('fetchRecording');
+      const rec = recordings.get(ref);
+      if (!rec) throw new ProviderError('The telephone provider does not have this recording.', { notFound: true, status: 404 });
+      if (rec.bytes.length > maxBytes) throw new ProviderError('The recording is too large.', { tooLarge: true });
+      return { bytes: Buffer.from(rec.bytes), contentType: rec.contentType };
+    },
+    async deleteRecording(ref) {
+      failIfPlanned('deleteRecording');
+      deletedRecordings.push(ref);
+      if (!recordings.delete(ref)) throw new ProviderError('The telephone provider does not have this recording.', { notFound: true, status: 404 });
+    },
+    // Test hook: a recording at the provider. Returns its ref. Default: a tone of one second.
+    addRecording({ bytes = toneWav(), contentType = 'audio/wav' } = {}) {
+      const ref = newRef('MR');
+      recordings.set(ref, { bytes, contentType });
+      return ref;
+    },
+    // Test hook: the provider reports a recording. It runs the same handler as the recording webhook.
+    async reportRecording({ callId, recordingRef, seconds, url = '', ready }) {
+      await post(hooks.paths.recording, { callId, recordingRef, seconds, url, ready });
+    },
     voiceReply(actions) {
       return { contentType: 'application/json', body: JSON.stringify({ actions }) };
     },
@@ -235,16 +311,24 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
     },
 
     // A full incoming call. If the server forwards it, the real phone answers
-    // (answered = true) and the call lasts `seconds`. Returns what happened.
-    async simulateCall({ to, from, seconds = 30, answered = true }) {
+    // (answered = true) and the call lasts `seconds`.
+    // voicemail = true: nobody answers, and the caller leaves a message of `seconds` when the
+    // server offers that. Returns what happened; recordingRef is the recording, or null.
+    async simulateCall({ to, from, seconds = 30, answered = true, voicemail = false }) {
       const callId = newRef('MC');
       const actions = actionsOf(await post(hooks.paths.voice, { to, from, callId }));
       const dial = dialOf(actions);
-      if (!dial) return { callId, forwarded: false, actions };
+      if (!dial) {
+        const record = voicemail ? recordOf(actions) : null;
+        return { callId, forwarded: false, actions, recordingRef: record ? await leaveMessage(record, callId, seconds) : null };
+      }
       keep(outbox.calls, { from: dial.callerId || from, to: dial.number, at: now(), ref: callId });
-      const status = answered ? { callId, status: 'answered', seconds: cut(seconds, dial) } : { callId, status: 'missed', seconds: 0 };
-      await post(dial.actionUrl, status);
-      return { callId, forwarded: true, actions };
+      const pickUp = answered && !voicemail;
+      const status = pickUp ? { callId, status: 'answered', seconds: cut(seconds, dial) } : { callId, status: 'missed', seconds: 0 };
+      // The answer to the end of the dial says how the call goes on (for example: voicemail).
+      const after = actionsOf(await post(dial.actionUrl, status));
+      const record = voicemail ? recordOf(after) : null;
+      return { callId, forwarded: true, actions, after, recordingRef: record ? await leaveMessage(record, callId, seconds) : null };
     },
 
     // The phone that startCall() called reacts. The provider asks the answer address what to do.

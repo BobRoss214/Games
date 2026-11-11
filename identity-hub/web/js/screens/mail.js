@@ -11,7 +11,7 @@ import { toast, copyText } from '../ui/toast.js';
 import { listMessages, getMessage, getAttachment, setSeen, deleteMessage, personShort, personText, downloadBlob, takeMailFilter } from '../lib/mail.js';
 import { sanitizeEmail, inlineImageUrl, cidKey, htmlToText, INLINE_IMAGE_MAX } from '../lib/sanitize.js';
 import { loadMailboxes, updateAlias, findMailbox } from '../lib/data.js';
-import { openNewInbox } from '../ui/identities.js';
+import { openNewInbox } from '../ui/items.js';
 import { openCompose } from './compose.js';
 import { openTestTools } from './testtools.js';
 

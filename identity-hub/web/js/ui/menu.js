@@ -6,13 +6,14 @@ let closeOpen = null;
 
 // items: array or function returning an array of
 // { label, icon?, onSelect, danger?, disabled?, hint? } or 'separator'
-export function menuButton({ label, items, iconName = 'more', cls = '' }) {
+// text: show a normal button with this text (and a small arrow) in place of the "…" icon.
+export function menuButton({ label, items, iconName = 'more', cls = '', text = '' }) {
   const id = uid('menu');
   const btn = h('button', {
-    class: `icon-btn ${cls}`.trim(), type: 'button', 'aria-label': label, title: label, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': id,
+    class: `${text ? 'btn' : 'icon-btn'} ${cls}`.trim(), type: 'button', 'aria-label': text ? null : label, title: text ? null : label, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': id,
     onClick: (e) => { e.stopPropagation(); if (btn.getAttribute('aria-expanded') === 'true') closeOpen?.(); else open(); },
     onKeydown: (e) => { if (e.key === 'ArrowDown') { e.preventDefault(); open(); } },
-  }, icon(iconName, { size: 18 }));
+  }, text ? [iconName !== 'more' ? icon(iconName, { size: 18 }) : null, h('span', { class: 'btn-label' }, text), icon('chevronDown', { size: 16 })] : icon(iconName, { size: 18 }));
 
   function open() {
     closeOpen?.();

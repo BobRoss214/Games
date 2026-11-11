@@ -7,8 +7,8 @@ import { button, emptyState, skeletonRows, pageHeader, section, field, selectFie
 import { menuButton } from '../ui/menu.js';
 import { openDialog, formDialog, confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
-import { identityItems, identityList } from '../ui/rows.js';
-import { openGetNumber } from '../ui/identities.js';
+import { rowItems, itemRows } from '../ui/rows.js';
+import { openGetNumber } from '../ui/items.js';
 import { linkPhone, sendPhoneCode, verifyPhone, removePhone, findPhone, renewDays } from '../lib/data.js';
 import { openTestTools } from './testtools.js';
 
@@ -133,16 +133,16 @@ export async function openLinkPhone() {
 
 function phoneRow(p) {
   return h('li', { class: 'phone-row' },
-    h('span', { class: 'id-icon' }, icon('phone', { size: 20 })),
-    h('div', { class: 'id-main' },
-      h('span', { class: 'id-value mono' }, phoneText(p.number)),
-      h('div', { class: 'id-sub' },
-        p.label ? h('span', { class: 'id-label' }, p.label) : h('span', { class: 'id-label is-empty' }, 'No label'),
+    h('span', { class: 'item-icon' }, icon('phone', { size: 20 })),
+    h('div', { class: 'item-main' },
+      h('span', { class: 'item-value mono' }, phoneText(p.number)),
+      h('div', { class: 'item-sub' },
+        p.label ? h('span', { class: 'item-label' }, p.label) : h('span', { class: 'item-label is-empty' }, 'No label'),
         p.verified ? tag('Linked', 'ok') : tag('Waiting for code', 'warn'),
         h('span', { class: 'small faint' }, `Added on ${dayText(p.createdDay)}`),
       ),
     ),
-    h('div', { class: 'id-actions' },
+    h('div', { class: 'item-actions' },
       p.verified ? null : button('Enter code', { size: 'sm', onClick: () => openVerifyPhone(p.id) }),
       copyButton(() => p.number, 'Copy number', { what: 'Number copied' }),
       menuButton({ label: `More actions for ${phoneText(p.number)}`, items: [
@@ -165,8 +165,8 @@ export function numbersScreen({ scope }) {
     );
   }
   const price = config.prices.numberMonth || 0;
-  const numbersRegion = h('div', { class: 'sheet id-sheet' });
-  const phonesRegion = h('div', { class: 'sheet id-sheet' });
+  const numbersRegion = h('div', { class: 'sheet item-sheet' });
+  const phonesRegion = h('div', { class: 'sheet item-sheet' });
 
   const getButton = button('Get a number', { kind: 'primary', iconName: 'plus', onClick: () => openGetNumber() });
 
@@ -180,7 +180,7 @@ export function numbersScreen({ scope }) {
         text: `A number gets texts and calls for you. Give it out in place of your real number.${price ? ` ${money(price)} for each ${renewDays()} days.` : ''}`,
         action: button('Get a number', { kind: 'primary', iconName: 'plus', onClick: () => openGetNumber() }),
       }));
-    } else replace(numbersRegion, identityList(identityItems(state).filter((it) => it.kind === 'number')));
+    } else replace(numbersRegion, itemRows(rowItems(state).filter((it) => it.kind === 'number')));
 
     if (state.phones === null) replace(phonesRegion, skeletonRows(2));
     else if (state.phones.length === 0) {
@@ -189,7 +189,7 @@ export function numbersScreen({ scope }) {
         text: 'Without a real phone, texts and calls stay in this app.',
         action: button('Link a phone', { onClick: () => openLinkPhone() }),
       }));
-    } else replace(phonesRegion, h('ul', { class: 'id-list' }, state.phones.map(phoneRow)));
+    } else replace(phonesRegion, h('ul', { class: 'item-list' }, state.phones.map(phoneRow)));
   }
   scope.add(store.subscribe(['numbers', 'phones'], paint));
 

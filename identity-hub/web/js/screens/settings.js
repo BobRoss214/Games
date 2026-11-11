@@ -19,7 +19,7 @@ export function settingsScreen({ scope }) {
   const config = store.get('config');
 
   // ---- passkeys ----
-  const passkeySlot = h('div', { class: 'sheet id-sheet' });
+  const passkeySlot = h('div', { class: 'sheet item-sheet' });
   let passkeys = null;
   async function loadPasskeys() {
     try {
@@ -59,16 +59,16 @@ export function settingsScreen({ scope }) {
       }));
       return;
     }
-    replace(passkeySlot, h('ul', { class: 'id-list' }, passkeys.map((p) => h('li', { class: 'phone-row' },
-      h('span', { class: 'id-icon' }, icon('passkey', { size: 20 })),
-      h('div', { class: 'id-main' },
-        h('span', { class: 'id-value' }, p.label || 'Passkey'),
-        h('div', { class: 'id-sub' },
+    replace(passkeySlot, h('ul', { class: 'item-list' }, passkeys.map((p) => h('li', { class: 'phone-row' },
+      h('span', { class: 'item-icon' }, icon('passkey', { size: 20 })),
+      h('div', { class: 'item-main' },
+        h('span', { class: 'item-value' }, p.label || 'Passkey'),
+        h('div', { class: 'item-sub' },
           p.hasKey ? tag('Signs in and unlocks', 'ok') : tag('Signs in only', 'warn'),
           h('span', { class: 'small faint' }, `Added on ${dayText(p.createdDay)}`),
         ),
       ),
-      h('div', { class: 'id-actions' },
+      h('div', { class: 'item-actions' },
         menuButton({ label: `More actions for ${p.label || 'passkey'}`, items: [
           { label: 'Rename', icon: 'edit', onSelect: async () => {
             const name = field({ label: 'Name', value: p.label, maxlength: 40 });
@@ -96,7 +96,7 @@ export function settingsScreen({ scope }) {
   }
 
   // ---- sessions ----
-  const sessionSlot = h('div', { class: 'sheet id-sheet' });
+  const sessionSlot = h('div', { class: 'sheet item-sheet' });
   let sessions = null;
   async function loadSessions() {
     try {
@@ -119,13 +119,13 @@ export function settingsScreen({ scope }) {
     if (sessions === null) { replace(sessionSlot, skeletonRows(2)); return; }
     othersBtn.hidden = sessions.filter((s) => !s.current).length === 0;
     const sorted = [...sessions].sort((a, b) => Number(b.current) - Number(a.current));
-    replace(sessionSlot, h('ul', { class: 'id-list' }, sorted.map((s) => h('li', { class: 'phone-row' },
-      h('span', { class: 'id-icon' }, icon('system', { size: 20 })),
-      h('div', { class: 'id-main' },
-        h('span', { class: 'id-value' }, s.current ? 'This browser' : 'Another browser or device'),
-        h('div', { class: 'id-sub' }, s.current ? tag('Current', 'ok') : null, h('span', { class: 'small faint' }, `Signed in on ${dayText(s.createdDay)}`)),
+    replace(sessionSlot, h('ul', { class: 'item-list' }, sorted.map((s) => h('li', { class: 'phone-row' },
+      h('span', { class: 'item-icon' }, icon('system', { size: 20 })),
+      h('div', { class: 'item-main' },
+        h('span', { class: 'item-value' }, s.current ? 'This browser' : 'Another browser or device'),
+        h('div', { class: 'item-sub' }, s.current ? tag('Current', 'ok') : null, h('span', { class: 'small faint' }, `Signed in on ${dayText(s.createdDay)}`)),
       ),
-      h('div', { class: 'id-actions' },
+      h('div', { class: 'item-actions' },
         s.current ? null : button('Sign out', { size: 'sm', onClick: (e, btn) => runBusy(btn, async () => { await api.del(`/api/sessions/${s.id}`); toast('Session signed out', { kind: 'ok' }); await loadSessions(); }) }),
       ),
     ))));

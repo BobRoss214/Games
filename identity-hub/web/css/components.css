@@ -276,3 +276,38 @@
 @media (max-width: 720px) {
   .toasts { left: var(--s-4); right: var(--s-4); bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--s-3)); width: auto; }
 }
+
+/* ---------- tag that is a link or a button ---------- */
+.tag-link { gap: 0.25rem; max-width: 12rem; min-width: 0; background: transparent; color: var(--ink-2); text-decoration: none; font-family: inherit; cursor: pointer; transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.tag-link:hover { border-color: var(--accent); color: var(--accent); }
+.tag-link .icon { color: var(--accent); }
+.tag .icon { flex-shrink: 0; }
+.tag-warn { gap: 0.25rem; }
+@media (max-width: 720px) { .tag-link { height: 1.75rem; padding: 0 0.5rem; } }
+
+/* ---------- radio list (choose one, with a note under each choice) ---------- */
+.radio-list { display: flex; flex-direction: column; border: 1px solid var(--line-2); border-radius: var(--r-lg); overflow: hidden; max-height: 18rem; overflow-y: auto; }
+.radio { display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); }
+.radio:first-child { border-top: 0; }
+.radio label { display: flex; flex-direction: column; gap: 0.125rem; flex: 1 1 auto; min-width: 0; cursor: pointer; }
+.radio-label { font-weight: 500; overflow-wrap: anywhere; }
+.radio-note { font-size: var(--fs-sm); color: var(--ink-3); }
+.radio-input {
+  appearance: none; -webkit-appearance: none; flex-shrink: 0; width: 1.25rem; height: 1.25rem; margin: 0.125rem 0 0;
+  border: 1px solid var(--line-input); border-radius: 50%; background: var(--surface); cursor: pointer; display: grid; place-content: center;
+}
+.radio-input::after { content: ""; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--accent); opacity: 0; }
+.radio-input:checked { border-color: var(--accent); }
+.radio-input:checked::after { opacity: 1; }
+.radio:has(.radio-input:checked) { background: var(--accent-wash); }
+@media (max-width: 720px) { .radio { min-height: var(--touch); align-items: center; } .radio-input { margin-top: 0; } }
+
+/* ---------- pick list (check some) ---------- */
+.pick-list { display: flex; flex-direction: column; border: 1px solid var(--line-2); border-radius: var(--r-lg); max-height: 20rem; overflow-y: auto; }
+.pick-row { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); border-top: 1px solid var(--line); }
+.pick-row:first-child { border-top: 0; }
+.pick-row > .icon { color: var(--accent); }
+.pick-row .check { flex: 1 1 auto; min-width: 0; flex-direction: row-reverse; justify-content: space-between; align-items: center; }
+.pick-row .check label { flex: 1 1 auto; min-width: 0; }
+.pick-row .check-input { margin-top: 0; }
+.pick-label { display: flex; flex-direction: column; min-width: 0; font-size: 0.875rem; }

@@ -44,6 +44,7 @@ If you must change it, change this file in the same commit.
 | `sealedNumber` (real phone) | `phone` | `{ "number": "+14155550199" }` |
 | text `sealed` | `text` | `{ "peer": "+1415…", "body": "Hello" }` |
 | call `sealed` | `call` | `{ "peer": "+1415…" }` |
+| blocked sender `sealed` | `block` | `{ "kind": "address"\|"domain", "value": "spam@shop.example" }` |
 
 **The database never stores an alias address or a VoIP number in plain form.** It stores
 `keys.indexHmac('addr', address)` / `keys.indexHmac('num', number)` for lookup, plus the sealed copy.
@@ -160,14 +161,17 @@ Errors when an address is made (`POST /api/mailboxes`, `POST /api/aliases`):
 
 | Route | Body / query | Result |
 |---|---|---|
-| `GET /api/mailboxes` **(auth)** | — | `{ mailboxes: [{ id, addressId, sealedAddress, enc, status: "active"\|"suspended", paidUntil, createdDay, unread, total }] }`, oldest first |
+| `GET /api/mailboxes` **(auth)** | — | `{ mailboxes: [{ id, addressId, sealedAddress, enc, status: "active"\|"suspended", paidUntil, createdDay, unread, total, retentionDays, blocks }] }`, oldest first |
 | `POST /api/mailboxes` **(auth)** | `{ localPart?, domain?, enc? }` | 201 `{ mailbox, address }`. Charges `prices.mailboxMonth` (kind `mailbox`). `address` is the plain address, returned this one time. 409 `taken`, 409 `limit_reached`, 402, 400 `bad_request`. Rate limit 60/hour per account. |
-| `PATCH /api/mailboxes/:id` **(auth)** | `{ enc }` (`enc: null` removes the label) | `{ mailbox }`. 400 `bad_request` if `enc` is absent. |
+| `PATCH /api/mailboxes/:id` **(auth)** | `{ enc?, retentionDays? }` (at least one; `enc: null` removes the label; `retentionDays`: null or 1 to 3650) | `{ mailbox }`. 400 `bad_request` if no value is given or a value is not valid. |
 | `DELETE /api/mailboxes/:id` **(auth)** | — | 204. Deletes its messages and its aliases. No credit is given back. |
-| `GET /api/aliases` **(auth)** | — | `{ aliases: [{ id, mailboxId, sealedAddress, enc, enabled, createdDay, received }] }`, oldest first (`received` = count of delivered messages) |
+| `GET /api/aliases` **(auth)** | — | `{ aliases: [{ id, mailboxId, sealedAddress, enc, enabled, createdDay, received, expiresAt, blocks }] }`, oldest first (`received` = count of delivered messages) |
 | `POST /api/aliases` **(auth)** | `{ mailboxId, localPart?, domain?, enc? }` | 201 `{ alias, address }`. Free. 404 `not_found` (mailbox), 409 `taken`, 409 `limit_reached`, 400 `bad_request`. Rate limit 120/hour per account. |
-| `PATCH /api/aliases/:id` **(auth)** | `{ enabled?, mailboxId?, enc? }` (at least one; `enc: null` removes the label) | `{ alias }`. 400 `bad_request` if no value is given. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
-| `DELETE /api/aliases/:id` **(auth)** | — | 204. Messages stay in the mailbox. Their `addressId` becomes null. |
+| `PATCH /api/aliases/:id` **(auth)** | `{ enabled?, mailboxId?, enc?, expiresAt? }` (at least one; `enc: null` removes the label; `expiresAt`: null or Unix seconds in the future) | `{ alias }`. 400 `bad_request` if no value is given or a value is not valid. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
+| `DELETE /api/aliases/:id` **(auth)** | — | 204. Messages stay in the mailbox. Their `addressId` becomes null. Its blocks are deleted. |
+| `GET /api/addresses/:id/blocks` **(auth)** | — | `{ blocks: [{ id, sealed, createdDay }] }`, oldest first. `:id` is an alias id or `mailbox.addressId`. |
+| `POST /api/addresses/:id/blocks` **(auth)** | `{ kind: "address"\|"domain", value }` | 201 `{ block }`. 200 `{ block }` with the block that exists, if this sender is blocked on this address already. 400 `bad_request`, 409 `limit_reached` (200 blocks for one address). Rate limit 60/minute per account. |
+| `DELETE /api/addresses/:id/blocks/:blockId` **(auth)** | — | 204. 404 `not_found` if the block is not a block of this address. |
 | `GET /api/messages` **(auth)** | `?mailboxId=&addressIds=<id,id,…>&direction=in\|out&before=<at>&beforeId=&limit=` (limit 1 to 100, default 50; `addressIds` 1 to 50 ids) | `{ messages: [{ id, mailboxId, addressId, direction, at, seen, size, attachments (count), sealedKey, encMeta }], more: bool }` newest first. 400 `bad_request` for a bad query value. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
 | `GET /api/messages/:id` **(auth)** | — | `{ message: { ...same fields, body: b64u (part 0) } }` |
 | `GET /api/messages/:id/parts/:index` **(auth)** | index ≥ 1 | 200 `application/octet-stream` (the encrypted attachment). 404 `not_found` if the part does not exist. |
@@ -187,8 +191,31 @@ Mailbox and alias notes:
 - The address of a mailbox (`mailbox.addressId`) is not an alias. It is not in `GET /api/aliases`, and the alias routes give 404 for it. It can send mail (`addressId` in `POST /api/mail/send`).
 - An alias can be made for a suspended mailbox. `PATCH` with `mailboxId` moves the alias: new mail goes to the new mailbox, old messages stay where they are.
 - A disabled alias gets no mail (SMTP answer 550, like an unknown address) and cannot send.
-- Events for the browser: `mailbox` (mailbox made, changed, deleted, suspended, active again), `aliases` (alias made, changed, deleted; mailbox deleted),
-  `mail` with `mailboxId` (new message, seen flag changed, message deleted, Sent copy stored), `balance` (after a charge).
+- `expiresAt` is the end date of an alias: null (no end date, the default) or Unix seconds. `PATCH` accepts null or a time in the future, 10 years ahead at most.
+  From this time on, the alias behaves exactly like a disabled alias: it gets no mail (SMTP `550 5.1.1`, also for mail inside the server) and it cannot send (the same 409 `conflict`).
+  The alias stays in the list with `enabled` as it was; the web app compares `expiresAt` with the clock. A new date in the future or null makes the alias work again.
+  The address of a mailbox has no end date.
+- `retentionDays` is the auto-delete of a mailbox: null (off, the default) or 1 to 3650. The server deletes the messages of this mailbox that are older than this number of days
+  (by `at`; incoming messages and Sent copies, with their attachments). A job does this one time each hour, also for a suspended mailbox, and publishes `mail` with the `mailboxId`.
+  The deleted messages cannot be brought back. The setting changes nothing in the counter `received` of an alias.
+- `blocks` = the number of blocked senders of the address (for a mailbox: of `mailbox.addressId`).
+- Events for the browser: `mailbox` (mailbox made, changed, deleted, suspended, active again; a block of the mailbox address added or removed),
+  `aliases` (alias made, changed, deleted; mailbox deleted; a block of an alias added or removed),
+  `mail` with `mailboxId` (new message, seen flag changed, message deleted by the user or by the auto-delete, Sent copy stored), `balance` (after a charge).
+
+Blocked senders:
+- A block belongs to one address (an alias, or the address of a mailbox). Mail from the blocked sender to this address is refused. Everything else on the address keeps working,
+  and other addresses of the account still accept the sender. A block does not stop the user from sending mail to the blocked sender.
+- `kind: "address"` blocks one sender address. `kind: "domain"` blocks every address of this domain and of its subdomains (`shop.example` also blocks `mail.shop.example`,
+  not `myshop.example`).
+- `value` is changed to lower case. An address must pass the recipient address rule of the send body (below). A domain needs at least one dot, no `@`, no dot at the start or the end,
+  and a last label that starts with a letter. A domain with letters outside ASCII is accepted and stored in its `xn--` form (`bücher.example` becomes `xn--bcher-kva.example`).
+- The server does not store the blocked value in plain form. It stores `keys.indexHmac('block', kind + ':' + value)` for matching, and `sealed`:
+  `store.sealJsonFor(accountId, { kind, value }, 'block')`. The browser opens `sealed` with `openJson(keys, sealed, 'block')` and gets `{ kind, value }`.
+- The server checks the envelope sender (MAIL FROM) and every address in the From line and in the Sender line of the message. Upper case, a dot at the end of the domain,
+  and the two spellings of an international domain make no difference.
+- A refused message is not stored, is not counted in `received`, and publishes no event. The sender is not written to a log.
+- To block the sender of a message, the web app takes `meta.from.address` (kind `address`) or the part after the `@` (kind `domain`).
 
 Message notes:
 - Order: `at` from new to old; messages of the same second by `id` from high to low.
@@ -265,9 +292,9 @@ Errors of `POST /api/mail/send`:
 | Status and code | When |
 |---|---|
 | 400 `bad_request` | A value is not valid, or `from` is not the address of `addressId`. |
-| 400 `bad_recipient` | No recipient; more than 20 recipients; an address that is not well formed; a recipient on our own domains that does not exist or is disabled ("This address does not exist: x@…"); a recipient on our own domains with a suspended or full mailbox ("This address cannot receive mail now: x@…"). |
+| 400 `bad_recipient` | No recipient; more than 20 recipients; an address that is not well formed; a recipient on our own domains that does not exist, is disabled, or is past its end date ("This address does not exist: x@…"); a recipient on our own domains that blocks the from-address ("This address does not accept mail from your address: x@…"); a recipient on our own domains with a suspended or full mailbox ("This address cannot receive mail now: x@…"). |
 | 404 `not_found` | `addressId` is not an address of this account. |
-| 409 `conflict` | The from-address is disabled, or its mailbox is suspended. |
+| 409 `conflict` | The from-address is disabled or past its end date (one message for both), or its mailbox is suspended. |
 | 409 `limit_reached` | The mailbox has no room for the Sent copy. |
 | 413 `too_large` | The request, the content, the finished message, or the copy is over its size limit. |
 | 429 `send_limit` | The daily limit is reached. |
@@ -279,6 +306,8 @@ Incoming SMTP (`smtp-server` on `config.mail.smtpPort`; port 0 = pick a free por
 - The server accepts mail for its own addresses only. It has no login (no AUTH) and is no relay. The greeting shows no software name and no version.
 - For each accepted recipient: parse with `mailparser`, build meta/body/attachments, `sealEnvelope(publicKey, …)`, store, add 1 to `received`, `events.publish(accountId, 'mail', { mailboxId })`.
   Each recipient gets an own copy with an own content key.
+- Blocked senders are checked two times. At RCPT: the envelope sender, for each recipient. After the message arrived: the From line and the Sender line, for each recipient.
+  A recipient that blocks the sender gets no copy. If other recipients are left, they get the message and the answer is 250. A bounce (empty envelope sender) is checked by its From line only.
 - The plain message is never written to disk and never logged.
 - Limits: 20 recipients for one message, 50 connections at the same time, 10 connections from one IP address, 60 seconds without activity.
 
@@ -287,7 +316,8 @@ SMTP answers:
 | Answer | When |
 |---|---|
 | `250` | The message is stored for at least one recipient. |
-| `550 5.1.1` | Unknown recipient, disabled alias, or an address on a domain that is not ours. |
+| `550 5.1.1` | Unknown recipient, disabled alias, alias past its end date, or an address on a domain that is not ours. |
+| `550 5.7.1` | The recipient blocks this sender. At RCPT for the envelope sender (the other recipients can still be accepted). After DATA if the From line or the Sender line is blocked and no recipient is left. The answer does not repeat the sender. A block is answered before a suspended or full mailbox. |
 | `450 4.2.1` | The mailbox of the recipient is suspended. |
 | `452 4.2.2` | The mailbox of the recipient is full (`config.limits.mailboxBytes`, default 1 GB, 0 = no limit). The check runs before the message arrives, so a mailbox can go over the limit by one message. |
 | `452` | More than 20 recipients in one message. The message is accepted for the first 20. |
@@ -310,14 +340,15 @@ TLS on the SMTP port (STARTTLS):
   If the new files do not belong together or cannot be read, the old certificate stays in use.
 
 Service object: `app.services.mail = { smtpPort, outbox: [], deliverLocal({ from, to: [], raw: Buffer }) → Promise<{ accepted: [], rejected: [] }>, checkTls() → bool, tlsStatus() → { source, minVersion } }`.
-- `deliverLocal` gives the lower-case addresses back. `rejected` has the addresses that are unknown, disabled, suspended, full, or not ours. It rejects (error code `EPARSE`) if the message cannot be parsed.
+- `deliverLocal` gives the lower-case addresses back. `rejected` has the addresses that are unknown, disabled, past their end date, suspended, full, not ours, or that block the sender.
+  `from` is the envelope sender (leave it out for none); it is checked against the blocks, like the From line of `raw`. It rejects (error code `EPARSE`) if the message cannot be parsed.
 - `outbox` entries: `{ accountId, from, to: [], subject, at, raw: Buffer }`. The outbox keeps the newest 200 messages and 64 MB at most. It is in memory only.
 - `checkTls()` runs the check of the certificate files now. It returns true if a new certificate was loaded.
 - `tlsStatus()`: `source` is `"configured"`, `"generated"`, or `"default"` (the test certificate of the package). `minVersion` is `"TLSv1.2"`, or null for `"default"`.
 
 Dev routes (register only if `config.dev`):
 - `POST /api/dev/inbound-mail` **(auth)** `{ to, from?, fromName?, subject?, text?, html?, attachments?: [{filename, contentType, content}] }` → 204. Injects a message as if it came from the internet. `to` must be an address of this account.
-  The fields have the same rules as in `POST /api/mail/send`. `from` is `sender@example.com` if absent. 404 `not_found` if `to` is not an address of this account. 409 `conflict` if the address cannot get mail now (disabled alias, suspended or full mailbox).
+  The fields have the same rules as in `POST /api/mail/send`. `from` is `sender@example.com` if absent. 404 `not_found` if `to` is not an address of this account. 409 `conflict` if the address cannot get mail now (disabled alias, alias past its end date, suspended or full mailbox), or if the address blocks `from` (message "This address blocks this sender.").
 - `GET /api/dev/outbox` **(auth)** → `{ mail: [{ from, to: [], subject, at }] }` from the simulated outbox, own messages only.
 
 Renewal: register a renewable of kind `mailbox` with `app.renewables.register(...)` (see `server/core/renew.js`). A suspended mailbox is readable but receives no mail and cannot send. There is no `expire` for mailboxes.

@@ -1,5 +1,5 @@
 // Provider webhooks: incoming texts, status of sent texts, incoming calls, click-to-call
-// bridge, spoken code, call status.
+// bridge, spoken code, call status, voicemail recording.
 // There is no cookie on these requests. The provider signature is mandatory.
 // The mock provider runs these same handlers when it simulates a text or a call.
 import { fail, reply } from '../core/http.js';
@@ -90,6 +90,8 @@ export function createHooks(app, ph) {
     const key = keys.indexHmac('call', callId);
     // This call is in the log already: the provider sent the webhook a second time.
     if (db.get('SELECT 1 AS x FROM calls WHERE call_hmac = ?', key)) return NOT_AVAILABLE;
+    // A voicemail names its caller. Only the memory has the caller in a form that the server can read.
+    if (num.voicemail) ph.voicemail.rememberPeer(key, peer);
     const real = num.forward_calls && ph.hasVoice(num) ? forwardTarget(num) : null;
     if (real && real !== peer && store.canAfford(num.account_id, config.prices.callMinute)) {
       // The status webhook finds the call again with this row.
@@ -98,10 +100,12 @@ export function createHooks(app, ph) {
       // The real phone shows who calls. A hidden caller has no number that we can show.
       return [{ dial: { number: real, callerId: E164.test(peer) ? peer : null, timeout: DIAL_TIMEOUT, timeLimit: timeLimit(num.account_id), actionUrl: ph.urls.status } }];
     }
-    db.run('INSERT INTO calls (id, account_id, number_id, direction, at, seconds, status, sealed, call_hmac) VALUES (?,?,?,?,?,?,?,?,?)',
-      randomId(), num.account_id, num.id, 'in', nowSec(), 0, 'missed', sealed, key);
+    // Not forwarded: a missed call. With voicemail the caller can leave a message for it.
+    const offer = ph.voicemail.applies(num);
+    db.run('INSERT INTO calls (id, account_id, number_id, direction, at, seconds, status, sealed, call_hmac, vm_until) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      randomId(), num.account_id, num.id, 'in', nowSec(), 0, 'missed', sealed, key, offer ? ph.voicemail.until() : null);
     events.publish(num.account_id, 'call', { numberId: num.id });
-    return NOT_AVAILABLE;
+    return offer ? ph.voicemail.actions() : NOT_AVAILABLE;
   }
 
   // Click-to-call: the real phone answered. Connect it to the destination.
@@ -117,8 +121,10 @@ export function createHooks(app, ph) {
 
   // The call ended: write the call log and charge the minutes. Only the first
   // report for a call finds its live_calls row, so a call is never charged twice.
+  // Returns null, or what was logged: { accountId, numberId, cost, voicemail }.
+  // voicemail = true: the forwarded call was not answered and the caller can leave a message now.
   function finishCall({ callId, status, seconds }) {
-    if (!callId || !['answered', 'missed', 'failed'].includes(status)) return;
+    if (!callId || !['answered', 'missed', 'failed'].includes(status)) return null;
     const key = keys.indexHmac('call', callId);
     let done = null;
     db.tx(() => {
@@ -130,13 +136,18 @@ export function createHooks(app, ph) {
       // The call happened already. Take what the balance has, never more.
       const cost = Math.min(store.balance(live.account_id), Math.ceil(secs / 60) * config.prices.callMinute);
       if (cost > 0) store.charge(live.account_id, cost, 'call');
-      db.run('INSERT INTO calls (id, account_id, number_id, direction, at, seconds, status, sealed, call_hmac) VALUES (?,?,?,?,?,?,?,?,?)',
-        randomId(), live.account_id, live.number_id, live.direction, live.at, secs, status, live.sealed, key);
-      done = { accountId: live.account_id, numberId: live.number_id, cost };
+      // An incoming call that the real phone did not take can go to voicemail. It is then a missed call.
+      const num = live.direction === 'in' && status !== 'answered'
+        ? db.get('SELECT * FROM numbers WHERE id = ? AND account_id = ?', live.number_id, live.account_id) : null;
+      const offer = Boolean(num) && ph.voicemail.applies(num);
+      db.run('INSERT INTO calls (id, account_id, number_id, direction, at, seconds, status, sealed, call_hmac, vm_until) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        randomId(), live.account_id, live.number_id, live.direction, live.at, secs, offer ? 'missed' : status, live.sealed, key, offer ? ph.voicemail.until() : null);
+      done = { accountId: live.account_id, numberId: live.number_id, cost, voicemail: offer };
     });
-    if (!done) return;
+    if (!done) return null;
     events.publish(done.accountId, 'call', { numberId: done.numberId });
     if (done.cost > 0) events.publish(done.accountId, 'balance');
+    return done;
   }
 
   // Phone link by call: the real phone answered. Speak the code two times, then end the call.
@@ -151,6 +162,7 @@ export function createHooks(app, ph) {
     paths: {
       text: '/api/hooks/phone/text', textStatus: '/api/hooks/phone/text-status', voice: '/api/hooks/phone/voice',
       bridge: '/api/hooks/phone/bridge', sayCode: '/api/hooks/phone/say-code', status: '/api/hooks/phone/status',
+      recording: '/api/hooks/phone/recording',
     },
     async text(c) {
       check(c);
@@ -181,9 +193,16 @@ export function createHooks(app, ph) {
     },
     async status(c) {
       check(c);
-      finishCall(provider.parseStatus(c));
-      // After a <Dial> the provider asks what to do next: end the call.
-      return answer(provider.voiceReply([{ hangup: true }]));
+      const done = finishCall(provider.parseStatus(c));
+      // After a <Dial> the provider asks what to do next: voicemail if nobody answered and the
+      // user has it on, else end the call. (This is also the next step after a recording: end the call.)
+      return answer(provider.voiceReply(done && done.voicemail ? ph.voicemail.actions() : [{ hangup: true }]));
+    },
+    // The provider has a voicemail recording ready.
+    async recording(c) {
+      check(c);
+      await ph.voicemail.receive(provider.parseRecording(c));
+      return answer(provider.textReply());
     },
   };
 
@@ -196,6 +215,7 @@ export function createHooks(app, ph) {
     http.post(hooks.paths.bridge, opts, hooks.bridge);
     http.post(hooks.paths.sayCode, opts, hooks.sayCode);
     http.post(hooks.paths.status, opts, hooks.status);
+    if (ph.capabilities.voicemail) http.post(hooks.paths.recording, opts, hooks.recording);
   }
   return hooks;
 }

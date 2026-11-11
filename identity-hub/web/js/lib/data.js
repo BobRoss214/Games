@@ -1,8 +1,25 @@
 // Loads the account's items, decrypts them in the browser, and keeps them in the store.
 // Also listens to the server event stream and reloads what changed.
-import { api } from './api.js';
+import { api, ApiError } from './api.js';
 import { store, bus } from './store.js';
 import { decLabel, encLabel, openSealed, isUnlocked, vaultGet, vaultPut } from './session.js';
+import { isPersona } from './persona/index.js';
+import { loadIdentities } from './identities.js';
+
+// The encrypted label blob ("enc") of an item holds more than the label:
+//   { label, note, persona?, identityId?, …fields of later versions }
+// persona = made-up details (name and address). identityId = the identity (group) that the item is in.
+// Everything read from it is checked before use. A value in a wrong form counts as absent.
+const IDENTITY_ID = /^[A-Za-z0-9_-]{22}$/;
+function readEnc(obj) {
+  const o = obj && typeof obj === 'object' ? obj : {};
+  return {
+    label: typeof o.label === 'string' ? o.label : '',
+    note: typeof o.note === 'string' ? o.note : '',
+    persona: isPersona(o.persona) ? o.persona : null,
+    identityId: typeof o.identityId === 'string' && IDENTITY_ID.test(o.identityId) ? o.identityId : '',
+  };
+}
 
 // Lists are reloaded often (every live event). The store changes only when the
 // content is different, so that screens do not repaint for nothing.
@@ -17,8 +34,9 @@ export async function loadMailboxes() {
   const { mailboxes } = await api.get('/api/mailboxes');
   const out = await Promise.all((mailboxes || []).map(async (m) => {
     const [sealed, label] = await Promise.all([openSealed(m.sealedAddress, 'address'), decLabel(m.enc, 'mailbox')]);
+    const e = readEnc(label);
     return {
-      id: m.id, addressId: m.addressId, address: sealed ? sealed.address : '', label: label.label || '', note: label.note || '',
+      id: m.id, addressId: m.addressId, address: sealed ? sealed.address : '', label: e.label, note: e.note,
       status: m.status, paidUntil: m.paidUntil, createdDay: m.createdDay, unread: m.unread || 0, total: m.total || 0,
     };
   }));
@@ -31,8 +49,9 @@ export async function loadAliases() {
   const { aliases } = await api.get('/api/aliases');
   const out = await Promise.all((aliases || []).map(async (a) => {
     const [sealed, label] = await Promise.all([openSealed(a.sealedAddress, 'address'), decLabel(a.enc, 'alias')]);
+    const e = readEnc(label);
     return {
-      id: a.id, mailboxId: a.mailboxId, address: sealed ? sealed.address : '', label: label.label || '', note: label.note || '',
+      id: a.id, mailboxId: a.mailboxId, address: sealed ? sealed.address : '', label: e.label, note: e.note, persona: e.persona, identityId: e.identityId,
       enabled: !!a.enabled, createdDay: a.createdDay, received: a.received || 0,
     };
   }));
@@ -46,8 +65,9 @@ export async function loadNumbers() {
   const { numbers } = await api.get('/api/numbers');
   const out = await Promise.all((numbers || []).map(async (n) => {
     const [sealed, label] = await Promise.all([openSealed(n.sealedNumber, 'number'), decLabel(n.enc, 'number')]);
+    const e = readEnc(label);
     return {
-      id: n.id, number: sealed ? sealed.number : '', label: label.label || '', note: label.note || '',
+      id: n.id, number: sealed ? sealed.number : '', label: e.label, note: e.note, persona: e.persona, identityId: e.identityId,
       country: n.country, sms: !!n.sms, voice: !!n.voice, status: n.status, paidUntil: n.paidUntil, createdDay: n.createdDay,
       forwardPhoneId: n.forwardPhoneId || null, forwardTexts: !!n.forwardTexts, forwardCalls: !!n.forwardCalls, unread: n.unread || 0,
       retentionDays: Number.isInteger(n.retentionDays) ? n.retentionDays : null, // old texts are deleted after this many days; null = never
@@ -97,7 +117,7 @@ function phoneOn() {
 // Loads everything for the dashboard. Each part fails on its own, so one broken
 // module does not empty the whole screen.
 export async function loadAll() {
-  const jobs = [loadMailboxes(), loadAliases(), loadNumbers(), loadPhones(), loadBalance(), loadPrefs()];
+  const jobs = [loadMailboxes(), loadAliases(), loadNumbers(), loadPhones(), loadBalance(), loadPrefs(), loadIdentities()];
   const results = await Promise.allSettled(jobs);
   const s = store.get();
   const patch = {};
@@ -105,6 +125,7 @@ export async function loadAll() {
   if (s.aliases === null) patch.aliases = [];
   if (s.numbers === null) patch.numbers = [];
   if (s.phones === null) patch.phones = [];
+  if (s.identities === null) patch.identities = [];
   if (isUnlocked()) store.set(patch);
   return results.filter((r) => r.status === 'rejected').map((r) => r.reason);
 }
@@ -140,26 +161,69 @@ export function allAddresses({ onlyUsable = false } = {}) {
 }
 
 // ---- changes ----
+const KINDS = {
+  inbox: { path: 'mailboxes', aad: 'mailbox', reload: () => loadMailboxes() },
+  alias: { path: 'aliases', aad: 'alias', reload: () => loadAliases() },
+  number: { path: 'numbers', aad: 'number', reload: () => loadNumbers() },
+};
+const ENC_MAX_CHARS = Math.floor((2048 * 4) / 3); // the server takes 2048 bytes; this is the base64url length
+
+// Makes the new "enc" value of one item: read the newest copy from the server, change
+// only what the caller changes, and keep every other field (also fields that this
+// version of the app does not know). Another tab may have changed it in the meantime.
+async function freshEnc(kind, id, change) {
+  const k = KINDS[kind];
+  const res = await api.get(`/api/${k.path}`);
+  const row = ((res && res[k.path]) || []).find((r) => r.id === id);
+  if (!row) throw new ApiError(404, 'not_found', 'This item does not exist any more.');
+  const current = await decLabel(row.enc, k.aad);
+  const next = { label: '', note: '', ...(current && typeof current === 'object' && !Array.isArray(current) ? current : {}) };
+  change(next);
+  const enc = await encLabel(next, k.aad);
+  if (enc.length > ENC_MAX_CHARS) throw new Error('This is too much text to save here. Make the label shorter.');
+  return enc;
+}
+async function patchEnc(kind, id, change) {
+  const k = KINDS[kind];
+  await api.patch(`/api/${k.path}/${id}`, { enc: await freshEnc(kind, id, change) });
+  await k.reload();
+}
+
+// The first "enc" of a new item.
+function newEnc(aad, { label, identityId }) {
+  const obj = { label: label || '', note: '' };
+  if (identityId) obj.identityId = identityId;
+  return encLabel(obj, aad);
+}
+
+// Made-up details of an alias or a number. persona = null removes them.
+export function setItemPersona(kind, id, persona) {
+  if (persona !== null && !isPersona(persona)) throw new Error('These details are not valid.');
+  return patchEnc(kind, id, (e) => { if (persona) e.persona = persona; else delete e.persona; });
+}
+// Puts an alias or a number in an identity. identityId = '' takes it out.
+export function setItemIdentity(kind, id, identityId) {
+  return patchEnc(kind, id, (e) => { if (identityId) e.identityId = identityId; else delete e.identityId; });
+}
+
 export async function createMailbox({ localPart, domain, label }) {
-  const body = { enc: await encLabel({ label: label || '', note: '' }, 'mailbox') };
+  const body = { enc: await newEnc('mailbox', { label }) };
   if (localPart) body.localPart = localPart;
   if (domain) body.domain = domain;
   const res = await api.post('/api/mailboxes', body);
   await Promise.allSettled([loadMailboxes(), loadBalance()]);
   return res;
 }
-export async function renameMailbox(id, label) {
-  const box = findMailbox(id);
-  await api.patch(`/api/mailboxes/${id}`, { enc: await encLabel({ label, note: box ? box.note : '' }, 'mailbox') });
-  await loadMailboxes();
+export function renameMailbox(id, label) {
+  return patchEnc('inbox', id, (e) => { e.label = label; });
 }
 export async function deleteMailbox(id) {
   await api.del(`/api/mailboxes/${id}`);
   await Promise.allSettled([loadMailboxes(), loadAliases()]);
 }
 
-export async function createAlias({ mailboxId, localPart, domain, label }) {
-  const body = { mailboxId, enc: await encLabel({ label: label || '', note: '' }, 'alias') };
+export async function createAlias({ mailboxId, localPart, domain, label, identityId }) {
+  const body = { mailboxId, enc: await newEnc('alias', { label, identityId }) };
   if (localPart) body.localPart = localPart;
   if (domain) body.domain = domain;
   const res = await api.post('/api/aliases', body);
@@ -170,10 +234,7 @@ export async function updateAlias(id, { enabled, mailboxId, label }) {
   const body = {};
   if (enabled !== undefined) body.enabled = enabled;
   if (mailboxId !== undefined) body.mailboxId = mailboxId;
-  if (label !== undefined) {
-    const a = findAlias(id);
-    body.enc = await encLabel({ label, note: a ? a.note : '' }, 'alias');
-  }
+  if (label !== undefined) body.enc = await freshEnc('alias', id, (e) => { e.label = label; });
   // Show the change at once. Put the old value back if the server says no.
   const before = store.get('aliases');
   if (before && (enabled !== undefined || mailboxId !== undefined)) {
@@ -192,17 +253,14 @@ export async function deleteAlias(id) {
   await loadAliases();
 }
 
-export async function buyNumber({ number, label }) {
-  const res = await api.post('/api/numbers', { number, enc: await encLabel({ label: label || '', note: '' }, 'number') });
+export async function buyNumber({ number, label, identityId }) {
+  const res = await api.post('/api/numbers', { number, enc: await newEnc('number', { label, identityId }) });
   await Promise.allSettled([loadNumbers(), loadBalance()]);
   return res;
 }
 export async function updateNumber(id, { label, forwardPhoneId, forwardTexts, forwardCalls, retentionDays }) {
   const body = {};
-  if (label !== undefined) {
-    const n = findNumber(id);
-    body.enc = await encLabel({ label, note: n ? n.note : '' }, 'number');
-  }
+  if (label !== undefined) body.enc = await freshEnc('number', id, (e) => { e.label = label; });
   if (forwardPhoneId !== undefined) body.forwardPhoneId = forwardPhoneId;
   if (forwardTexts !== undefined) body.forwardTexts = forwardTexts;
   if (forwardCalls !== undefined) body.forwardCalls = forwardCalls;

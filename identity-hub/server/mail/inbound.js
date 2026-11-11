@@ -78,10 +78,21 @@ export function makeSnippet(text, html) {
 }
 
 // The addresses in the From header and in the Sender header, for the check of blocked senders.
+// They are taken in full length: a cut address could lose its domain.
 const MAX_HEADER_SENDERS = 20;
 function headerSenders(mail) {
-  const list = [...people(mail.from), ...people(mail.headers && mail.headers.get('sender'))];
-  return [...new Set(list.map((p) => p.address).filter(Boolean))].slice(0, MAX_HEADER_SENDERS);
+  const found = new Set();
+  const walk = (list) => {
+    for (const entry of list || []) {
+      if (found.size >= MAX_HEADER_SENDERS) return;
+      if (entry && entry.group) walk(entry.group);
+      else if (entry && typeof entry.address === 'string' && entry.address) found.add(entry.address.toLowerCase());
+    }
+  };
+  for (const header of [mail.from, mail.headers && mail.headers.get('sender')]) {
+    for (const obj of [].concat(header || [])) walk(obj && obj.value);
+  }
+  return [...found];
 }
 
 // A file name from a stranger: no path, no control characters.
