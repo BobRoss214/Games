@@ -1,18 +1,22 @@
-# Hand-over notes (work stopped in the middle)
+# Hand-over notes
 
 Read this file first in a new session. It is the working memory of the build.
 
-## State when the work stopped
-- Reason: the usage limit was reached. All four build agents stopped in the middle of a task.
-- Test result at this snapshot (`npm test`): # tests 49 # pass 39 # fail 10 
-- Done and verified: core, login, mail, phone, payments, voicemail (server), sender blocks, auto-delete, alias end date, made-up details data, first complete web app (browser journey passed), deployment files, setup guide.
-- Stopped in the middle (files can be half-finished):
-  - Web app agent: made-up details screens, identity groups, browser test suite in e2e/, plug-in points (web/js/lib/registry.js), docs/UI-GUIDE.md.
-  - Mail agent: web/js/lib/codes.js, leak.js, credentials.js, stats.js; server parts one-shot alias, refused-mail counter, unsubscribe data, DELETE /api/addresses/:id/messages.
-  - Phone agent: web/js/lib/exportfile.js (encrypted export file format).
-  - Documents agent: web/js/help/content.js (help text).
-- Not started: help screens and tutorial, the four extras (screens), the five features (screens), the eleven fun extras (screens), the own phone provider (LAST).
+## State (updated after the second work period)
+- `npm test`: 246 pass. `npm run test:e2e`: 14 files, 152 checks pass (run by the lead, not only by the agents).
+- DONE and verified: core, login, mail, phone, payments; web app; made-up details; identity groups; plug-in points (`web/js/lib/registry.js`, `web/js/features/index.js`); `docs/UI-GUIDE.md`; browser test suite in `e2e/`.
+- DONE on the server (tests pass), screens still to build: sender blocks, auto-delete (inbox, number), alias end date, voicemail, one-shot alias, refused-mail counter, newsletter data, delete all mail of one address (for burn).
+- DONE as tested browser modules, screens still to build: export file format (`web/js/lib/exportfile.js`), sign-up code finder (`codes.js`), leak logic (`leak.js`), username and password maker (`credentials.js`), stats (`stats.js`), help text (`web/js/help/content.js`).
+- IN WORK when this note was written (4 agents, parallel, each in its own files):
+  - Web app owner: "why?" links, home warnings, code helper in screens, "possibly leaked" hint, own-domain warning, one-shot option, refused number, username/password on the details card, colour dot, timeline, door look, Settings list of what the server sees.
+  - Documents agent: Help pages (`web/js/features/help.js`, e2e 15).
+  - Mail agent: tutorial (`features/tutorial.js`, e2e 16) and "Test my recovery key" (`features/recovery-test.js`, e2e 17).
+  - Phone agent: export screens (`features/export.js`, e2e 18) and voicemail screens (`features/voicemail.js`, e2e 19).
+- NOT STARTED (screens): block list, auto-delete dialogs, burn, "who leaked me" page, stats page, unsubscribe panel, quick jump. Then a last pass: add all new features to Help, "why?" links, tutorial where it fits, SECURITY.md, README.
+- LAST: the "own phone" provider (see the second half of this file).
 - Never tested: real Twilio, real BTCPay, Docker build, a real phone.
+- Decisions told to the user: recovery key opens the export file; no web-link unsubscribe (only "turn off" and unsubscribe by email); refused counter = one number per alias; per-account domains NOT built (MAIL_DOMAINS is enough for one person); UI name "made-up details"; "identity" = group only.
+- Storage contracts in encrypted extras: alias `senders`, item/identity `username`, identity `colour`, `events`, `burned`.
 
 # Feature queue (user instructions, in order)
 
