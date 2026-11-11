@@ -2,17 +2,14 @@
 
 Read this file first in a new session. It is the working memory of the build.
 
-## State (updated after the second work period)
-- `npm test`: 246 pass. `npm run test:e2e`: 14 files, 152 checks pass (run by the lead, not only by the agents).
-- DONE and verified: core, login, mail, phone, payments; web app; made-up details; identity groups; plug-in points (`web/js/lib/registry.js`, `web/js/features/index.js`); `docs/UI-GUIDE.md`; browser test suite in `e2e/`.
-- DONE on the server (tests pass), screens still to build: sender blocks, auto-delete (inbox, number), alias end date, voicemail, one-shot alias, refused-mail counter, newsletter data, delete all mail of one address (for burn).
-- DONE as tested browser modules, screens still to build: export file format (`web/js/lib/exportfile.js`), sign-up code finder (`codes.js`), leak logic (`leak.js`), username and password maker (`credentials.js`), stats (`stats.js`), help text (`web/js/help/content.js`).
-- IN WORK when this note was written (4 agents, parallel, each in its own files):
-  - Web app owner: "why?" links, home warnings, code helper in screens, "possibly leaked" hint, own-domain warning, one-shot option, refused number, username/password on the details card, colour dot, timeline, door look, Settings list of what the server sees.
-  - Documents agent: Help pages (`web/js/features/help.js`, e2e 15).
-  - Mail agent: tutorial (`features/tutorial.js`, e2e 16) and "Test my recovery key" (`features/recovery-test.js`, e2e 17).
-  - Phone agent: export screens (`features/export.js`, e2e 18) and voicemail screens (`features/voicemail.js`, e2e 19).
-- NOT STARTED (screens): block list, auto-delete dialogs, burn, "who leaked me" page, stats page, unsubscribe panel, quick jump. Then a last pass: add all new features to Help, "why?" links, tutorial where it fits, SECURITY.md, README.
+## State (updated in the third work period)
+- `npm test`: 263 pass. `npm run test:e2e`: 29 files, 296 checks pass (agents' full runs; the lead ran the new files one by one).
+- DONE and verified: core, login, mail, phone, payments; web app; random identifiers generator (was "made-up details"); identity groups; plug-in points; `docs/UI-GUIDE.md`; Help pages; tutorial; "Test my recovery key"; export screens + viewer (`/open-export`); voicemail screens; "My stats" (`/stats`); "Who leaked me" (`/leaks`).
+- IN WORK when this note was written:
+  - Web app owner (a26c8a8a4e94020bb): "why?" buttons, home warnings, code helper in screens, "possibly leaked" hint, own-domain warning, one-shot option, refused number, username/password on the generator card, colour dot, timeline, door look, Settings list; plus requests from the other agents (data fields in lib/data.js, welcome link hook, top-bar slot, vaultChange cost, exported openers, tab title, #anchors).
+  - Mail agent (acdfaf31207927c39): blocked senders, automatic deletion, newsletter panel, Burn (features/blocks.js, autodelete.js, unsubscribe.js, burn.js; e2e 22-25).
+  - Phone agent (a11580da0ffdd9d37): quick jump (features/quickjump.js; e2e 26).
+- THEN: one final pass by the documents agent (a170f5620ffc15bb8): add every new feature to Help text, "why?" texts, tutorial where it fits, SECURITY.md (also: the tutorial vault entry changes are visible to the server as timing), SETUP-GUIDE where the operator is concerned, a word-list test over all screens; README refresh by the lead.
 - LAST: the "own phone" provider (see the second half of this file).
 - Never tested: real Twilio, real BTCPay, Docker build, a real phone.
 - RENAME by the user (later than the notes below): the feature "made-up details" is now called "Random identifiers generator"; its values are "random identifiers". Internal names (`persona`, key `made-up-details`) stay. Where the notes below say "made-up details", read the new name.
