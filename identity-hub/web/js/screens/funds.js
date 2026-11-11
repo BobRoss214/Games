@@ -9,6 +9,7 @@ import { confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { renewDays, graceDays } from '../lib/data.js';
 import { payInfo, startPurchase, simulatePayment, removePurchase, forgetDone, pollNow, resumePurchases } from '../lib/pay.js';
+import { why, whyParts, whyGroup } from '../ui/why.js';
 
 const METHOD_NOTE = {
   'BTC-LN': 'Fast and cheap. Good for small amounts.',
@@ -178,6 +179,7 @@ export function fundsScreen({ scope }) {
           h('p', { class: 'balance-label' }, 'Balance'),
           region(scope, store, ['balance'], (s) => h('p', { class: 'balance-value mono' }, money(s.balance))),
           h('p', { class: 'small muted' }, 'US dollars of credit'),
+          why('balance'),
         ),
         section({ title: 'Add funds' }, formSlot, mock ? h('p', { class: 'hint test-hint' }, tag('Test mode', 'warn'), ' No real money moves. Use "Simulate payment" after you start a payment.') : null),
         purchasesSlot,
@@ -190,6 +192,7 @@ export function fundsScreen({ scope }) {
             icon('shield', { size: 20 }),
             h('p', { class: 'read small' }, 'You pay an invoice that has no link to your account. When it is paid, your browser gets credit that only it can use, and adds it to your balance. The payment system never learns which account the money went to. The account system never learns which invoice paid for it.'),
           ),
+          why('payments', { text: 'How does this work, and what are the limits?' }),
         ),
       ),
     ),

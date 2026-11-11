@@ -453,7 +453,7 @@ a.item-value:hover { color: var(--accent); text-decoration: underline; }
 .outbox-item:first-child { border-top: 0; }
 .outbox-body { font-size: var(--fs-md); }
 
-/* ================= made-up details ================= */
+/* ================= random identifiers generator (persona) ================= */
 .persona { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; }
 .persona-title { font-size: var(--fs-h3); }
 .persona-card { border: 3px double var(--line-input); border-radius: var(--r-lg); background: var(--bg); }

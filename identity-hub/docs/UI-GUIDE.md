@@ -110,7 +110,7 @@ registerSettingsSection({ id: 'export', title: 'Download my data', lede: 'One en
 // Return a region(); when it paints nothing, the block takes no space.
 registerHomeSection({ id: 'warnings', order: 15, render: ({ scope }) => region(scope, store, ['balance', 'numbers'], warnings) });
 // A tab on the screen of one number (Texts 10, Calls 20, Settings 90), and a section in its Settings tab
-// (Label 10, Forwarding 20, Identity 30, Made-up details 40, Old texts 50, Renewal 80, Release 100).
+// (Label 10, Forwarding 20, Identity 30, Random identifiers 40, Old texts 50, Renewal 80, Release 100).
 registerNumberTab({ id: 'voicemail', label: 'Voicemail', order: 30, render: ({ number, scope }) => voicemailList(number, scope) });
 registerNumberSetting({ id: 'voicemail', title: 'Voicemail', order: 25, render: ({ number }) => voicemailSwitch(number) });
 
@@ -168,7 +168,7 @@ Simple English for people who are not technical. Short sentences. Active voice. 
 | number | a phone number from this service | VoIP number, line, DID |
 | real phone | the person's own phone, linked for forwarding | device, mobile, verified number |
 | identity | a named **group** of aliases and numbers. Nothing else. | persona, profile, account, group (alone) |
-| made-up details | the generated name and address | identity, persona, fake identity, profile |
+| random identifiers | the generated name and address; the card is the "Random identifiers generator" | made-up details, identity, persona, fake identity, profile |
 | label | the private name of an item | name, title, tag |
 | recovery key | the long key that opens the account | password, seed, secret, backup code |
 | passkey | sign-in with fingerprint, face or device PIN | security key, WebAuthn, biometric login |
@@ -177,7 +177,7 @@ Simple English for people who are not technical. Short sentences. Active voice. 
 | turn on / turn off | an alias, forwarding, a setting | enable, disable, activate, toggle, mute |
 | paused | an inbox or a number that waits for funds | suspended, frozen, inactive, expired |
 | delete | remove for good: mail, an alias, an inbox, an identity, the account | remove (for these), erase, destroy, trash |
-| remove | take away a link, not data: a passkey, a real phone, made-up details | delete (for these), unlink, revoke |
+| remove | take away a link, not data: a passkey, a real phone, random identifiers | delete (for these), unlink, revoke |
 | release (a number) | give a number back to the provider, for good | delete, cancel, drop |
 | sign in / sign out | start and end a session | log in, login, log out, logoff |
 | lock / unlock | this tab forgets the key; the session stays | sign out, suspend, hide |
@@ -200,7 +200,7 @@ Ten real strings from the app (copy the style):
 4. `This inbox is paused. It receives no mail.` + link `Add funds`
 5. `The number goes back to the provider. Its texts and its call log are deleted. You cannot get the number back.`
 6. `This identity forwards to your real phone “My mobile”: texts and calls.`
-7. `These details are made up. Do not use them where the law requires your real name and address, for example at a bank or on a government form.`
+7. `These identifiers are made up. Do not use them where the law requires your real name and address, for example at a bank or on a government form.`
 8. `Its aliases and numbers stay. They are then not in an identity.`
 9. `This tab forgets your key. To sign in again you need a passkey or your recovery key.`
 10. `Cannot reach the server. Check your connection, then try again.`

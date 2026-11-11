@@ -23,14 +23,15 @@ const STEP_IDS = [
 const STEP_TEXT_FIELDS = ['title', 'what', 'why', 'doIt', 'doItTest', 'done', 'skipNote', 'offNote'];
 const STEP_FIELDS = ['id', 'needs', 'costKey', ...STEP_TEXT_FIELDS];
 const GLOSSARY = [
-  'inbox', 'alias', 'number', 'identity', 'made-up details', 'recovery key', 'passkey', 'funds', 'credit',
+  'inbox', 'alias', 'number', 'identity', 'random identifiers', 'recovery key', 'passkey', 'funds', 'credit',
   'turn on', 'turn off', 'delete', 'release', 'paused', 'sign in', 'sign out', 'lock', 'test mode',
 ];
 
 // Words that promise too much. The help must never use them, also not with "not" in front.
 const FORBIDDEN_WORDS = ['invisible', 'anonymous', 'untraceable', '100%', 'guarantee', 'military-grade', 'unhackable', 'completely safe'];
-// Names that the app does not use. The app says inbox, alias, and made-up details.
-const FORBIDDEN_NAMES = ['mailbox', 'burner', 'fake identity'];
+// Names that the app does not use. The app says inbox, alias, and random identifiers.
+// "made-up details" is the old name of the random identifiers.
+const FORBIDDEN_NAMES = ['mailbox', 'burner', 'fake identity', 'made-up detail', 'made up detail'];
 const PRODUCT_NAME = 'Postern';
 
 // ---- helpers ----
@@ -229,7 +230,7 @@ test('help: the tips cover the subjects that the owner listed', () => {
     'keep the recovery key safe and test it': /recovery key in a safe place.*test/i,
     'add a passkey': /add a passkey/i,
     'think before you link a real phone': /think before you link a real phone/i,
-    'made-up details and the law': /made-up details only.*legal|law requires your real name/i,
+    'random identifiers and the law': /random identifiers only.*legal|law requires your real name/i,
     'pay first, add credit later': /pay.*later/i,
     'numbers are for convenience': /convenience, not for secrets/i,
     'remote images': /remote images are blocked/i,

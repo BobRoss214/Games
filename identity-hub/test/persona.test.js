@@ -1,4 +1,4 @@
-// Tests for the made-up details module (web/js/lib/persona). The module is plain JavaScript
+// Tests for the random identifiers generator (web/js/lib/persona). The module is plain JavaScript
 // with no browser feature, so it runs here in Node.js exactly as it runs in the browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

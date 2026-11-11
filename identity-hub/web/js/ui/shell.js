@@ -10,6 +10,7 @@ import { signOut, lock } from '../lib/session.js';
 import { navigate } from '../lib/router.js';
 import { registered } from '../lib/registry.js';
 import { menuButton } from './menu.js';
+import { whyParts } from './why.js';
 
 const NAV = [
   { id: 'home', label: 'Home', href: '/', icon: 'home', order: 10 },
@@ -51,12 +52,17 @@ export function isMockMode(config) {
   return !!(f.mockPhone || f.mockPay || f.mockMail);
 }
 
+// The words of the banner are a "Why?" button: they open the explanation of test mode under the banner.
 export function testBanner() {
   const config = store.get('config');
   if (!isMockMode(config)) return null;
-  return h('div', { class: 'banner', role: 'note' },
-    h('span', null, 'Test mode — simulated providers'),
-    config.dev && hooks.onTestTools && store.get('phase') === 'in' ? h('button', { class: 'banner-btn', type: 'button', onClick: () => hooks.onTestTools() }, 'Test tools') : null,
+  const whyTest = whyParts('test-mode', { text: 'Test mode — simulated providers' });
+  return h('div', { class: 'banner-wrap' },
+    h('div', { class: 'banner', role: 'note' },
+      whyTest.button,
+      config.dev && hooks.onTestTools && store.get('phase') === 'in' ? h('button', { class: 'banner-btn', type: 'button', onClick: () => hooks.onTestTools() }, 'Test tools') : null,
+    ),
+    whyTest.panel,
   );
 }
 

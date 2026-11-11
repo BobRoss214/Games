@@ -10,7 +10,7 @@
 // - Every privacy fact comes from docs/SECURITY.md. No text here promises more than that file.
 //   Where a fact has a limit, the limit is in the next sentence.
 // - Simple words. Short sentences (25 words at most). The same word for the same thing as
-//   the rest of the app: inbox, alias, number, identity, made-up details, recovery key,
+//   the rest of the app: inbox, alias, number, identity, random identifiers, recovery key,
 //   passkey, funds (the page), credit (what you have), turn on, turn off, delete, release,
 //   paused, sign in, sign out, lock, test mode.
 // - A name in "quotation marks" is the exact text of a button, a page, or a label in the app.
@@ -135,9 +135,9 @@ export const TIPS = [
   },
   {
     id: 'made-up-details-and-the-law',
-    title: 'Use made-up details only where the law permits it',
-    doThis: 'Use made-up details only on forms that have no legal need for your real name and address.',
-    why: 'Made-up details keep your real name and address out of one more database. The street and the person do not exist.',
+    title: 'Use random identifiers only where the law permits it',
+    doThis: 'Use random identifiers only on forms that have no legal need for your real name and address.',
+    why: 'Random identifiers keep your real name and address out of one more database. The street and the person do not exist.',
     limit: 'Do not use them where the law requires your real name and address, for example at a bank or on a government form.',
   },
   {
@@ -220,11 +220,11 @@ export const WHY = {
     ],
   },
   'made-up-details': {
-    title: 'Why made-up details?',
+    title: 'Why random identifiers?',
     paragraphs: [
-      'Made-up details are a random name and address for sign-up forms. The city, the state and the ZIP code are real. The street and the person are not.',
+      'Random identifiers are a random name and address for sign-up forms. The city, the state and the ZIP code are real. The street and the person are not.',
       'Your browser makes them. Use them when a website asks for a name and an address that it does not need.',
-      'Do not use them where the law requires your real name and address, for example at a bank or on a government form.',
+      'These identifiers are made up. Do not use them where the law requires your real name and address, for example at a bank or on a government form.',
     ],
   },
   'link-phone': {
@@ -440,11 +440,11 @@ export const TUTORIAL = [
   },
   {
     id: 'made-up-details',
-    title: 'Make made-up details',
-    what: 'Made-up details are a random name and address for sign-up forms. The street and the person do not exist.',
-    why: 'Some websites ask for a name and an address that they do not need. Do not use made-up details where the law requires your real ones.',
-    doIt: 'Open the menu of your alias, select "Made-up details", then select "Make made-up details".',
-    done: 'Your alias has made-up details.',
+    title: 'Make random identifiers',
+    what: 'Random identifiers are a random name and address for sign-up forms. The street and the person do not exist.',
+    why: 'Some websites ask for a name and an address that they do not need. Do not use random identifiers where the law requires your real ones.',
+    doIt: 'Open the menu of your alias, select "Random identifiers generator", then select "Make random identifiers".',
+    done: 'Your alias has random identifiers.',
     needs: null,
     costKey: null,
     skipNote: null,
@@ -491,7 +491,7 @@ export const TUTORIAL = [
     id: 'finish',
     title: 'You are done',
     what: 'You know the main parts of {app} now: inboxes, aliases, identities, numbers and credit.',
-    why: 'Each part has a small "why?" link. "Help" has the privacy tips and the limits.',
+    why: 'Each part has a small "Why?" button. "Help" has the privacy tips and the limits.',
     doIt: 'Open "Help" when you want to read more.',
     done: 'You can play this tutorial again from "Help" or from "Settings".',
     needs: null,
@@ -507,7 +507,7 @@ export const WORDS = [
   { word: 'alias', meaning: 'One more address. Its mail lands in one of your inboxes.' },
   { word: 'number', meaning: 'A phone number in {app} for texts and calls.' },
   { word: 'identity', meaning: 'A named group of aliases and numbers, for example "Facebook".' },
-  { word: 'made-up details', meaning: 'A made-up name and address for sign-up forms.' },
+  { word: 'random identifiers', meaning: 'A random name and address for sign-up forms. The "Random identifiers generator" makes them.' },
   { word: 'recovery key', meaning: 'The long secret that opens your account. {app} shows it one time.' },
   { word: 'passkey', meaning: 'A way to sign in with your fingerprint, your face or your device PIN.' },
   { word: 'funds', meaning: 'The page where you add credit.' },

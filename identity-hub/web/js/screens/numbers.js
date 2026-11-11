@@ -11,6 +11,7 @@ import { rowItems, itemRows } from '../ui/rows.js';
 import { openGetNumber } from '../ui/items.js';
 import { linkPhone, sendPhoneCode, verifyPhone, removePhone, findPhone, renewDays } from '../lib/data.js';
 import { openTestTools } from './testtools.js';
+import { why, whyParts, whyGroup } from '../ui/why.js';
 
 // Numbers of the account that can send a code: active, with texts or with calls.
 function codeSenders() {
@@ -84,6 +85,7 @@ export async function openLinkPhone() {
   const via = selectField({ label: 'Send the code from', options: usable.map((n) => ({ value: n.id, label: `${phoneText(n.number)}${n.label ? `  (${n.label})` : ''}` })), value: usable[0].id, mono: true });
   let method = usable[0].sms ? 'text' : 'call';
   const methodSlot = h('div', { class: 'field' });
+  const whyMethod = why('phone-by-call'); // made one time: it stays open when the choice paints again
   const priceNote = h('span', null);
   const paintMethod = () => {
     const from = usable.find((n) => n.id === via.value) || usable[0];
@@ -93,6 +95,7 @@ export async function openLinkPhone() {
     replace(methodSlot,
       h('span', { class: 'label' }, 'How to get the code'),
       options.length > 1 ? segmented({ label: 'How to get the code', value: method, options, onChange: (v) => { method = v; paintPrice(); } }) : h('p', { class: 'hint' }, options[0].label),
+      whyMethod,
     );
     paintPrice();
   };
@@ -107,6 +110,7 @@ export async function openLinkPhone() {
     build: () => {
       const el = h('div', { class: 'stack' },
         callout('info', 'This is optional', h('p', null, 'Link a real phone only if you want texts or calls forwarded to it. To forward, the server must know this number. It is stored encrypted on the server.')),
+        why('link-phone'),
         number.el, label.el,
         usable.length > 1 ? via.el : null,
         methodSlot,
@@ -204,7 +208,7 @@ export function numbersScreen({ scope }) {
       title: 'Real phones',
       lede: 'Optional. Link your real phone if you want texts or calls forwarded to it. The server must know that number to forward to it.',
       actions: button('Link a phone', { size: 'sm', iconName: 'plus', onClick: () => openLinkPhone() }),
-    }, phonesRegion),
+    }, why('link-phone'), phonesRegion),
   );
   paint();
   return el;

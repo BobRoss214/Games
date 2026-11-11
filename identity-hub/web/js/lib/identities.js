@@ -74,7 +74,7 @@ export async function createIdentity({ name, note = '' }) {
   return id;
 }
 
-// patch: { name?, note?, persona? } (persona: null removes the made-up details)
+// patch: { name?, note?, persona? } (persona: null removes the random identifiers)
 export function updateIdentity(id, patch) {
   return mutate((list) => {
     if (!list.some((raw) => raw.id === id)) throw new Error('This identity does not exist any more.');
@@ -86,7 +86,7 @@ export function updateIdentity(id, patch) {
       if (patch.persona !== undefined) {
         if (patch.persona === null) delete next.persona;
         else if (isPersona(patch.persona)) next.persona = patch.persona;
-        else throw new Error('These details are not valid.');
+        else throw new Error('These identifiers are not valid.');
       }
       return next;
     });

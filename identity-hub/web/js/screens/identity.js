@@ -1,6 +1,6 @@
 // One identity: a named group of aliases and numbers.
 // Shows its addresses and numbers, one feed with all their mail, texts and calls,
-// its made-up details, and a clear warning when something inside forwards to a real phone.
+// its random identifiers, and a clear warning when something inside forwards to a real phone.
 import { h, replace, debounce } from '../lib/dom.js';
 import { store, bus } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
@@ -18,6 +18,8 @@ import { registered } from '../lib/registry.js';
 import { phoneName, mailboxName, findMailbox } from '../lib/data.js';
 import { listMessages, personShort } from '../lib/mail.js';
 import { listTexts, listCalls, setNumberOpen } from '../lib/phone.js';
+import { codeChip } from '../ui/code.js';
+import { findCode } from '../lib/codes.js';
 
 const PAGE = 20;
 const CALL_TEXT = { in: { answered: 'Incoming call', missed: 'Missed call', failed: 'Failed call' }, out: { answered: 'Outgoing call', missed: 'No answer', failed: 'Failed call' } };
@@ -44,6 +46,7 @@ function makeSources(aliases, numbers) {
             text: m.broken ? 'This message cannot be opened' : (m.meta.subject || '(no subject)'),
             via: out ? `from ${m.meta.from.address || ''}` : (m.meta.deliveredTo || mailboxName(findMailbox(m.mailboxId))),
             label: out ? 'Sent email' : 'Email',
+            code: out || m.broken ? null : findCode(m.meta.snippet, { subject: m.meta.subject }),
             open: () => navigate(`/mail/${m.mailboxId}/${m.id}`),
           });
         }
@@ -63,6 +66,7 @@ function makeSources(aliases, numbers) {
             key: `t:${t.id}`, id: t.id, type: 'text', at: t.at, unread: !out && !t.seen,
             who: `${out ? 'To ' : ''}${phoneText(t.peer) || 'Unknown number'}`, text: t.broken ? 'This text cannot be opened' : t.body,
             via: `${out ? 'from ' : ''}${phoneText(n.number)}`, label: out ? 'Sent text' : 'Text',
+            code: out || t.broken ? null : findCode(t.body),
             open: () => { setNumberOpen({ numberId: n.id, peer: t.peer }); navigate(`/numbers/${n.id}`); },
           });
         }
@@ -228,6 +232,7 @@ export function identityScreen({ params, scope }) {
             h('span', { class: 'recent-to mono truncate' }, it.via),
           ),
         ),
+        it.code ? h('div', { class: 'recent-code' }, codeChip(it.code)) : null,
       ))),
       more ? h('div', { class: 'list-more' }, button('Show more', { size: 'sm', onClick: (e, btn) => runBusy(btn, loadMoreFeed) })) : null,
     );
@@ -258,7 +263,7 @@ export function identityScreen({ params, scope }) {
   }
   const reloadFeed = debounce(() => { if (!scope.disposed) loadFeed(); }, 200);
 
-  // ---- side: made-up details, delete ----
+  // ---- side: random identifiers, delete ----
   function paintSide() {
     const g = findIdentity(id);
     if (!g) return;
@@ -322,7 +327,7 @@ export function identityScreen({ params, scope }) {
     if (key !== memberKey) { memberKey = key; sources = []; feedToken++; loadFeed(); }
   }
 
-  scope.add(store.subscribe(['identities', 'aliases', 'numbers', 'phones', 'mailboxes'], sync));
+  scope.add(store.subscribe(['identities', 'aliases', 'numbers', 'phones', 'mailboxes', 'leaks'], sync));
   scope.add(bus.on('mail', reloadFeed));
   scope.add(bus.on('text', reloadFeed));
   scope.add(bus.on('call', reloadFeed));

@@ -63,7 +63,7 @@ export default async function (t) {
   await page.getByRole('menu').waitFor();
   assert(/Rename/.test(await active()), 'the first menu item has no focus');
   await page.keyboard.press('ArrowDown');
-  assert(/Made-up details/.test(await active()), 'arrow keys do not move in the menu');
+  assert(/Random identifiers generator/.test(await active()), 'arrow keys do not move in the menu');
   await page.keyboard.press('End');
   assert(/Delete/.test(await active()), 'End does not go to the last item');
   await page.keyboard.press('Escape');

@@ -63,7 +63,7 @@ export function itemRow(item, { showReceived = false, showIdentity = true } = {}
   // Entries of feature files: the usual ones go above the line, the dangerous ones below it.
   const menuItems = (extra = registered.rowActions(item.kind, item).map((a) => ({ label: a.label, icon: a.icon, danger: a.danger, onSelect: () => a.run(item) }))) => [
     { label: 'Rename', icon: 'edit', onSelect: () => openRename(item) },
-    groupable ? { label: 'Made-up details', icon: 'person', onSelect: () => openPersonaDialog(item) } : null,
+    groupable ? { label: 'Random identifiers generator', icon: 'person', onSelect: () => openPersonaDialog(item) } : null,
     groupable ? { label: item.identityId ? 'Move to another identity…' : 'Put in identity…', icon: 'folder', onSelect: () => openPutInIdentity(item) } : null,
     groupable && item.identityId ? { label: 'Take out of this identity', icon: 'close', onSelect: () => takeOutOfIdentity(item) } : null,
     item.kind === 'alias' ? { label: 'Move to another inbox', icon: 'move', onSelect: () => openMoveAlias(item) } : null,
@@ -95,7 +95,7 @@ export function itemRow(item, { showReceived = false, showIdentity = true } = {}
         item.paused ? tag('Paused', 'warn') : null,
         item.unread > 0 ? h('span', { class: 'badge', 'aria-label': `${item.unread} unread` }, item.unread > 99 ? '99+' : String(item.unread)) : null,
         showIdentity && item.identityId ? h('a', { class: 'tag tag-link item-group', href: `/identities/${item.identityId}`, 'data-link': true, title: `In the identity ${item.identityName}` }, icon('folder', { size: 12 }), h('span', { class: 'truncate' }, item.identityName)) : null,
-        item.persona ? h('button', { class: 'tag tag-link item-persona', type: 'button', title: 'Made-up details', onClick: () => openPersonaDialog(item) }, icon('person', { size: 12 }), h('span', { class: 'truncate' }, fullName(item.persona))) : null,
+        item.persona ? h('button', { class: 'tag tag-link item-persona', type: 'button', title: 'Random identifiers', onClick: () => openPersonaDialog(item) }, icon('person', { size: 12 }), h('span', { class: 'truncate' }, fullName(item.persona))) : null,
         registered.rowBadges(item.kind, item),
       ),
     ),

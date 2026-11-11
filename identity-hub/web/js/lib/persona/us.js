@@ -1,4 +1,4 @@
-// Data for made-up details in the United States.
+// Data for random identifiers in the United States.
 // The names are common names. First and last names are picked independently.
 // City, state, and ZIP code are real and belong together. The street is invented.
 // This file has data and one function. It uses no browser feature and no network.

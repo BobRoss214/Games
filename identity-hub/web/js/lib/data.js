@@ -8,7 +8,7 @@ import { loadIdentities } from './identities.js';
 
 // The encrypted label blob ("enc") of an item holds more than the label:
 //   { label, note, persona?, identityId?, …fields of later versions }
-// persona = made-up details (name and address). identityId = the identity (group) that the item is in.
+// persona = random identifiers (a made name and address). identityId = the identity (group) that the item is in.
 // Everything read from it is checked before use. A value in a wrong form counts as absent.
 // A feature file may keep its own fields in the blob: it reads them from item.extra and writes
 // them with setItemExtra(). The four fields above belong to this file.
@@ -202,9 +202,9 @@ function newEnc(aad, { label, identityId }) {
   return encLabel(obj, aad);
 }
 
-// Made-up details of an alias or a number. persona = null removes them.
+// Random identifiers of an alias or a number. persona = null removes them.
 export function setItemPersona(kind, id, persona) {
-  if (persona !== null && !isPersona(persona)) throw new Error('These details are not valid.');
+  if (persona !== null && !isPersona(persona)) throw new Error('These identifiers are not valid.');
   return patchEnc(kind, id, (e) => { if (persona) e.persona = persona; else delete e.persona; });
 }
 // Puts an alias or a number in an identity. identityId = '' takes it out.

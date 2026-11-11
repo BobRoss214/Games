@@ -1,6 +1,6 @@
 // Identities: named groups of aliases and numbers. Home shows them first; the identity
 // screen shows the members, one feed with exactly their mail, texts and calls, the
-// made-up details, and a warning when something inside forwards to a real phone.
+// random identifiers, and a warning when something inside forwards to a real phone.
 import { signUp, addCredit, inApp, assert } from '../lib.mjs';
 
 export default async function (t) {
@@ -160,20 +160,20 @@ export default async function (t) {
   t.ok('the forwarding warning appears in words and goes away again');
   void phoneId;
 
-  // edit name and note in place; made-up details of the identity; both survive a reload
+  // edit name and note in place; random identifiers of the identity; both survive a reload
   await page.getByRole('button', { name: 'Edit name and note' }).click();
   await page.getByLabel('Name').fill('Facebook Marketplace');
   await page.getByLabel('What it is for').fill('Selling the old sofa');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByRole('heading', { name: 'Facebook Marketplace', level: 1 }).waitFor();
-  await page.getByRole('button', { name: 'Make made-up details' }).click();
+  await page.getByRole('button', { name: 'Make random identifiers' }).click();
   await page.locator('.identity-side .persona-name').waitFor();
   const made = await page.locator('.identity-side .persona-name').textContent();
   await page.reload();
   await page.getByRole('heading', { name: 'Facebook Marketplace', level: 1 }).waitFor();
   await page.getByText('Selling the old sofa').waitFor();
   await page.locator('.identity-side .persona-name').filter({ hasText: made }).waitFor();
-  t.ok('name and note edit in place; made-up details on the identity; all saved');
+  t.ok('name and note edit in place; random identifiers on the identity; all saved');
 
   // the server knows nothing: the vault value is one opaque blob
   const vault = await page.evaluate(() => fetch('/api/vault/identities').then((r) => r.text()));

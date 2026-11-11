@@ -10,6 +10,7 @@ import { openDialog, formDialog, confirmDialog } from './dialog.js';
 import { toast } from './toast.js';
 import { setItemIdentity } from '../lib/data.js';
 import { createIdentity, deleteIdentity, findIdentity, identityOf, membersOf, NAME_MAX, NOTE_MAX } from '../lib/identities.js';
+import { why, whyParts, whyGroup } from './why.js';
 
 const NEW = '__new__';
 
@@ -32,7 +33,7 @@ export async function openNewIdentity({ open = true } = {}) {
   const id = await formDialog({
     title: 'New identity', submitLabel: 'Make identity',
     description: 'An identity is a named group. Put the aliases and numbers that you use in one place in it, for example everything for one website.',
-    build: () => h('div', { class: 'stack' }, name.el, note.el),
+    build: () => h('div', { class: 'stack' }, why('identity'), name.el, note.el),
     onSubmit: async () => {
       const n = readName(name);
       if (!n) return false;
@@ -137,7 +138,7 @@ export async function confirmDeleteIdentity(identity) {
       h('p', { class: 'read' }, count
         ? `Its ${plural(count, 'alias or number', 'aliases and numbers')} ${count === 1 ? 'stays' : 'stay'}. ${count === 1 ? 'It is' : 'They are'} then not in an identity. Mail and texts are not deleted.`
         : 'This identity is empty. Nothing else is deleted.'),
-      h('p', { class: 'read' }, 'The name, the note and the made-up details of the identity are deleted.'),
+      h('p', { class: 'read' }, 'The name, the note and the random identifiers of the identity are deleted.'),
     ),
     confirmLabel: 'Delete identity',
   });

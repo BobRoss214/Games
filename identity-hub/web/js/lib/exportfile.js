@@ -170,8 +170,10 @@ const headerTagParams = (prefix, fixed, final) => ({ name: 'AES-GCM', iv: nonce(
 
 // Index schema, version 1. Words: "string", "bool", "count" (a whole number, 0 or more),
 // "day" (YYYY-MM-DD), "direction" ("in" or "out"), "ref" ({ o, n }: a blob in the file),
-// "object" (any JSON object, for example made-up details). "?" at the end: null is allowed.
+// "object" (any JSON object, for example random identifiers). "?" at the end: null is allowed.
 // [x] is a list of x. A field that is not named here is permitted and ignored.
+// The blob of an attachment or of a voicemail is null when the person chose to leave the
+// large files out: the entry then says what there was, and the bytes are not in the file.
 const PERSON = Object.freeze({ name: 'string', address: 'string' });
 export const INDEX_SCHEMA_V1 = Object.freeze({
   v: 'version',
@@ -185,12 +187,12 @@ export const INDEX_SCHEMA_V1 = Object.freeze({
   mail: [{
     id: 'string', inboxId: 'string', addressId: 'string?', direction: 'direction', at: 'count', seen: 'bool',
     from: { $or: null, ...PERSON }, to: [PERSON], cc: [PERSON], subject: 'string', snippet: 'string', deliveredTo: 'string',
-    body: 'ref', attachments: [{ filename: 'string', contentType: 'string', size: 'count', blob: 'ref' }],
+    body: 'ref', attachments: [{ filename: 'string', contentType: 'string', size: 'count', blob: 'ref?' }],
   }],
   texts: [{ id: 'string', numberId: 'string', direction: 'direction', at: 'count', peer: 'string', body: 'string', status: 'string?' }],
   calls: [{
     id: 'string', numberId: 'string', direction: 'direction', at: 'count', seconds: 'count', status: 'string', peer: 'string',
-    voicemail: { $or: null, seconds: 'count', contentType: 'string', blob: 'ref' },
+    voicemail: { $or: null, seconds: 'count', contentType: 'string', blob: 'ref?' },
   }],
   blocks: [{ addressId: 'string', kind: 'string', value: 'string' }],
   notIncluded: ['string'],

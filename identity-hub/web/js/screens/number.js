@@ -17,6 +17,7 @@ import { confirmDeleteItem } from '../ui/items.js';
 import { openLinkPhone } from './numbers.js';
 import { openTestTools } from './testtools.js';
 import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
+import { why, whyParts, whyGroup } from '../ui/why.js';
 
 const MAX_TEXT = 1600;
 const TEXT_STATUS = { queued: 'Sending', sent: 'Sent', delivered: 'Delivered', failed: 'Not delivered' };
@@ -135,17 +136,23 @@ export function numberScreen({ params, scope }) {
     return form;
   }
 
+  // Made one time, so that it stays open when the texts paint again.
+  const whyStatus = whyParts('delivery-status', { text: 'What does this mean?' });
+
   // Parts of feature files under one text or one call (registerTextAddon, registerCallAddon).
   const addons = (nodes, cls) => (nodes.length ? h('div', { class: `addons ${cls}` }, nodes) : null);
 
-  function bubble(t) {
+  // whyStatus: the newest sent text of a conversation explains the words "Sending", "Sent", "Delivered".
+  function bubble(t, whyStatus = null) {
     return h('li', { class: `bubble-row is-${t.direction}` },
       h('div', { class: 'bubble' },
         h('p', { class: 'bubble-text' }, t.broken ? 'This text cannot be opened.' : t.body),
         h('span', { class: 'bubble-meta' },
           h('time', { datetime: new Date(t.at * 1000).toISOString() }, clock(new Date(t.at * 1000))),
           t.direction === 'out' ? h('span', { class: `bubble-status ${t.status === 'failed' ? 'is-failed' : ''}`.trim() }, TEXT_STATUS[t.status] || 'Sent') : h('span', { class: 'sr-only' }, ' received'),
+          whyStatus ? whyStatus.button : null,
         ),
+        whyStatus ? whyStatus.panel : null,
         t.direction === 'out' && t.status === 'failed' ? h('p', { class: 'bubble-failed' }, 'The provider did not deliver this text. The charge came back.') : null,
         t.broken ? null : addons(registered.textAddons(t, findNumber(id)), 'bubble-addons'),
       ),
@@ -200,10 +207,11 @@ export function numberScreen({ params, scope }) {
       const th = threads.find((t) => t.peer === openPeer);
       const items = [];
       let day = '';
+      const lastOut = [...th.texts].reverse().find((t) => t.direction === 'out');
       for (const t of th.texts) {
         const d = dayLabel(t.at);
         if (d !== day) { day = d; items.push(h('li', { class: 'bubble-day' }, h('span', null, d))); }
-        items.push(bubble(t));
+        items.push(bubble(t, t === lastOut ? whyStatus : null));
       }
       const scroller = h('ol', { class: 'bubbles', tabIndex: 0, 'aria-label': `Texts with ${phoneText(openPeer)}` }, items.length ? items : h('li', { class: 'bubble-day' }, h('span', null, 'No texts yet')));
       conversation = h('div', { class: 'conversation' },
@@ -399,6 +407,7 @@ export function numberScreen({ params, scope }) {
         h('div', null,
           h('h2', { class: 'section-title' }, 'Forwarding'),
           h('p', { class: 'section-lede' }, 'Optional. Without forwarding, texts and calls stay in this app. To forward, the server must know your real phone number.'),
+          whyGroup([['forwarding'], ['link-phone']]),
         ),
         phones.length === 0
           ? callout('info', 'No real phone linked', h('p', null, 'Link a real phone to forward texts and calls to it.'), h('div', null, button('Link a phone', { size: 'sm', onClick: () => openLinkPhone() })))

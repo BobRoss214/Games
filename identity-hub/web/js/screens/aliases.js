@@ -5,6 +5,7 @@ import { icon } from '../ui/icons.js';
 import { button, chips, emptyState, skeletonRows, pageHeader } from '../ui/components.js';
 import { rowItems, itemRows, matchesSearch } from '../ui/rows.js';
 import { openNewAlias, openNewInbox } from '../ui/items.js';
+import { why, whyParts, whyGroup } from '../ui/why.js';
 
 export function aliasesScreen({ scope }) {
   let filter = 'all';
@@ -85,13 +86,14 @@ export function aliasesScreen({ scope }) {
     replace(listRegion, itemRows(items, { showReceived: true }));
   }
 
-  scope.add(store.subscribe(['mailboxes', 'aliases'], paint));
+  scope.add(store.subscribe(['mailboxes', 'aliases', 'identities', 'leaks'], paint));
   const el = h('div', { class: 'page' },
     pageHeader({
       title: 'Aliases',
       lede: 'An alias is an extra address. Mail to it lands in your inbox. Turn it off when you get spam.',
       actions: newButton,
     }),
+    h('div', { class: 'page-why' }, whyGroup([['alias-off'], ['inbox-vs-alias']])),
     tools,
     listRegion,
   );

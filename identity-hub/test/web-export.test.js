@@ -424,6 +424,14 @@ test('validateIndex: accepts a full index and refuses wrong shapes', () => {
   extra.calls[0].voicemail.transcript = null;
   extra.inboxes[0].retentionDays = 30;
   assert.equal(validateIndex(extra), extra);
+  // The large files can be left out: an attachment or a voicemail with no blob (null) is valid.
+  const lean = fullIndex({ body: ref, attachment: ref, voicemail: ref });
+  lean.mail[0].attachments[0].blob = null;
+  lean.calls[0].voicemail.blob = null;
+  assert.equal(validateIndex(lean, { dataLength: 10 }), lean);
+  // The body of a message is never left out.
+  lean.mail[0].body = null;
+  assert.throws(() => validateIndex(lean), { message: EXPORT_ERRORS.badIndex });
   // With the length of the data, every reference must fit.
   assert.equal(validateIndex(good, { dataLength: 10 }), good);
   assert.throws(() => validateIndex(good, { dataLength: 9 }), { message: EXPORT_ERRORS.badIndex });
@@ -441,7 +449,7 @@ test('validateIndex: accepts a full index and refuses wrong shapes', () => {
     ['an id that is a number', (x) => { x.inboxes[0].id = 7; }, 'inboxes[0].id'],
     ['a label that is null', (x) => { x.aliases[1].label = null; }, 'aliases[1].label'],
     ['enabled as text', (x) => { x.aliases[0].enabled = 'yes'; }, 'aliases[0].enabled'],
-    ['made-up details as text', (x) => { x.aliases[0].persona = 'Ada'; }, 'aliases[0].persona'],
+    ['random identifiers as text', (x) => { x.aliases[0].persona = 'Ada'; }, 'aliases[0].persona'],
     ['an expiry time that is not whole', (x) => { x.aliases[0].expiresAt = 1.5; }, 'aliases[0].expiresAt'],
     ['a wrong direction', (x) => { x.mail[0].direction = 'sideways'; }, 'mail[0].direction'],
     ['a negative time', (x) => { x.texts[0].at = -1; }, 'texts[0].at'],
@@ -453,7 +461,8 @@ test('validateIndex: accepts a full index and refuses wrong shapes', () => {
     ['a reference that is too long', (x) => { x.mail[0].body = { o: 0, n: MAX_BLOB_BYTES + 1 }; }, 'mail[0].body'],
     ['an attachment size as text', (x) => { x.mail[0].attachments[0].size = '12'; }, 'mail[0].attachments[0].size'],
     ['a voicemail that is true', (x) => { x.calls[0].voicemail = true; }, 'calls[0].voicemail'],
-    ['a voicemail with no audio', (x) => { delete x.calls[0].voicemail.blob; }, 'calls[0].voicemail.blob'],
+    ['a voicemail with no audio field', (x) => { delete x.calls[0].voicemail.blob; }, 'calls[0].voicemail.blob'],
+    ['an attachment whose blob is text', (x) => { x.mail[0].attachments[0].blob = 'none'; }, 'mail[0].attachments[0].blob'],
     ['a text with no body', (x) => { delete x.texts[1].body; }, 'texts[1].body'],
     ['a block that is text', (x) => { x.blocks[0] = 'spam.example'; }, 'blocks[0]'],
     ['a note in the "not included" list that is a number', (x) => { x.notIncluded.push(3); }, 'notIncluded[1]'],

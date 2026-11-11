@@ -1,4 +1,4 @@
-// Made-up details: a name that belongs to nobody in particular, with a postal address
+// Random identifiers generator: a name that belongs to nobody in particular, with a postal address
 // that has a real city, region, and postal code, but an invented street.
 //
 // Everything happens in this module. It asks no server and it reads no browser page.

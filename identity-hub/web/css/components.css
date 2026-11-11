@@ -332,7 +332,29 @@
 .why-panel > * + * { margin-top: var(--s-2); }
 .why-title { font-weight: 600; }
 .why-close { margin-left: calc(-1 * var(--s-2)); }
+.why-line { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); }
+.section > .why { margin-bottom: var(--s-3); }
+.page-why { margin: calc(-1 * var(--s-2)) 0 var(--s-4); }
+.balance .why { margin-top: var(--s-2); }
+/* inside coloured places the button takes the colour of the text around it */
+.banner .why-btn, .bubble .why-btn { color: inherit; font-size: inherit; font-weight: inherit; }
+.banner-wrap > .why-panel { margin: var(--s-3) auto; width: calc(100% - 2 * var(--s-4)); }
+.bubble > .why-panel { opacity: 1; }
 @media (max-width: 720px) {
   /* a 44px touch area without a taller line */
   .why-btn::before { content: ""; position: absolute; left: -0.375rem; right: -0.375rem; top: 50%; height: var(--touch); transform: translateY(-50%); }
+}
+
+/* ---------- code helper: "Code 482913 · Copy" ---------- */
+.code-chip { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; padding-left: 0.625rem; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font-size: var(--fs-sm); line-height: 1.2; white-space: nowrap; }
+.code-chip-label { color: var(--ink-2); }
+.code-chip-value { font-size: var(--fs-md); font-weight: 600; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; }
+.code-copy { display: inline-flex; align-items: center; gap: 0.25rem; min-height: 1.875rem; padding: 0 0.625rem; border: 0; border-left: 1px solid var(--line-2); border-radius: 0 var(--r-md) var(--r-md) 0; background: transparent; color: var(--accent); font-size: var(--fs-sm); font-weight: 500; }
+.code-copy:hover { background: var(--accent-wash); color: var(--accent-strong); }
+.code-copy:focus-visible { outline-offset: -2px; }
+/* under a row of "Recent" or of a feed: in line with the text of the row */
+.recent-code { padding: 0 var(--s-4) var(--s-3) calc(var(--s-4) + 18px + var(--s-3)); margin-top: calc(-1 * var(--s-1)); }
+@media (max-width: 720px) {
+  .code-copy { min-height: var(--touch); }
+  .feed-sheet .recent-code { padding-left: calc(var(--s-3) + 18px + var(--s-3)); padding-right: var(--s-3); }
 }

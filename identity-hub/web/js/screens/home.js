@@ -14,6 +14,9 @@ import { listMessages, personShort } from '../lib/mail.js';
 import { listTexts } from '../lib/phone.js';
 import { mailboxName, findMailbox } from '../lib/data.js';
 import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
+import { why, whyParts, whyGroup } from '../ui/why.js';
+import { codeChip } from '../ui/code.js';
+import { findCode } from '../lib/codes.js';
 
 function statTile({ label, value, note, href, loading }) {
   return h('a', { class: 'stat', href, 'data-link': true },
@@ -59,6 +62,8 @@ export function homeScreen({ scope }) {
 
   // ---- identities, then the rest ----
   const listRegion = h('div', { class: 'home-lists' });
+  // One "Why?" for the section. It is made one time, so that it stays open when the list paints again.
+  const whyIdentity = whyParts('identity', { text: 'Why?' });
 
   function identityCard(g, members, state) {
     const aliases = members.filter((m) => m.kind === 'alias');
@@ -132,9 +137,10 @@ export function homeScreen({ scope }) {
     replace(listRegion,
       (cards.length || plain) ? h('section', { class: 'home-section', 'aria-labelledby': 'identities-title' },
         h('div', { class: 'section-head' },
-          h('h2', { class: 'section-title', id: 'identities-title' }, 'Identities'),
+          h('div', { class: 'row row-2 grow' }, h('h2', { class: 'section-title', id: 'identities-title' }, 'Identities'), whyIdentity.button),
           button('New identity', { size: 'sm', iconName: 'plus', onClick: () => openNewIdentity() }),
         ),
+        whyIdentity.panel,
         cards.length ? h('ul', { class: 'identity-cards' }, cards)
           : h('p', { class: 'identity-invite small muted' }, 'An identity is a named group, for example “Facebook”. Put the aliases and numbers that you use in one place in it, and see all their mail and texts together.'),
       ) : null,
@@ -148,7 +154,7 @@ export function homeScreen({ scope }) {
       ) : null,
     );
   };
-  scope.add(store.subscribe(['mailboxes', 'aliases', 'numbers', 'phones', 'identities'], paintList));
+  scope.add(store.subscribe(['mailboxes', 'aliases', 'numbers', 'phones', 'identities', 'leaks'], paintList));
 
   const searchLabel = phoneOn ? 'Search identities, addresses, numbers and labels' : 'Search identities, addresses and labels';
   const searchInput = h('input', { class: 'input search-input', type: 'search', placeholder: 'Search', 'aria-label': searchLabel, title: searchLabel, autocomplete: 'off', spellcheck: 'false' });
@@ -185,6 +191,8 @@ export function homeScreen({ scope }) {
           h('span', { class: 'recent-to mono truncate' }, r.to),
         ),
       ),
+      // A sign-up code in the message: shown with a Copy button (found in the browser, sent nowhere).
+      r.code ? h('div', { class: 'recent-code' }, codeChip(r.code)) : null,
     ))));
   };
 
@@ -203,7 +211,7 @@ export function homeScreen({ scope }) {
         jobs.push(listMessages({ direction: 'in', limit: 60 }).then(({ messages }) => {
           for (const m of messages) {
             if (!m.seen && m.addressId) unread.set(m.addressId, (unread.get(m.addressId) || 0) + 1);
-            items.push({ kind: 'mail', at: m.at, unread: !m.seen, from: personShort(m.meta.from) || 'Unknown sender', text: m.meta.subject || '(no subject)', to: m.meta.deliveredTo || mailboxName(findMailbox(m.mailboxId)), href: `/mail/${m.mailboxId}/${m.id}` });
+            items.push({ kind: 'mail', at: m.at, unread: !m.seen, from: personShort(m.meta.from) || 'Unknown sender', text: m.meta.subject || '(no subject)', to: m.meta.deliveredTo || mailboxName(findMailbox(m.mailboxId)), href: `/mail/${m.mailboxId}/${m.id}`, code: m.broken ? null : findCode(m.meta.snippet, { subject: m.meta.subject }) });
           }
         }));
       }
@@ -211,7 +219,7 @@ export function homeScreen({ scope }) {
         jobs.push(listTexts(n.id, { limit: 6 }).then(({ texts }) => {
           for (const t of texts) {
             if (t.direction !== 'in') continue;
-            items.push({ kind: 'text', at: t.at, unread: !t.seen, from: phoneText(t.peer) || 'Unknown number', text: t.body, to: phoneText(n.number), href: `/numbers/${n.id}` });
+            items.push({ kind: 'text', at: t.at, unread: !t.seen, from: phoneText(t.peer) || 'Unknown number', text: t.body, to: phoneText(n.number), href: `/numbers/${n.id}`, code: t.broken ? null : findCode(t.body) });
           }
         }));
       }

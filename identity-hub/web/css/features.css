@@ -50,3 +50,84 @@
 }
 
 /* ---------- 3. features ---------- */
+
+/* f-warnings: Home warnings (features/home-warnings.js) */
+.warn-list { list-style: disc; padding-left: 1.125rem; }
+.warn-list li + li { margin-top: var(--s-1); }
+.home-slot .callout-body > div { margin-top: var(--s-1); }
+
+/* ---- help: start (features/help.js, features/help/screens.js) ---- */
+
+/* a card that is one link: the topics of Help */
+.f-help-link {
+  display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; column-gap: var(--s-3); align-items: start;
+  height: 100%; min-height: var(--touch); padding: var(--s-4);
+  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface);
+  color: var(--ink); text-decoration: none;
+  transition: border-color var(--t-fast) var(--ease);
+}
+.f-help-link:hover { border-color: var(--accent); color: var(--ink); }
+.f-help-link-icon { margin-top: 0.125rem; color: var(--accent); }
+.f-help-link-go { align-self: center; color: var(--ink-3); }
+.f-help-link-main { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.f-help-link-title { font-family: var(--font-serif); font-size: var(--fs-h3); line-height: var(--lh-tight); }
+
+/* a privacy tip: the "Do this" line stands out; the limit is at the foot of the card */
+.f-help-tip { display: flex; flex-direction: column; gap: var(--s-4); height: 100%; }
+.f-help-tip-parts { display: flex; flex-direction: column; gap: var(--s-4); flex: 1 1 auto; }
+.f-help-tip-parts > div { display: flex; flex-direction: column; gap: var(--s-1); }
+.f-help-do { padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--accent-wash); }
+.f-help-do dd { font-size: var(--fs-lg); font-weight: 500; }
+.f-help-limit { margin-top: auto; padding-top: var(--s-3); border-top: 1px solid var(--line); }
+.f-help-limit dd { color: var(--ink-2); }
+.f-help-note { margin-top: var(--s-5); max-width: 62ch; }
+
+/* questions and answers */
+.f-help-questions { columns: 2; column-gap: var(--s-6); }
+.f-help-questions li { break-inside: avoid; padding: var(--s-1) 0; }
+.f-help-answers { margin-top: var(--s-6); }
+.f-help-answer { scroll-margin-top: var(--s-5); }
+
+/* the word list */
+.f-help-words > div { display: grid; grid-template-columns: 11rem minmax(0, 1fr); column-gap: var(--s-5); padding: var(--s-3) var(--s-5); border-top: 1px solid var(--line); }
+.f-help-words > div:first-child { border-top: 0; }
+.f-help-words dt { font-weight: 600; }
+
+@media (max-width: 720px) {
+  .f-help-questions { columns: 1; }
+  .f-help-questions li { padding: 0; }
+  .f-help-questions a { display: flex; align-items: center; min-height: var(--touch); }
+  .f-help-answer { scroll-margin-top: calc(var(--topbar-h) + var(--s-4)); }
+  .f-help-words > div { grid-template-columns: minmax(0, 1fr); row-gap: 0.125rem; padding: var(--s-3) var(--s-4); }
+}
+/* ---- help: end ---- */
+
+/* f-leak: "Possibly leaked" panel in an open email (features/leak-hint.js) */
+.leak-actions { margin-top: var(--s-1); }
+.code-panel { display: flex; }
+
+/* --- voicemail (web/js/features/voicemail.js): the line under a call --- */
+.f-vm { display: flex; flex-direction: column; gap: var(--s-1); flex: 1 1 100%; min-width: 0; }
+.f-vm-slot { flex: 1 1 14rem; min-width: 0; max-width: 22rem; }
+.f-vm-slot:empty { display: none; }
+.f-vm-audio { display: block; width: 100%; height: 2.25rem; }
+/* --- end voicemail --- */
+
+/* ---- tutorial (web/js/features/tutorial.js and tutorial/): start ---- */
+/* the card on Home: the words on the left, the buttons on the right */
+.f-tutorial-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-5); }
+/* "Step 3 of 14" and the bar */
+.f-tutorial-progress { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-4); }
+/* the title of a step gets the focus after Next and Back, like the title of a page */
+.f-tutorial h2:focus { outline: none; }
+/* the part of a step where the person does the thing */
+.f-tutorial-do { padding-top: var(--s-4); border-top: 1px solid var(--line); }
+/* Back on the left, Next on the right */
+.f-tutorial-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-top: var(--s-4); }
+/* a step whose part of the server is off: grey, with "Turned off" and the reason in words */
+.f-tutorial-off h2, .f-tutorial-off .read, .f-tutorial-off .item-value, .f-tutorial-off .item-icon { color: var(--ink-3); }
+@media (max-width: 720px) {
+  .f-tutorial-card > .row { width: 100%; }
+  .f-tutorial-card > .row .btn { flex: 1 1 auto; }
+}
+/* ---- tutorial: end ---- */

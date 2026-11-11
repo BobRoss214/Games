@@ -1,4 +1,5 @@
-// Made-up details: a random name and address, made in this browser only.
+// Random identifiers generator: a random name and address, made in this browser only.
+// (In the code these are a "persona". People see the words "random identifiers".)
 // The card shows them with copy buttons. The caller saves them (encrypted, like a label).
 import { h, replace, uid } from '../lib/dom.js';
 import { COUNTRIES, generatePersona, fullName, addressLines, singleLine, isPersona } from '../lib/persona/index.js';
@@ -9,6 +10,7 @@ import { toast } from './toast.js';
 import { phoneText } from '../lib/format.js';
 import { setItemPersona } from '../lib/data.js';
 import { store } from '../lib/store.js';
+import { why, whyParts, whyGroup } from './why.js';
 
 // The words for the fields that differ between countries.
 const WORDS = {
@@ -16,21 +18,21 @@ const WORDS = {
   default: { unit: 'Unit', region: 'Region', postalCode: 'Postal code' },
 };
 
-export const HONEST_LINE = 'These details are made up. Do not use them where the law requires your real name and address, for example at a bank or on a government form.';
+export const HONEST_LINE = 'These identifiers are made up. Do not use them where the law requires your real name and address, for example at a bank or on a government form.';
 
 // persona: the saved details or null. onSave(next) saves and returns a promise
-// (next = new details, or null to remove). The card repaints after a save.
+// (next = new identifiers, or null to remove). The card repaints after a save.
 export function personaCard({ persona = null, onSave, headingLevel = 'h3', showTitle = true }) {
   let current = isPersona(persona) ? persona : null;
   let country = current ? current.country : COUNTRIES[0].code;
-  const el = h('section', { class: 'persona', 'aria-label': 'Made-up details' });
+  const el = h('section', { class: 'persona', 'aria-label': 'Random identifiers generator' });
 
   const countryPicker = () => {
     const id = uid('country');
     const select = h('select', { id, class: 'input select', onChange: (e) => { country = e.target.value; } },
       COUNTRIES.map((c) => h('option', { value: c.code, selected: c.code === country }, c.label)));
     return h('div', { class: 'field persona-country' },
-      h('label', { class: 'label', for: id }, 'Country for new details'),
+      h('label', { class: 'label', for: id }, 'Country for new identifiers'),
       h('div', { class: 'select-wrap' }, select, icon('chevronDown', { size: 16, cls: 'select-caret' })),
     );
   };
@@ -38,7 +40,7 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
   async function make(btn, replaceOld) {
     if (replaceOld) {
       const ok = await confirmDialog({
-        title: 'Make new details?', confirmLabel: 'Make new details', danger: false,
+        title: 'Make new identifiers?', confirmLabel: 'Make new identifiers', danger: false,
         message: 'The name and address you have now are replaced. If you gave them to a site, write them down first.',
       });
       if (!ok) return;
@@ -48,7 +50,7 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
       await onSave(next);
       current = next;
       paint();
-      toast(replaceOld ? 'New details made' : 'Details made', { kind: 'ok', timeout: 2200 });
+      toast(replaceOld ? 'New identifiers made' : 'Identifiers made', { kind: 'ok', timeout: 2200 });
       el.querySelector('.persona-name')?.focus?.();
     });
   }
@@ -62,13 +64,14 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
   }
 
   function paint() {
-    const title = showTitle ? h(headingLevel, { class: 'persona-title' }, 'Made-up details') : null;
+    const title = showTitle ? h(headingLevel, { class: 'persona-title' }, 'Random identifiers generator') : null;
     if (!current) {
       replace(el,
         title,
         h('p', { class: 'small muted' }, 'A random name and address for sign-up forms. The city, state and ZIP code are real. The street and the person are not.'),
+        why('made-up-details', { text: 'Why random identifiers?' }),
         countryPicker(),
-        h('div', null, button('Make made-up details', { iconName: 'plus', onClick: (e, btn) => make(btn, false) })),
+        h('div', null, button('Make random identifiers', { iconName: 'plus', onClick: (e, btn) => make(btn, false) })),
         h('p', { class: 'persona-honest hint' }, HONEST_LINE),
       );
       return;
@@ -98,14 +101,15 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
         ),
       ),
       h('p', { class: 'persona-honest hint' }, HONEST_LINE),
+      why('made-up-details', { text: 'Why random identifiers?' }),
       h('div', { class: 'persona-actions' },
         countryPicker(),
         h('div', { class: 'row row-wrap row-2' },
-          button('Make new details', { size: 'sm', iconName: 'refresh', onClick: (e, btn) => make(btn, true) }),
-          button('Remove', { size: 'sm', kind: 'danger', onClick: async (e, btn) => {
-            const ok = await confirmDialog({ title: 'Remove these details?', message: 'The made-up name and address are deleted. You cannot get the same ones back.', confirmLabel: 'Remove' });
+          button('Make new identifiers', { size: 'sm', iconName: 'refresh', onClick: (e, btn) => make(btn, true) }),
+          button('Remove identifiers', { size: 'sm', kind: 'danger', onClick: async (e, btn) => {
+            const ok = await confirmDialog({ title: 'Remove these identifiers?', message: 'The random name and address are deleted. You cannot get the same ones back.', confirmLabel: 'Remove identifiers' });
             if (!ok) return;
-            await runBusy(btn, async () => { await onSave(null); current = null; paint(); toast('Details removed', { kind: 'ok', timeout: 2200 }); });
+            await runBusy(btn, async () => { await onSave(null); current = null; paint(); toast('Identifiers removed', { kind: 'ok', timeout: 2200 }); });
           } }),
         ),
       ),
@@ -130,7 +134,7 @@ export function openPersonaDialog(item) {
   const now = ((kind === 'alias' ? store.get('aliases') : store.get('numbers')) || []).find((x) => x.id === item.id);
   if (!now) { reportError(new Error('This item does not exist any more.')); return; }
   openDialog({
-    title: 'Made-up details', size: 'md',
+    title: 'Random identifiers generator', size: 'md',
     content: (api) => h('div', { class: 'stack' },
       h('p', { class: 'mono small muted break' }, kind === 'number' ? phoneText(now.number) : now.address),
       personaCard({ persona: now.persona, showTitle: false, onSave: (next) => setItemPersona(kind, item.id, next) }),

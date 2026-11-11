@@ -15,6 +15,7 @@ import { openNewInbox } from '../ui/items.js';
 import { openCompose } from './compose.js';
 import { openTestTools } from './testtools.js';
 import { registered } from '../lib/registry.js';
+import { why, whyParts, whyGroup } from '../ui/why.js';
 
 // Plain text with links for http(s) addresses. Everything is added as text nodes.
 function textWithLinks(text) {
@@ -234,9 +235,10 @@ export function mailScreen({ params, scope }) {
     let mode = 'html';
     const inline = new Map();
     const slot = h('div', { class: 'mail-body-slot' });
-    const note = h('p', { class: 'mail-note', hidden: true }, icon('eyeOff', { size: 14 }), h('span', null, 'Remote images are blocked to stop tracking.'));
+    const whyImages = whyParts('remote-images', { text: 'Why?' });
+    const note = h('p', { class: 'mail-note', hidden: true }, icon('eyeOff', { size: 14 }), h('span', null, 'Remote images are blocked to stop tracking.'), whyImages.button);
     const paint = () => {
-      if (mode === 'text') { note.hidden = true; replace(slot, plain()); return; }
+      if (mode === 'text') { note.hidden = true; whyImages.panel.hidden = true; whyImages.button.setAttribute('aria-expanded', 'false'); replace(slot, plain()); return; }
       const clean = sanitizeEmail(body.html, inline);
       note.hidden = !clean.blockedRemote;
       // The frame has no scripts and no access to this page. Links open in a new tab.
@@ -250,6 +252,7 @@ export function mailScreen({ params, scope }) {
         segmented({ label: 'Show the message as', value: mode, options: [{ value: 'html', label: 'Formatted' }, { value: 'text', label: 'Plain text' }], onChange: (v) => { mode = v; paint(); } }),
         note,
       ),
+      whyImages.panel,
       slot,
     );
 
@@ -270,7 +273,7 @@ export function mailScreen({ params, scope }) {
     const aliases = store.get('aliases') || [];
     return aliases.find((a) => a.id === msg.addressId) || aliases.find((a) => a.address === msg.meta.deliveredTo) || null;
   }
-  const markOf = (msg) => { const a = msg ? aliasOf(msg) : null; return a ? `${a.id}:${a.enabled}:${a.label}` : ''; };
+  const markOf = (msg) => { const a = msg ? aliasOf(msg) : null; return a ? `${a.id}:${a.enabled}:${a.label}:${JSON.stringify(a.extra || {})}` : ''; };
 
   function renderMessage(msg) {
     const meta = msg.meta;
@@ -282,6 +285,7 @@ export function mailScreen({ params, scope }) {
       toast('Alias turned off. Mail to it is refused.', { kind: 'ok', action: { label: 'Undo', onClick: () => updateAlias(alias.id, { enabled: true }).catch(reportError) } });
     }) }) : null;
 
+    const whyOff = turnOff ? whyParts('alias-off', { text: 'Why?' }) : null;
     const menu = menuButton({ label: 'More actions', items: () => [
       incoming ? { label: 'Mark as unread', icon: 'mail', onSelect: async () => {
         try {
@@ -305,7 +309,7 @@ export function mailScreen({ params, scope }) {
         h('div', { class: 'message-actions' },
           button('Reply', { iconName: 'reply', size: 'sm', onClick: () => openCompose({ mailboxId, reply: msg }) }),
           button('Delete', { iconName: 'trash', size: 'sm', kind: 'danger', onClick: async () => {
-            const ok = await confirmDialog({ title: 'Delete this message?', message: 'The message is removed from the server. You cannot undo this.', confirmLabel: 'Delete' });
+            const ok = await confirmDialog({ title: 'Delete this message?', message: 'The message is removed from the server. You cannot undo this.', confirmLabel: 'Delete', details: why('deleting') });
             if (!ok) return;
             try {
               await deleteMessage(msg.id);
@@ -339,7 +343,9 @@ export function mailScreen({ params, scope }) {
           alias ? (alias.enabled ? tag('Alias') : tag('Alias, off')) : null,
           alias && alias.label ? h('span', { class: 'small muted' }, alias.label) : null,
           turnOff,
+          whyOff ? whyOff.button : null,
         ) : null,
+        whyOff ? whyOff.panel : null,
       ),
       panels.length ? h('div', { class: 'message-panels' }, panels) : null,
       msg.broken ? h('p', { class: 'form-error' }, 'This message cannot be opened with your key.') : renderBody(msg),

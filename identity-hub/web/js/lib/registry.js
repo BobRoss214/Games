@@ -133,7 +133,7 @@ export function registerNumberTab({ id, label, order = 50, render } = {}) {
 
 // One more section in the Settings tab of a number. render({ number, scope }) returns an element or null.
 // It runs again each time the number changes, so it must be cheap.
-// order: Label 10, Forwarding 20, Identity 30, Made-up details 40, Old texts 50, Renewal 80, Release 100.
+// order: Label 10, Forwarding 20, Identity 30, Random identifiers 40, Old texts 50, Renewal 80, Release 100.
 export function registerNumberSetting({ id, title, lede = '', order = 60, render } = {}) {
   need(isText(title), `number setting "${id}" needs a title`);
   need(isFn(render), `number setting "${id}" needs a render function`);

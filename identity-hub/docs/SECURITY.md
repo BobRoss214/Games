@@ -14,7 +14,7 @@ One word has one meaning here: an **identity** is a named group of aliases and n
 | Account key and private key | No. | The server stores encrypted copies only. |
 | Labels and notes on aliases, inboxes, numbers | No. | Encrypted in the browser. |
 | Identities: their names, their notes, and which aliases and numbers are in them | No. | Encrypted in the browser. The server sees only that an encrypted entry exists, and its size. |
-| Made-up details (a made-up name and address for sign-up forms) | No. | Made in the browser. Stored inside the encrypted labels and the encrypted identities. |
+| Random identifiers (a random name and address for sign-up forms) | No. | Made in the browser. Stored inside the encrypted labels and the encrypted identities. |
 | Stored email (text, subject, sender, attachments) | No. | Encrypted for you when it arrives. See Limits 1. |
 | Stored texts, call history, and voicemail | No. | Encrypted for you when they arrive. See Limits 1 and 10. |
 | Mail and texts that you send | For a moment. | The server needs the readable form to send them. It keeps only a copy that is encrypted for you. See Limits 4. |
@@ -42,7 +42,7 @@ The server keeps a value in plain form only when it must use that value itself.
 | Forwarding and voicemail | On or off for each number, and the linked phone. | — |
 | Newsletter data ("unsubscribe") | Nothing outside the encrypted message. | — |
 | Voicemail | The audio, encrypted for you in the same way as a mail message. | The plain audio. It is in memory for a moment only. |
-| Identities and made-up details | Encrypted entries that only your browser can open. | Names, notes, groups, details. |
+| Identities and random identifiers | Encrypted entries that only your browser can open. | Names, notes, groups, identifiers. |
 | A payment in progress | An encrypted entry in your account. Your browser needs it to finish the payment. | A link between the account and the invoice. |
 
 When mail arrives, the server compares the envelope sender, the From line, and the Sender line with the hashes of your blocks.
@@ -107,7 +107,7 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 - **Strict browser policy.** The web app loads no third-party script, font, or image. A Content-Security-Policy blocks inline scripts.
 - **Email HTML is isolated.** The app shows email HTML in a sandboxed frame that cannot run scripts. Remote images are blocked, so senders cannot track when you open a message.
 - **No unsubscribe link is opened.** To leave a newsletter, the app sends a normal email to the address that the newsletter gives. Postern never opens an unsubscribe web link. A visit to that link tells the sender that a person reads the address, and it makes the server open an address that a stranger chose.
-- **Work that stays in the browser.** These helpers run in the browser only and send nothing to the server: the code helper (it finds a sign-up code in a message), the "possibly leaked" hint, the mail statistics, the made-up details, and the username and password maker. The password maker stores no password. You copy the password into your password manager.
+- **Work that stays in the browser.** These helpers run in the browser only and send nothing to the server: the code helper (it finds a sign-up code in a message), the "possibly leaked" hint, the mail statistics, the random identifiers generator, and the username and password maker. The password maker stores no password. You copy the password into your password manager.
 - **Encrypted export.** The browser makes the export file and encrypts it. The server never sees the plain file. The recovery key opens the file, with no server. See Limits 12.
 - **Cross-site request protection.** `SameSite=Strict` cookie, an Origin check, and JSON-only request bodies.
 - **Rate limits** on login, sign-up, and sending. Counters are in memory only.
@@ -138,7 +138,7 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 
 | Attacker | Gets | Does not get |
 |---|---|---|
-| Steals a database backup | Encrypted blobs, hashes, balances, settings and counters, real phone numbers in encrypted form. Also data that was deleted after the backup. | Mail, texts, voicemail, labels, identities, made-up details, addresses, numbers, blocked senders, real phone numbers (they need the server secret key) |
+| Steals a database backup | Encrypted blobs, hashes, balances, settings and counters, real phone numbers in encrypted form. Also data that was deleted after the backup. | Mail, texts, voicemail, labels, identities, random identifiers, addresses, numbers, blocked senders, real phone numbers (they need the server secret key) |
 | Steals the database and the server secret key | Linked real phone numbers; can test guesses of addresses and of blocked senders; can make false credit tokens | Stored mail, texts and voicemail, labels, identities, lists of addresses |
 | Controls the running server for some time | New incoming mail, texts and voicemail during that time; can send bad web app code; can log times and IP addresses | Old stored messages (unless you sign in during that time) |
 | Watches the network | Nothing useful with HTTPS; SMTP between mail servers uses opportunistic TLS | — |

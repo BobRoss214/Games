@@ -143,14 +143,25 @@ export async function signOut(page) {
 export function inApp(page, fn, arg) {
   // The text is run by the test driver, not by the page, so the page policy (no eval) stays untouched.
   const source = `(async (arg) => {
-    const [data, pay, phone, apiMod, storeMod, mail, identities, persona, session] = await Promise.all([
+    const [data, pay, phone, apiMod, storeMod, mail, identities, persona, session, leakwatch] = await Promise.all([
       import('/js/lib/data.js'), import('/js/lib/pay.js'), import('/js/lib/phone.js'), import('/js/lib/api.js'), import('/js/lib/store.js'),
-      import('/js/lib/mail.js'), import('/js/lib/identities.js'), import('/js/lib/persona/index.js'), import('/js/lib/session.js'),
+      import('/js/lib/mail.js'), import('/js/lib/identities.js'), import('/js/lib/persona/index.js'), import('/js/lib/session.js'), import('/js/lib/leakwatch.js'),
     ]);
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    return (${fn.toString()})({ data, pay, phone, api: apiMod.api, store: storeMod.store, mail, identities, persona, session, wait }, arg);
+    return (${fn.toString()})({ data, pay, phone, api: apiMod.api, store: storeMod.store, mail, identities, persona, session, leakwatch, wait }, arg);
   })(${JSON.stringify(arg === undefined ? null : arg)})`;
   return page.evaluate(source);
+}
+
+// Waits until the app has finished its background work after a load (the lists, the check for
+// "possibly leaked" hints). Use it before a test counts requests.
+export async function settle(page) {
+  await inApp(page, async ({ store, leakwatch, wait }) => {
+    for (let i = 0; i < 100 && (store.get('aliases') === null || store.get('numbers') === null); i++) await wait(50);
+    await wait(500);
+    await leakwatch.whenIdle();
+  });
+  await page.waitForTimeout(200);
 }
 
 // Adds credit fast (a simulated private payment through the app's own code).

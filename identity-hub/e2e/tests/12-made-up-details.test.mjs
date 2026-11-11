@@ -1,4 +1,4 @@
-// Made-up details: a random name and address for an alias or a number.
+// Random identifiers generator (the file keeps its old name): a random name and address for an alias or a number.
 // Made in the browser, saved inside the encrypted label, with copy buttons.
 import { signUp, addCredit, inApp, assert } from '../lib.mjs';
 
@@ -19,21 +19,21 @@ export default async function (t) {
   const row = () => page.locator(`.item-row[data-id="${ids.alias}"]`);
   const openDetails = async () => {
     await row().getByRole('button', { name: /More actions/ }).click();
-    await page.getByRole('menuitem', { name: 'Made-up details' }).click();
+    await page.getByRole('menuitem', { name: 'Random identifiers generator' }).click();
   };
 
   // empty state: one button, a real country picker, the honest line
   await page.goto(t.base + '/');
   await row().waitFor();
   await openDetails();
-  const country = dlg.getByLabel('Country for new details');
+  const country = dlg.getByLabel('Country for new identifiers');
   assert((await country.evaluate((el) => el.tagName)) === 'SELECT', 'the country picker is not a real control');
   assert((await country.locator('option').allTextContents()).includes('United States'), 'the country list has no United States');
-  await dlg.getByText('These details are made up. Do not use them where the law requires your real name and address').waitFor();
+  await dlg.getByText('These identifiers are made up. Do not use them where the law requires your real name and address').waitFor();
   t.ok('empty state: country picker and the honest line');
 
   // make details
-  await dlg.getByRole('button', { name: 'Make made-up details' }).click();
+  await dlg.getByRole('button', { name: 'Make random identifiers' }).click();
   await dlg.locator('.persona-name').waitFor();
   const name1 = await dlg.locator('.persona-name').textContent();
   const lines1 = await dlg.locator('.persona-address span').allTextContents();
@@ -57,18 +57,18 @@ export default async function (t) {
   assert(/^[A-Z]{2}$/.test(fields.State) && /^\d{5}$/.test(fields['ZIP code']), 'state or ZIP code has a wrong form');
   t.ok('a copy button for the name, the address and each field');
 
-  // make new details: asks first, then replaces
-  await dlg.getByRole('button', { name: 'Make new details' }).click();
-  await page.getByRole('heading', { name: 'Make new details?' }).waitFor();
+  // make new identifiers: asks first, then replaces
+  await dlg.getByRole('button', { name: 'Make new identifiers' }).click();
+  await page.getByRole('heading', { name: 'Make new identifiers?' }).waitFor();
   await page.getByRole('dialog').last().getByRole('button', { name: 'Cancel' }).click();
   assert((await dlg.locator('.persona-name').textContent()) === name1, 'Cancel changed the details');
-  await dlg.getByRole('button', { name: 'Make new details' }).click();
-  await page.getByRole('dialog').last().getByRole('button', { name: 'Make new details' }).click();
-  await page.getByText('New details made').waitFor();
+  await dlg.getByRole('button', { name: 'Make new identifiers' }).click();
+  await page.getByRole('dialog').last().getByRole('button', { name: 'Make new identifiers' }).click();
+  await page.getByText('New identifiers made').waitFor();
   const street2 = await dlg.locator('.persona-field').filter({ has: page.locator('dt', { hasText: /^Street$/ }) }).locator('.persona-value').textContent();
   assert(street2 !== fields.Street, 'the details did not change');
   const name2 = await dlg.locator('.persona-name').textContent();
-  t.ok('"Make new details" asks first, then replaces');
+  t.ok('"Make new identifiers" asks first, then replaces');
   await dlg.getByRole('button', { name: 'Done' }).click();
 
   // the row shows the name; a reload keeps it; the label is still there
@@ -80,7 +80,7 @@ export default async function (t) {
 
   // the server stores it encrypted: the plain name is nowhere in the answer
   const raw = await page.evaluate(() => fetch('/api/aliases').then((r) => r.text()));
-  assert(!raw.includes(name2.split(' ')[1]) && !raw.includes(street2), 'made-up details are readable in the server answer');
+  assert(!raw.includes(name2.split(' ')[1]) && !raw.includes(street2), 'random identifiers are readable in the server answer');
   t.ok('the server answer holds no readable details');
 
   // a later rename keeps the details, and a field of a later app version is kept too
@@ -109,16 +109,16 @@ export default async function (t) {
   await row().waitFor();
   assert((await row().locator('.item-persona').count()) === 0, 'details in a wrong form are shown');
   await openDetails();
-  await dlg.getByRole('button', { name: 'Make made-up details' }).waitFor();
+  await dlg.getByRole('button', { name: 'Make random identifiers' }).waitFor();
   t.ok('stored details in a wrong form are ignored');
 
   // remove
-  await dlg.getByRole('button', { name: 'Make made-up details' }).click();
+  await dlg.getByRole('button', { name: 'Make random identifiers' }).click();
   await dlg.locator('.persona-name').waitFor();
-  await dlg.getByRole('button', { name: 'Remove' }).click();
-  await page.getByRole('dialog').last().getByRole('button', { name: 'Remove' }).click();
-  await page.getByText('Details removed').waitFor();
-  await dlg.getByRole('button', { name: 'Make made-up details' }).waitFor();
+  await dlg.getByRole('button', { name: 'Remove identifiers' }).click();
+  await page.getByRole('dialog').last().getByRole('button', { name: 'Remove identifiers' }).click();
+  await page.getByText('Identifiers removed').waitFor();
+  await dlg.getByRole('button', { name: 'Make random identifiers' }).waitFor();
   await dlg.getByRole('button', { name: 'Done' }).click();
   await page.reload();
   await row().waitFor();
@@ -128,7 +128,7 @@ export default async function (t) {
   // a number has the card on its Settings tab
   await page.goto(t.base + '/numbers/' + ids.number);
   await page.getByRole('tab', { name: 'Settings' }).click();
-  await page.getByRole('button', { name: 'Make made-up details' }).click();
+  await page.getByRole('button', { name: 'Make random identifiers' }).click();
   await page.locator('.number-settings .persona-name').waitFor();
   const numberName = await page.locator('.number-settings .persona-name').textContent();
   await page.reload();
@@ -136,7 +136,7 @@ export default async function (t) {
   await page.locator('.number-settings .persona-name').filter({ hasText: numberName }).waitFor();
   await page.goto(t.base + '/numbers');
   await page.locator(`.item-row[data-id="${ids.number}"] .item-persona`).filter({ hasText: numberName }).waitFor();
-  t.ok('a number has made-up details too');
+  t.ok('a number has random identifiers too');
 
   // nothing of it in the address bar or in browser storage
   const leak = await page.evaluate((n) => ({ url: location.href.includes(n), ls: JSON.stringify(Object.entries(localStorage)).includes(n), ss: JSON.stringify(Object.entries(sessionStorage)).includes(n) }), numberName.split(' ')[1]);

@@ -14,6 +14,7 @@ import {
 } from '../lib/data.js';
 import { searchNumbers } from '../lib/phone.js';
 import { openNewIdentity } from './identity.js';
+import { why, whyParts, whyGroup } from './why.js';
 
 const config = () => store.get('config') || { mailDomains: [], prices: {}, features: {}, phoneCountries: [] };
 const LOCAL_PART = /^[a-z0-9](?:[a-z0-9._-]{1,62}[a-z0-9])$/;
@@ -92,7 +93,7 @@ export async function openNewAlias({ mailboxId = '', identityId = '' } = {}) {
   const made = await formDialog({
     title: 'New alias', description: 'An alias is an extra address. Mail to it lands in your inbox. Turn it off when you get spam.',
     submitLabel: 'Make alias',
-    build: () => h('div', { class: 'stack' }, boxes.length > 1 ? target.el : null, label.el, name.el),
+    build: () => h('div', { class: 'stack' }, why('inbox-vs-alias'), boxes.length > 1 ? target.el : null, label.el, name.el),
     onSubmit: async () => {
       const n = name.read();
       if (!n) return false;
@@ -112,6 +113,7 @@ export async function openNewInbox() {
     title: 'New inbox', description: 'An inbox has its own address. You read and send mail here.',
     submitLabel: price ? `Make inbox for ${money(price)}` : 'Make inbox',
     build: () => h('div', { class: 'stack' },
+      why('inbox-vs-alias'),
       label.el, name.el,
       price ? h('p', { class: 'price-note' }, icon('funds', { size: 16 }), h('span', null, `An inbox costs ${money(price)} for each ${renewDays()} days. The first ${renewDays()} days are charged now.`)) : null,
     ),
@@ -197,12 +199,12 @@ export function openNewChooser() {
   );
   openDialog({
     title: 'New', size: 'md',
-    content: (api) => h('div', { class: 'choices' },
+    content: (api) => h('div', { class: 'stack' }, h('div', { class: 'choices' },
       option('alias', 'Alias', 'An extra address that delivers to an inbox. Make one for each shop or site.', 'Free', () => { api.close(); openNewAlias(); }),
       option('inbox', 'Inbox', 'Its own address. Read and send mail here.', prices.mailboxMonth ? `${money(prices.mailboxMonth)} / ${renewDays()} days` : 'Free', () => { api.close(); openNewInbox(); }),
       phoneOn ? option('phone', 'Number', 'A phone number for texts and calls. Forward it to your real phone if you like.', prices.numberMonth ? `${money(prices.numberMonth)} / ${renewDays()} days` : 'Free', () => { api.close(); openGetNumber(); }) : null,
       option('folder', 'Identity', 'A named group, for example "Facebook". Put the aliases and numbers you use in one place in it.', 'Free', () => { api.close(); openNewIdentity(); }),
-    ),
+    ), whyGroup([['inbox-vs-alias'], ['identity']])),
   });
 }
 
@@ -246,7 +248,7 @@ export async function confirmDeleteItem(item) {
         h('p', { class: 'mono break' }, item.address),
         h('p', { class: 'read' }, `This deletes all messages in the inbox${count ? ` and its ${plural(count, 'alias', 'aliases')}` : ''}. You cannot undo this. The address is never given out again.`),
       ),
-      confirmLabel: 'Delete inbox',
+      confirmLabel: 'Delete inbox', details: why('deleting'),
     });
     if (!ok) return false;
     try { await deleteMailbox(item.id); toast('Inbox deleted', { kind: 'ok' }); return true; } catch (err) { reportError(err); return false; }
@@ -258,7 +260,7 @@ export async function confirmDeleteItem(item) {
         h('p', { class: 'mono break' }, item.address),
         h('p', { class: 'read' }, 'Mail to this address is refused from now on. Messages you have stay in the inbox. The address is never given out again.'),
       ),
-      confirmLabel: 'Delete alias',
+      confirmLabel: 'Delete alias', details: whyGroup([['deleting'], ['alias-off']]),
     });
     if (!ok) return false;
     try { await deleteAlias(item.id); toast('Alias deleted', { kind: 'ok' }); return true; } catch (err) { reportError(err); return false; }
@@ -269,7 +271,7 @@ export async function confirmDeleteItem(item) {
       h('p', { class: 'mono' }, phoneText(item.number)),
       h('p', { class: 'read' }, 'Its texts and its call log are deleted. You cannot get this number back. Money for the days that are left is not returned.'),
     ),
-    confirmLabel: 'Release number',
+    confirmLabel: 'Release number', details: why('deleting'),
   });
   if (!ok) return false;
   try { await releaseNumber(item.id); toast('Number released', { kind: 'ok' }); return true; } catch (err) { reportError(err); return false; }

@@ -16,6 +16,7 @@ Read this file first in a new session. It is the working memory of the build.
 - LAST: the "own phone" provider (see the second half of this file).
 - Never tested: real Twilio, real BTCPay, Docker build, a real phone.
 - RENAME by the user (later than the notes below): the feature "made-up details" is now called "Random identifiers generator"; its values are "random identifiers". Internal names (`persona`, key `made-up-details`) stay. Where the notes below say "made-up details", read the new name.
+- NAMING RULE by the user: names of things must be very simple and self-explanatory; longer explanation goes to the tutorial, Help and "why?" links. Names that the user chose stay exact (Random identifiers generator, Identity, Who leaked me, Possibly leaked, Test my recovery key, Download my data, My stats, Burn).
 - Decisions told to the user: recovery key opens the export file; no web-link unsubscribe (only "turn off" and unsubscribe by email); refused counter = one number per alias; per-account domains NOT built (MAIL_DOMAINS is enough for one person); UI name "made-up details"; "identity" = group only.
 - Storage contracts in encrypted extras: alias `senders`, item/identity `username`, identity `colour`, `events`, `burned`.
 

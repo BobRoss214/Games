@@ -14,6 +14,7 @@ import { decLabel, encLabel, saveKeyForPasskey, dropLocal, signOut } from '../li
 import { passkeysSupported, registerPasskey, passkeyPrf } from '../lib/webauthn.js';
 import { guessDeviceName } from './create.js';
 import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
+import { why, whyParts, whyGroup } from '../ui/why.js';
 
 export function settingsScreen({ scope }) {
   // ---- passkeys ----
@@ -156,7 +157,7 @@ export function settingsScreen({ scope }) {
       message: h('div', { class: 'stack stack-3' },
         h('p', { class: 'read' }, 'This deletes every inbox, alias, number, message and text, and your passkeys. Credit that is left is lost. Nobody can undo this.'),
       ),
-      confirmLabel: 'Delete account', typed: 'delete my account',
+      confirmLabel: 'Delete account', typed: 'delete my account', details: why('deleting'),
     });
     if (!ok) return;
     try {
@@ -170,7 +171,7 @@ export function settingsScreen({ scope }) {
   // The sections of Settings, with the sections of feature files between them (registerSettingsSection).
   const parts = mergeByOrder(
     [
-      { order: 10, make: () => section({ title: 'Passkeys', lede: 'Sign in with your fingerprint, your face or your device PIN. Keep your recovery key too.', actions: passkeysSupported() ? button('Add a passkey', { size: 'sm', iconName: 'plus', onClick: addPasskey }) : null }, passkeySlot) },
+      { order: 10, make: () => section({ title: 'Passkeys', lede: 'Sign in with your fingerprint, your face or your device PIN. Keep your recovery key too.', actions: passkeysSupported() ? button('Add a passkey', { size: 'sm', iconName: 'plus', onClick: addPasskey }) : null }, whyGroup([['passkey'], ['recovery-key']]), passkeySlot) },
       { order: 20, make: () => section({ title: 'Sessions', lede: 'Browsers and devices that are signed in to this account. The server keeps the day of sign-in, and nothing about the device.', actions: othersBtn }, sessionSlot) },
       { order: 30, make: () => section({ title: 'Theme' },
         segmented({ label: 'Theme', value: store.get('theme'), options: [{ value: 'system', label: 'System', icon: 'system' }, { value: 'light', label: 'Light', icon: 'sun' }, { value: 'dark', label: 'Dark', icon: 'moon' }], onChange: (v) => setTheme(v) }),
