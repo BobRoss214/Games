@@ -52,8 +52,9 @@ export function openContext(env = process.env) {
 // "+15551234567" -> "+•••••••4567"
 export const maskNumber = (number) => (number.length > 5 ? '+' + '•'.repeat(number.length - 5) + number.slice(-4) : number);
 const credsOf = (d) => ({ login: d.login, password: d.password });
-// The ids of our five webhooks at the gateway (36 characters at most).
-const hookId = (deviceRowId, i) => `p${i}-${deviceRowId}`;
+// The ids of our five webhooks at the gateway (36 characters at most). They come from the hash of
+// the webhook token, so a new token has new ids and never writes over the webhooks of the old one.
+const hookIds = (hookHash) => WEBHOOK_EVENTS.map((_, i) => `p${i}-${Buffer.from(hookHash).toString('base64url').slice(0, 22)}`);
 
 function gatewayProblem(err, ctx) {
   if (err instanceof ProviderError) {
@@ -94,6 +95,48 @@ function countryWarnings(ctx, sims) {
   return missing.length ? [`PHONE_COUNTRIES does not have ${missing.join(', ')}. The web app offers the countries of that list. Add ${missing.join(', ')} there, or people cannot choose these numbers.`] : [];
 }
 
+// Checks the login at the gateway and finds the phone. Returns { device } (an entry of GET /devices),
+// or { needDevice: true, devices } when the login has several phones and no deviceId was given.
+async function findAtGateway(ctx, creds, deviceId) {
+  let devices;
+  try { devices = await ctx.client.devices(creds); } catch (err) { throw gatewayProblem(err, ctx); }
+  devices = devices.filter((d) => d && typeof d.id === 'string' && d.id);
+  if (devices.length === 0) stop('This login has no phone at the gateway yet. Open the app on the phone, connect it to your server, then try again.');
+  if (deviceId) {
+    const device = devices.find((d) => d.id === deviceId) || null;
+    if (!device) stop(`The gateway has no phone with the device id ${deviceId} for this login.`);
+    return { device };
+  }
+  if (devices.length === 1) return { device: devices[0] };
+  return { needDevice: true, devices: devices.map((d) => ({ id: d.id, name: String(d.name || ''), lastSeen: String(d.lastSeen || ''), sims: Array.isArray(d.simCards) ? d.simCards.length : 0 })) };
+}
+
+// Registers the five webhooks of a phone and sets the signing key and the ping interval.
+// If a step fails, the webhooks that were made are removed again, and the error goes to the caller.
+async function setUpGateway(ctx, creds, { hookHash, webhookUrl, gatewayId, signingKey }) {
+  const ids = hookIds(hookHash);
+  const registered = [];
+  try {
+    for (const [i, event] of WEBHOOK_EVENTS.entries()) {
+      await ctx.client.addWebhook(creds, { id: ids[i], url: webhookUrl, event, deviceId: gatewayId });
+      registered.push(ids[i]);
+    }
+    await ctx.client.patchSettings(creds, { webhooks: { signing_key: signingKey }, ping: { interval_seconds: Math.max(1, ctx.config.phone.ownphone.pingSeconds) } });
+  } catch (err) {
+    for (const id of registered) { try { await ctx.client.deleteWebhook(creds, id); } catch { /* the gateway is not reachable: nothing more to do */ } }
+    throw gatewayProblem(err, ctx);
+  }
+}
+
+// Removes the five webhooks of a token at the gateway. Returns false if the gateway could not be asked.
+async function cleanGateway(ctx, creds, hookHash) {
+  let clean = true;
+  for (const id of hookIds(hookHash)) {
+    try { await ctx.client.deleteWebhook(creds, id); } catch (err) { if (!(err instanceof ProviderError && err.notFound)) clean = false; }
+  }
+  return clean;
+}
+
 // ---------- commands ----------
 
 // sims: [{ simNumber, number }]. Returns { needDevice: true, devices } when the login has several
@@ -109,19 +152,9 @@ export async function addPhone(ctx, { label, login, password, sims, deviceId = '
   if (new Set(clean.map((s) => s.number)).size !== clean.length) stop('Each phone number can be given one time.');
 
   const creds = { login: String(login), password: String(password) };
-  let devices;
-  try { devices = await ctx.client.devices(creds); } catch (err) { throw gatewayProblem(err, ctx); }
-  devices = devices.filter((d) => d && typeof d.id === 'string' && d.id);
-  if (devices.length === 0) stop('This login has no phone at the gateway yet. Open the app on the phone, connect it to your server, then try again.');
-  let device = null;
-  if (deviceId) {
-    device = devices.find((d) => d.id === deviceId) || null;
-    if (!device) stop(`The gateway has no phone with the device id ${deviceId} for this login.`);
-  } else if (devices.length === 1) {
-    [device] = devices;
-  } else {
-    return { needDevice: true, devices: devices.map((d) => ({ id: d.id, name: String(d.name || ''), lastSeen: String(d.lastSeen || ''), sims: Array.isArray(d.simCards) ? d.simCards.length : 0 })) };
-  }
+  const found = await findAtGateway(ctx, creds, deviceId);
+  if (found.needDevice) return found;
+  const { device } = found;
   const existing = ctx.pool.devices();
   const same = existing.find((d) => d.gatewayId === device.id);
   if (same) stop(`This phone is in the pool already, with the label "${same.label}".`);
@@ -148,18 +181,12 @@ export async function addPhone(ctx, { label, login, password, sims, deviceId = '
     return d;
   });
   const webhookUrl = ctx.config.publicUrl + hookPath(made.token);
-  const registered = [];
   try {
-    for (const [i, event] of WEBHOOK_EVENTS.entries()) {
-      await ctx.client.addWebhook(creds, { id: hookId(made.id, i), url: webhookUrl, event, deviceId: device.id });
-      registered.push(hookId(made.id, i));
-    }
-    await ctx.client.patchSettings(creds, { webhooks: { signing_key: signingKey }, ping: { interval_seconds: Math.max(1, ctx.config.phone.ownphone.pingSeconds) } });
+    await setUpGateway(ctx, creds, { hookHash: made.hookHash, webhookUrl, gatewayId: device.id, signingKey });
   } catch (err) {
     // Half a set-up is worse than none: take the phone out of the pool again.
     ctx.pool.removeDevice(made.id);
-    for (const id of registered) { try { await ctx.client.deleteWebhook(creds, id); } catch { /* the gateway is not reachable: nothing more to do */ } }
-    throw gatewayProblem(err, ctx);
+    throw err;
   }
   return { id: made.id, label: name, gatewayId: device.id, sims: clean, webhookUrl, pingSeconds: ctx.config.phone.ownphone.pingSeconds, warnings };
 }
@@ -201,11 +228,41 @@ export async function removePhone(ctx, { label, force = false }) {
   const sims = ctx.pool.sims(device.id).length;
   const takenBack = ctx.db.tx(() => { const n = takeBack(ctx, held); ctx.pool.removeDevice(device.id); return n; });
   // The phone must stop sending events to an address that does not exist any more.
-  let gatewayCleaned = true;
-  for (const i of WEBHOOK_EVENTS.keys()) {
-    try { await ctx.client.deleteWebhook(credsOf(device), hookId(device.id, i)); } catch (err) { if (!(err instanceof ProviderError && err.notFound)) gatewayCleaned = false; }
-  }
+  const gatewayCleaned = await cleanGateway(ctx, credsOf(device), device.hookHash);
   return { label: device.label, sims, takenBack, gatewayCleaned };
+}
+
+// The phone signed up at the gateway again (for example after the database of the gateway was lost):
+// it has a new login, a new password and a new device id there. This keeps the phone in the pool with
+// its SIM cards, so the numbers of accounts and their texts stay. It makes a new webhook token and a
+// new signing key, and sets up the gateway under the new login. If a step at the gateway fails, nothing changes.
+// Returns { needDevice: true, devices }, or { label, gatewayId, sims, inUse, webhookUrl, pingSeconds, oldCleaned, warnings }.
+export async function reloginPhone(ctx, { label, login, password, deviceId = '' }) {
+  const device = oneDevice(ctx, label);
+  if (!login || !password) stop('The new login and the new password of the phone are needed. The app shows them on its home screen (Cloud Server: Username and Password).');
+  const creds = { login: String(login), password: String(password) };
+  const found = await findAtGateway(ctx, creds, deviceId);
+  if (found.needDevice) return found;
+  const others = ctx.pool.devices().filter((d) => d.id !== device.id);
+  const taken = others.find((d) => d.gatewayId === found.device.id);
+  if (taken) stop(`The phone with this device id is in the pool already, with the label "${taken.label}".`);
+
+  // One login of the gateway has one signing key for all its phones: a phone of the pool that uses the new login keeps its key.
+  const sibling = others.find((d) => d.login === creds.login);
+  const signingKey = sibling ? sibling.signingKey : randomBytes(32).toString('base64url');
+  const fresh = ctx.pool.newToken();
+  const webhookUrl = ctx.config.publicUrl + hookPath(fresh.token);
+  // The gateway first. Only when all of it worked does the record of the phone change.
+  await setUpGateway(ctx, creds, { hookHash: fresh.hookHash, webhookUrl, gatewayId: found.device.id, signingKey });
+  ctx.pool.relogin(device.id, { login: creds.login, password: creds.password, gatewayId: found.device.id, signingKey, hookHash: fresh.hookHash });
+  // The webhooks of the old token, under the old login (it may not exist any more). If the login
+  // is the same and only the password is new, the new password removes them.
+  const oldCleaned = await cleanGateway(ctx, device.login === creds.login ? creds : credsOf(device), device.hookHash);
+
+  const sims = ctx.pool.sims(device.id);
+  const warnings = [];
+  if (!ctx.config.publicUrl.startsWith('https://')) warnings.push(`PUBLIC_URL is ${ctx.config.publicUrl}. The app on the phone sends events only to an address that starts with https://.`);
+  return { label: device.label, gatewayId: found.device.id, sims: sims.length, inUse: sims.filter((x) => x.inUse).length, webhookUrl, pingSeconds: ctx.config.phone.ownphone.pingSeconds, oldCleaned, warnings };
 }
 
 // Sends one text through a phone, with no account and no charge. Returns { id, simNumber }.
@@ -269,6 +326,10 @@ Run this tool with the same environment as the server (DATA_DIR, SECRET_KEY, PUB
   node server/tools/ownphone.js remove-sim --label "Phone 1" --sim 2 [--force]
   node server/tools/ownphone.js remove --label "Phone 1" [--force]
       --force takes the numbers away from the accounts that use them. Their texts are deleted.
+  node server/tools/ownphone.js relogin --label "Phone 1" --login <new user> [--device-id <id>]
+      For a phone that had to sign up at the gateway again (for example after the database of the gateway
+      was lost) and got a new Username and Password. The phone stays in the pool with its SIM cards:
+      the numbers of accounts and their texts are not touched. The password comes in the same three ways as for "add".
   node server/tools/ownphone.js test --label "Phone 1" --to +15551230000 [--sim 2]
       Sends one test text through the phone.
 `;
@@ -327,6 +388,23 @@ export async function runCli(argv, io = {}) {
       out('Done at the gateway:');
       out(`  - 5 webhooks for this phone (texts in, sent, delivered, failed, ping). They point at ${ctx.config.publicUrl}/api/hooks/ownphone/<secret token>.`);
       out(`  - the signing key for webhooks, and a ping every ${res.pingSeconds} seconds.`);
+      for (const w of res.warnings) out(`Warning: ${w}`);
+      for (const line of checkNowLines(ctx)) out(line);
+    } else if (command === 'relogin') {
+      let password = opts.password || env.OWNPHONE_PASSWORD || '';
+      if (!password && opts['password-stdin']) password = String(await (io.readStdin ? io.readStdin() : readStdin())).split(/\r?\n/)[0];
+      const res = await reloginPhone(ctx, { label: opts.label, login: opts.login, password, deviceId: opts['device-id'] || '' });
+      if (res.needDevice) {
+        out('This login has more than one phone at the gateway. Nothing was changed. Run the command again with --device-id and one of these:');
+        for (const d of res.devices) out(`  ${d.id}   ${d.name || '(no name)'}   ${d.sims} SIM card(s)   last seen ${d.lastSeen || 'never'}`);
+        return 2;
+      }
+      out(`The phone "${res.label}" uses its new login at the gateway now.`);
+      out(`Kept as they were: its ${res.sims} SIM card(s), and the ${res.inUse} number(s) that accounts use, with their texts.`);
+      out('Done at the gateway, under the new login:');
+      out(`  - 5 new webhooks for this phone. They point at ${ctx.config.publicUrl}/api/hooks/ownphone/<new secret token>. The old address does not work any more.`);
+      out(`  - a new signing key for webhooks, and a ping every ${res.pingSeconds} seconds.`);
+      if (!res.oldCleaned) out('The old login could not be reached, so its webhooks were not removed there. That is normal when the old login is gone.');
       for (const w of res.warnings) out(`Warning: ${w}`);
       for (const line of checkNowLines(ctx)) out(line);
     } else if (command === 'list') {

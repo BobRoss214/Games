@@ -10,6 +10,12 @@
 # consistent copy. A plain "cp" of a database that is in use can give a
 # damaged copy. Do not use "cp" unless Postern is stopped.
 #
+# If the server uses its own phone (the profile "ownphone" in the .env file),
+# the script also saves the database of the phone gateway:
+#   smsgate.sql   the registration of each phone, and texts of the last hours
+# The database container writes this file ("dump"). If the profile is off,
+# the script does not look for this database.
+#
 # Each backup goes into a new folder: TARGET-FOLDER/YYYYMMDD-HHMMSS (UTC time).
 # The default TARGET-FOLDER is deploy/backups.
 # The script keeps the 7 newest backups and deletes older ones.
@@ -33,7 +39,10 @@
 # A backup contains everything that was in the database at that time. Data
 # that a user deletes later, and data that the automatic deletion removes
 # later, stay in old backups until those backups are deleted. With KEEP=7 and
-# one backup each night, this is 7 days.
+# one backup each night, this is 7 days. The same is true for smsgate.sql.
+#
+# Exit code: 0 = all saved. 1 = nothing saved (BACKUP FAILED), or the two
+# databases of Postern are saved but smsgate.sql is not (BACKUP INCOMPLETE).
 
 set -eu
 
@@ -112,12 +121,41 @@ docker compose run --rm --no-deps -T -v "$out:/backup" app sh -eu -c '
   fi
 '
 
+# The database of the phone gateway, if this server uses it. The command below
+# lists the services that the .env file turns on (COMPOSE_PROFILES).
+gateway=skipped
+if docker compose config --services 2>/dev/null | grep -qx 'smsgate-db'; then
+  gateway=failed
+  # The dump runs inside the database container, which has the password.
+  # --single-transaction gives one consistent copy while the gateway runs.
+  if docker compose exec -T smsgate-db sh -eu -c '
+      if command -v mariadb-dump >/dev/null 2>&1; then dump=mariadb-dump; else dump=mysqldump; fi
+      export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
+      exec "$dump" --single-transaction --user=root "$MYSQL_DATABASE"
+    ' > "$out/smsgate.sql"; then
+    # A complete dump ends with a line that says so.
+    if tail -n 1 "$out/smsgate.sql" | grep -q 'Dump completed'; then
+      gateway=saved
+      echo "  smsgate.sql: copy made and checked"
+    else
+      echo "  ERROR: the copy of the gateway database is not complete." >&2
+    fi
+  else
+    echo "  ERROR: the database of the phone gateway did not answer. Is smsgate-db running?" >&2
+  fi
+  if [ "$gateway" != saved ]; then
+    rm -f -- "$out/smsgate.sql"
+  fi
+fi
+
 # From here on only root can read the backup.
 chown -R root:root "$out"
-chmod 600 "$out"/*.db
+chmod 600 "$out"/*
 
 # Delete old backups. Only folders with a date-time name are deleted.
-if [ "$KEEP" -gt 0 ]; then
+# If the gateway database was not saved, no old backup is deleted this time:
+# an older backup can be the newest one that has smsgate.sql.
+if [ "$KEEP" -gt 0 ] && [ "$gateway" != failed ]; then
   cd "$target"
   count=0
   for dir in $(ls -1d [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | sort -r); do
@@ -130,6 +168,12 @@ if [ "$KEEP" -gt 0 ]; then
 fi
 
 done_ok=1
+if [ "$gateway" = failed ]; then
+  echo "BACKUP INCOMPLETE: $out" >&2
+  echo "accounts.db and payments.db are saved. The database of the phone gateway is NOT saved." >&2
+  echo "Run 'docker compose ps' to see if smsgate-db runs. Then run this script again." >&2
+  exit 1
+fi
 echo "Backup complete: $out"
 echo "Reminder: the server secret and the .env file are not in this backup."
 echo "Copy the backup to a second place. A backup on the same server is lost with the server."

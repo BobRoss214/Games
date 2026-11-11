@@ -45,6 +45,11 @@ services:
       # from X-Forwarded-For. This is safe only because port 8080 is not
       # published to the internet. Do not add 8080 to "ports".
       TRUST_PROXY: "true"
+      # The secrets of the phone gateway (profile "ownphone") are in the same
+      # .env file. Postern does not use them, so it does not get them.
+      SMSGATE_PRIVATE_TOKEN: ""
+      SMSGATE_DB_PASSWORD: ""
+      SMSGATE_DB_ROOT_PASSWORD: ""
     ports:
       # Incoming mail. Port 25 of the server goes to port 2525 in the container.
       - "25:2525"
@@ -142,6 +147,8 @@ services:
   #   Postern -->  http://smsgate:3000/api/3rdparty/v1   (inside Docker only)
   #
   # The gateway has no "ports": it is not published to the internet directly.
+  # The three gateway services have no "env_file": they get only the values
+  # that are written below, and none of the secrets of Postern.
   # The settings below follow the compose files of that project
   # (deployments/docker-compose and deployments/docker-compose-proxy).
   # This profile was not started by the authors of this file. Docker was not available.
@@ -156,22 +163,24 @@ services:
     depends_on:
       smsgate-db:
         condition: service_healthy
-    environment: &smsgate-env
-      CONFIG_PATH: config.yml
-      DATABASE__PASSWORD: ${SMSGATE_DB_PASSWORD:-}
+    environment:
+      <<: &smsgate-env
+        CONFIG_PATH: config.yml
+        DATABASE__PASSWORD: ${SMSGATE_DB_PASSWORD:-}
+        # Texts in the gateway database, kept as short as its settings permit:
+        # - A sent text is changed to a hash soon after the phone has processed it
+        #   (the check runs each 60 seconds, and one more time each hour).
+        # - Old rows are deleted: sent texts, and the copies of incoming texts
+        #   that the app uploads to the gateway ("inbox").
+        MESSAGES__HASHING_INTERVAL_SECONDS: "60"
+        TASKS__MESSAGES_HASHING__INTERVAL: 1h
+        TASKS__MESSAGES_CLEANUP__INTERVAL: 1h
+        TASKS__MESSAGES_CLEANUP__MAX_AGE: ${SMSGATE_KEEP:-24h}
+        TASKS__INBOX_CLEANUP__INTERVAL: 1h
+        TASKS__INBOX_CLEANUP__MAX_AGE: ${SMSGATE_KEEP:-24h}
       # A phone can register only with this token (private mode).
+      # Only this service gets the token. The worker does not need it.
       GATEWAY__PRIVATE_TOKEN: ${SMSGATE_PRIVATE_TOKEN:-}
-      # Texts in the gateway database, kept as short as its settings permit:
-      # - A sent text is changed to a hash soon after the phone has processed it
-      #   (the check runs each 60 seconds, and one more time each hour).
-      # - Old rows are deleted: sent texts, and the copies of incoming texts
-      #   that the app uploads to the gateway ("inbox").
-      MESSAGES__HASHING_INTERVAL_SECONDS: "60"
-      TASKS__MESSAGES_HASHING__INTERVAL: 1h
-      TASKS__MESSAGES_CLEANUP__INTERVAL: 1h
-      TASKS__MESSAGES_CLEANUP__MAX_AGE: ${SMSGATE_KEEP:-24h}
-      TASKS__INBOX_CLEANUP__INTERVAL: 1h
-      TASKS__INBOX_CLEANUP__MAX_AGE: ${SMSGATE_KEEP:-24h}
     configs:
       - source: smsgate-config
         target: /app/config.yml
@@ -205,7 +214,7 @@ services:
     logging: *smsgate-log
 
   # The database of the gateway. The project recommends the "lts" image of MariaDB,
-  # so this tag is not a fixed version.
+  # so this tag is not a fixed version. backup.sh saves this database too.
   smsgate-db:
     image: mariadb:lts
     profiles:

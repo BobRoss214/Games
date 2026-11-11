@@ -99,6 +99,7 @@ export function createPool({ db, keys, config }) {
       return {
         id: r.id, label: plain(r.label, 'own-label'), login: plain(r.login, 'own-login'), password: plain(r.password, 'own-password'),
         gatewayId: r.gateway_id, signingKey: plain(r.signing_key, 'own-sign'), lastSeen: r.last_seen ?? null, online: isOnline(r.last_seen), createdDay: r.created_day,
+        hookHash: Buffer.from(r.hook_hash),
         // Counts for the operator: webhooks that were taken, and webhooks that were refused, by reason.
         accepted: r.accepted || 0,
         refused: { device: r.refused_device || 0, signature: r.refused_signature || 0, clock: r.refused_clock || 0, at: r.refused_at ?? null },
@@ -117,14 +118,27 @@ export function createPool({ db, keys, config }) {
       const want = String(label || '').trim().toLowerCase();
       return pool.devices().filter((d) => d.label.trim().toLowerCase() === want);
     },
-    // Returns { id, token }: the token is shown one time (it is in the webhook address) and never stored.
+    // A new webhook token: { token, hookHash }. The token goes into the webhook address and is never stored.
+    newToken() {
+      const token = randomToken();
+      return { token, hookHash: hookHash(token) };
+    },
+    // Returns { id, token, hookHash }.
     addDevice({ label, login, password, gatewayId, signingKey }) {
       const id = randomId();
-      const token = randomToken();
+      const made = pool.newToken();
       db.run('INSERT INTO own_devices (id, label, login, password, gateway_id, hook_hash, signing_key, created_day) VALUES (?,?,?,?,?,?,?,?)',
         id, keys.srvEncrypt(label, 'own-label'), keys.srvEncrypt(login, 'own-login'), keys.srvEncrypt(password, 'own-password'),
-        gatewayId, hookHash(token), keys.srvEncrypt(signingKey, 'own-sign'), today());
-      return { id, token };
+        gatewayId, made.hookHash, keys.srvEncrypt(signingKey, 'own-sign'), today());
+      return { id, ...made };
+    },
+    // The phone signed up at the gateway again: a new login, password, device id, webhook token and
+    // signing key. Its SIM cards stay, so the numbers of accounts stay too. The phone counts as
+    // not seen until its first webhook with the new token; the job "ownphone-online" tells the holders.
+    relogin(id, { login, password, gatewayId, signingKey, hookHash: newHash }) {
+      db.run(`UPDATE own_devices SET login = ?, password = ?, gateway_id = ?, signing_key = ?, hook_hash = ?, last_seen = NULL,
+              accepted = 0, refused_device = 0, refused_signature = 0, refused_clock = 0, refused_at = NULL WHERE id = ?`,
+        keys.srvEncrypt(login, 'own-login'), keys.srvEncrypt(password, 'own-password'), gatewayId, keys.srvEncrypt(signingKey, 'own-sign'), newHash, id);
     },
     removeDevice(id) {
       db.run('DELETE FROM own_devices WHERE id = ?', id);

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { startTestApp, client, newAccount, unb64u } from './helpers.js';
 import { startFakeGateway } from './fake-smsgate.js';
 import { openJson } from '../shared/crypto.js';
-import { contextOf, addPhone, listPhones, addSim, removeSim, removePhone, testText, runCli, parseArgs, maskNumber, refusalLines, checkNowLines, ToolError, HELP } from '../server/tools/ownphone.js';
+import { contextOf, addPhone, listPhones, addSim, removeSim, removePhone, reloginPhone, testText, runCli, parseArgs, maskNumber, refusalLines, checkNowLines, ToolError, HELP } from '../server/tools/ownphone.js';
 import { createGatewayClient, createOwnPhoneProvider, WEBHOOK_EVENTS } from '../server/phone/providers/ownphone.js';
 import { signWebhook } from '../server/phone/ownphone.js';
 import { countryOfNumber } from '../server/phone/pool.js';
@@ -870,6 +870,137 @@ test('tool: remove a SIM and a phone; --force takes the numbers away from accoun
   } finally { gateway.failIf = null; }
   assert.ok(!listPhones(ctx).some((p) => p.label === 'Lost phone'));
   assert.ok(lost.res.id);
+});
+
+test('tool: relogin gives a phone a new login, device id, token and signing key; its SIM cards, the numbers of accounts and their texts stay', async () => {
+  const a = await newAccount(app, { credits: 2000 });
+  const old = await addPooledPhone('Signs up again', 2);
+  const num = await getNumber(a, old.numbers[0]);
+  const from = outsider();
+  await old.phone.receive({ from, text: remember('before the new login own-in-30'), sim: 1 });
+  await sendText(a, num, from, 'before the new login ownphone-out-16');
+  const textIds = (await texts(a, num)).map((t) => t.id);
+  assert.equal(textIds.length, 2);
+  const oldUrl = old.res.webhookUrl;
+  const oldKey = gateway.users.get(old.user.login).settings.webhooks.signing_key;
+  const row = () => rows('SELECT * FROM own_devices WHERE id = ?', old.res.id)[0];
+  const sims = () => JSON.stringify(rows('SELECT id, sim_number, hex(number_hmac) AS h, country FROM own_sims WHERE device_id = ? ORDER BY sim_number', old.res.id));
+  const simsBefore = sims();
+  const rowBefore = row();
+  assert.ok(rowBefore.accepted >= 1);
+  const refused = (fn, pattern) => assert.rejects(fn, (err) => err instanceof ToolError && pattern.test(err.message));
+  const unchanged = () => {
+    const r = row();
+    assert.ok(Buffer.from(r.hook_hash).equals(Buffer.from(rowBefore.hook_hash)) && r.gateway_id === rowBefore.gateway_id && Buffer.from(r.login).equals(Buffer.from(rowBefore.login)) && Buffer.from(r.signing_key).equals(Buffer.from(rowBefore.signing_key)), 'the record of the phone changed');
+    assert.equal(sims(), simsBefore);
+  };
+
+  // The phone signed up at the gateway again: a new login with a new device id.
+  const fresh = gateway.addUser({ devices: [{ name: 'Signs up again', sims: [1, 2] }] });
+  remember(fresh.password);
+  remember(fresh.login);
+  // Wrong use and failures at the gateway: nothing changes, and the old address keeps working.
+  await refused(() => reloginPhone(ctx, { label: 'No such phone', login: fresh.login, password: fresh.password }), /No phone has the label/);
+  await refused(() => reloginPhone(ctx, { label: 'Signs up again', login: fresh.login, password: 'wrong' }), /did not accept this login and password/);
+  await refused(() => reloginPhone(ctx, { label: 'Signs up again', login: fresh.login, password: '' }), /new login and the new password/);
+  await refused(() => reloginPhone(ctx, { label: 'Signs up again', login: fresh.login, password: fresh.password, deviceId: 'nope' }), /no phone with the device id/);
+  await refused(() => reloginPhone(ctx, { label: 'Signs up again', login: one.user.login, password: one.user.password }), /in the pool already, with the label "Kitchen-drawer-Pixel"/);
+  gateway.failIf = (r) => (r.method === 'PATCH' && r.path === '/settings' ? 500 : 0);
+  try { await refused(() => reloginPhone(ctx, { label: 'Signs up again', login: fresh.login, password: fresh.password }), /not reachable/); } finally { gateway.failIf = null; }
+  gateway.failIf = (r) => (r.method === 'POST' && r.path === '/webhooks' && r.body.event === 'sms:failed' ? 502 : 0);
+  try { await refused(() => reloginPhone(ctx, { label: 'Signs up again', login: fresh.login, password: fresh.password }), /not reachable/); } finally { gateway.failIf = null; }
+  unchanged();
+  assert.equal(gateway.users.get(fresh.login).webhooks.size, 0, 'webhooks of a failed relogin stayed at the gateway');
+  assert.equal(gateway.users.get(old.user.login).webhooks.size, 5);
+  assert.equal((await old.phone.ping()).status, 200);
+
+  // Now it works.
+  published.length = 0;
+  const mark = gateway.requests.length;
+  const res = await reloginPhone(ctx, { label: 'signs UP again', login: fresh.login, password: fresh.password });
+  assert.deepEqual([res.label, res.gatewayId, res.sims, res.inUse, res.oldCleaned], ['Signs up again', fresh.devices[0].id, 2, 1, true]);
+  remember(res.webhookUrl.split('/').pop());
+  assert.notEqual(res.webhookUrl, oldUrl);
+  // At the gateway, under the new login: the login check, five webhooks with the new address, the settings. Under the old login: its webhooks are removed.
+  const sent = gateway.requests.slice(mark);
+  assert.deepEqual(sent.filter((r) => r.login === fresh.login).map((r) => `${r.method} ${r.path} ${r.status}`), ['GET /devices 200', ...WEBHOOK_EVENTS.map(() => 'POST /webhooks 201'), 'PATCH /settings 200']);
+  assert.equal(sent.filter((r) => r.login === old.user.login && r.method === 'DELETE' && r.status === 204).length, 5);
+  const hooks = [...gateway.users.get(fresh.login).webhooks.values()];
+  assert.deepEqual(hooks.map((h) => [h.event, h.url, h.deviceId]), WEBHOOK_EVENTS.map((e) => [e, res.webhookUrl, fresh.devices[0].id]));
+  assert.equal(gateway.users.get(old.user.login).webhooks.size, 0);
+  const newKey = remember(gateway.users.get(fresh.login).settings.webhooks.signing_key);
+  assert.notEqual(newKey, oldKey);
+  assert.equal(gateway.users.get(fresh.login).settings.ping.interval_seconds, 300);
+
+  // The record: new login, password, device id, token hash and key. The SIM cards are the same rows.
+  const r = row();
+  assert.equal(app.keys.srvDecrypt(r.login, 'own-login').toString('utf8'), fresh.login);
+  assert.equal(app.keys.srvDecrypt(r.password, 'own-password').toString('utf8'), fresh.password);
+  assert.equal(app.keys.srvDecrypt(r.signing_key, 'own-sign').toString('utf8'), newKey);
+  assert.equal(r.gateway_id, fresh.devices[0].id);
+  assert.ok(!Buffer.from(r.hook_hash).equals(Buffer.from(rowBefore.hook_hash)));
+  assert.deepEqual([r.last_seen, r.accepted, r.refused_signature], [null, 0, 0]);
+  assert.equal(sims(), simsBefore);
+
+  // The account: the same number, the same texts.
+  assert.equal((await numberOf(a, num)).id, num.id);
+  assert.deepEqual((await texts(a, num)).map((t) => t.id), textIds);
+  assert.deepEqual(await openJson(a.keys, unb64u((await numberOf(a, num)).sealedNumber), 'number'), { number: old.numbers[0] });
+  // The phone counts as not seen until it reports with the new address; the job tells the holder.
+  assert.deepEqual((await numberOf(a, num)).gateway, { online: false, lastSeen: null });
+  await app.runJobs('ownphone-online');
+  assert.deepEqual(published, [[a.id, 'number', { numberId: num.id }]]);
+
+  // The old address is gone, also for a request with the old key. The new address works with the new key only.
+  const oldPath = new URL(oldUrl).pathname;
+  const stamp = String(now());
+  const body = JSON.stringify({ id: 'x', webhookId: 'y', deviceId: old.device.id, event: 'system:ping', payload: {} });
+  const post = (path, key) => fetch(app.url + path, { method: 'POST', headers: { 'content-type': 'application/json', 'x-timestamp': stamp, 'x-signature': signWebhook(key, body, stamp) }, body });
+  assert.equal((await post(oldPath, oldKey)).status, 404);
+  assert.equal((await post(new URL(res.webhookUrl).pathname, oldKey)).status, 403);
+  const phone = gateway.phone(fresh.login, fresh.devices[0].id, app.url);
+  assert.equal((await phone.ping()).status, 200);
+  assert.equal((await numberOf(a, num)).gateway.online, true);
+  // Texts go in and out through the new login.
+  await phone.receive({ from, text: remember('after the new login own-in-31'), sim: 1 });
+  assert.equal((await openText(a, (await texts(a, num))[0])).body, 'after the new login own-in-31');
+  assert.equal((await sendText(a, num, from, 'after the new login ownphone-out-17')).status, 201);
+  const out = gateway.lastMessage(fresh.login).request;
+  assert.deepEqual([out.deviceId, out.simNumber, out.phoneNumbers], [fresh.devices[0].id, 1, [from]]);
+  await phone.report('delivered', out.id);
+  assert.equal((await texts(a, num))[0].status, 'delivered');
+  assert.equal((await texts(a, num)).length, 4);
+
+  // The same login with a new password only: new token and key again, and the old webhooks of that login are removed.
+  gateway.users.get(fresh.login).password = remember('a-new-password-for-the-same-login');
+  const again = await reloginPhone(ctx, { label: 'Signs up again', login: fresh.login, password: 'a-new-password-for-the-same-login' });
+  remember(again.webhookUrl.split('/').pop());
+  remember(gateway.users.get(fresh.login).settings.webhooks.signing_key);
+  assert.equal(again.oldCleaned, true);
+  assert.deepEqual([...gateway.users.get(fresh.login).webhooks.values()].map((h) => h.url), WEBHOOK_EVENTS.map(() => again.webhookUrl));
+  assert.equal((await phone.ping()).status, 200);
+  assert.equal((await post(new URL(res.webhookUrl).pathname, newKey)).status, 404);
+
+  // The command line: the password from the environment; the words say what stayed.
+  const fresh2 = gateway.addUser({ devices: [{ name: 'Signs up again', sims: [1, 2] }, { name: 'A second phone', sims: [1] }] });
+  remember(fresh2.password);
+  const lines = [];
+  const io = { env: { OWNPHONE_PASSWORD: fresh2.password }, out: (l) => lines.push(l), open: () => contextOf(app) };
+  assert.equal(await runCli(['relogin', '--label', 'Signs up again', '--login', fresh2.login], io), 2);
+  assert.ok(lines.join('\n').includes('more than one phone') && lines.join('\n').includes('Nothing was changed'));
+  lines.length = 0;
+  assert.equal(await runCli(['relogin', '--label', 'Signs up again', '--login', fresh2.login, '--device-id', fresh2.devices[0].id], io), 0);
+  const said = lines.join('\n');
+  assert.ok(said.includes('The phone "Signs up again" uses its new login at the gateway now.'));
+  assert.ok(said.includes('Kept as they were: its 2 SIM card(s), and the 1 number(s) that accounts use, with their texts.'));
+  assert.ok(said.includes('The old address does not work any more.') && said.includes('What to check now:'));
+  for (const hidden of [fresh2.password, old.numbers[0], [...gateway.users.get(fresh2.login).webhooks.values()][0].url.split('/').pop()]) assert.ok(!said.includes(hidden), 'the tool printed something that it must hide');
+  remember([...gateway.users.get(fresh2.login).webhooks.values()][0].url.split('/').pop());
+  remember(gateway.users.get(fresh2.login).settings.webhooks.signing_key);
+  assert.ok(HELP.includes('relogin --label "Phone 1" --login <new user> [--device-id <id>]'));
+  assert.deepEqual((await texts(a, num)).length, 4);
+  await a.api.del(`/api/numbers/${num.id}`);
+  await removePhone(ctx, { label: 'Signs up again' });
 });
 
 // Runs the real command-line tool in its own process, on the database of the running app.

@@ -149,15 +149,20 @@ export default async function (t) {
   await page.waitForFunction(() => { const el = document.getElementById('download-my-data'); if (!el) return false; const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; });
   t.ok('pages are found by name (Ctrl+K opens the search too); "Download my data" lands on that part of Settings');
 
-  // The keys do nothing while the person types in a field.
+  // "/" does nothing while the person types in a field: it is a letter there.
   await page.goto(t.base + '/aliases');
   const aliasSearch = page.getByLabel('Search aliases and labels');
   await aliasSearch.click();
   await page.keyboard.type('a/b');
-  await page.keyboard.press('Control+k');
   await page.waitForTimeout(300);
-  assert(await aliasSearch.inputValue() === 'a/b' && await page.locator('dialog[open]').count() === 0, 'a key opened the search while the person typed in a field');
-  t.ok('"/" and Ctrl+K do nothing while the person types in a field');
+  assert(await aliasSearch.inputValue() === 'a/b' && await page.locator('dialog[open]').count() === 0, '"/" opened the search while the person typed in a field');
+  // Ctrl+K types nothing, so it opens the search from a field too. Escape puts the focus back in the field.
+  await page.keyboard.press('Control+k');
+  await field.waitFor();
+  await page.keyboard.press('Escape');
+  await dlg.waitFor({ state: 'hidden' });
+  assert(await aliasSearch.evaluate((el) => el === document.activeElement) && await aliasSearch.inputValue() === 'a/b', 'after Ctrl+K and Escape the focus is not back in the field');
+  t.ok('"/" does nothing while the person types in a field; Ctrl+K opens the search from there');
 
   // Escape closes, and the focus goes back to where it was. Inside the search, "/" is a letter.
   const navLink = page.locator('.nav a', { hasText: 'Aliases' });
@@ -172,16 +177,18 @@ export default async function (t) {
   assert(path(page) === '/aliases', 'Escape changed the screen');
   t.ok('Escape closes the search and the focus goes back to where it was');
 
-  // A click on a result goes there.
+  // The Search entry of the sidebar shows the key and opens the search. A click on a result goes there.
   await page.goto(t.base + '/');
   await page.getByRole('heading', { name: 'Home', level: 1 }).waitFor();
-  await page.keyboard.press('/');
+  const sideSearch = page.locator('.sidebar [data-side-action="quick-jump"]');
+  assert(/Search/.test(await sideSearch.innerText()) && (await sideSearch.locator('kbd').innerText()).trim() === '/', 'the sidebar has no Search entry with its key');
+  await sideSearch.click();
   await field.waitFor();
   await type('bike');
   await options.first().click();
   await page.locator('.number-heading').waitFor();
   assert(path(page) === `/numbers/${made.numberId}`, 'a click on a result did not go there');
-  t.ok('a click on a result goes there');
+  t.ok('the Search entry of the sidebar opens the search; a click on a result goes there');
 
   // Keyboard only, from Home: open, type, move, go. The focus lands on the title of the new screen.
   await page.goto(t.base + '/');
