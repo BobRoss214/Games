@@ -21,7 +21,7 @@ export function leaksScreen({ scope }) {
   // or to the heading of the screen if the card is gone too.
   const focusAfter = (aliasId) => {
     const target = report.el.querySelector(`[data-alias="${aliasId}"] h2`) || head.querySelector('h1');
-    void target;
+    if (target) target.focus();
   };
 
   // "This sender is expected". If the first sender of the alias is not saved yet, it is saved first,
