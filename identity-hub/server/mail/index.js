@@ -13,6 +13,8 @@ import { registerRoutes } from './routes.js';
 import { registerSend } from './send.js';
 import { registerDev } from './dev.js';
 
+const TLS_CHECK_SECONDS = 600;
+
 export async function register(app) {
   const { db, config } = app;
   const data = createMailData(app);
@@ -57,12 +59,20 @@ export async function register(app) {
 
   const smtp = createSmtp(app, inbound);
   let listening = false;
+  let tlsTimer = null;
   app.onStart(async () => {
     app.services.mail.smtpPort = await smtp.listen();
     listening = true;
+    // A renewed certificate is picked up without a restart. The check only compares file times.
+    tlsTimer = setInterval(smtp.checkTls, TLS_CHECK_SECONDS * 1000);
+    tlsTimer.unref();
   });
   app.onStop(async () => {
+    clearInterval(tlsTimer);
+    tlsTimer = null;
     if (listening) await smtp.close();
     listening = false;
   });
+  // Also on demand, for example after a renewal script replaced the files.
+  app.services.mail.checkTls = () => (listening ? smtp.checkTls() : false);
 }

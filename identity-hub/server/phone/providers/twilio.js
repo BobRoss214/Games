@@ -40,6 +40,7 @@ export function twiml(actions = []) {
       let attrs = '';
       if (d.callerId) attrs += ` callerId="${xml(d.callerId)}"`;
       attrs += ` timeout="${xml(d.timeout || 25)}"`;
+      if (d.timeLimit) attrs += ` timeLimit="${xml(d.timeLimit)}"`;
       if (d.actionUrl) attrs += ` action="${xml(d.actionUrl)}" method="POST"`;
       inner += `<Dial${attrs}><Number>${xml(d.number)}</Number></Dial>`;
     } else if (a.hangup) inner += '<Hangup/>';

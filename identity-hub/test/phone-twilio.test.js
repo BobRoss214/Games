@@ -163,6 +163,11 @@ test('TwiML: structure and escaping of every value', () => {
     twiml([{ dial: { number: '+16505550100', callerId: '+13055550100', timeout: 25, actionUrl: 'https://x.test/api/hooks/phone/status' } }]),
     `${XML_HEAD}<Response><Dial callerId="+13055550100" timeout="25" action="https://x.test/api/hooks/phone/status" method="POST"><Number>+16505550100</Number></Dial></Response>`,
   );
+  // With a time limit: Twilio ends the connected call after that many seconds.
+  assert.equal(
+    twiml([{ dial: { number: '+16505550100', callerId: '+13055550100', timeout: 25, timeLimit: 600, actionUrl: 'https://x.test/s' } }]),
+    `${XML_HEAD}<Response><Dial callerId="+13055550100" timeout="25" timeLimit="600" action="https://x.test/s" method="POST"><Number>+16505550100</Number></Dial></Response>`,
+  );
   // No caller ID (hidden caller): the attribute is left out.
   assert.equal(twiml([{ dial: { number: '+16505550100', callerId: null, timeout: 25 } }]), `${XML_HEAD}<Response><Dial timeout="25"><Number>+16505550100</Number></Dial></Response>`);
   const nasty = twiml([
@@ -474,9 +479,10 @@ test('end to end: forwarded incoming call with TwiML, dial result, and one charg
   const v1 = await twilioPost(HOOK.voice, { ...base, CallSid: 'CAaaa1', CallStatus: 'ringing' });
   assert.equal(v1.status, 200);
   // The real phone rings for 25 seconds and sees the number of the original caller.
+  // The balance (9) pays for 3 minutes, so Twilio ends the call after 180 seconds.
   assert.equal(
     v1.text,
-    `${XML_HEAD}<Response><Dial callerId="${caller}" timeout="25" action="${PUBLIC}${HOOK.status}" method="POST"><Number>${phone.plain}</Number></Dial></Response>`,
+    `${XML_HEAD}<Response><Dial callerId="${caller}" timeout="25" timeLimit="180" action="${PUBLIC}${HOOK.status}" method="POST"><Number>${phone.plain}</Number></Dial></Response>`,
   );
   assert.equal((await calls(a, num)).length, 1);
 
@@ -551,7 +557,7 @@ test('end to end: click-to-call through Calls.json, the signed bridge URL, and t
   // The destination sees the VoIP number, never the real phone.
   assert.equal(
     bridge.text,
-    `${XML_HEAD}<Response><Dial callerId="${num.plain}" timeout="25" action="${PUBLIC}${HOOK.status}" method="POST"><Number>${to}</Number></Dial></Response>`,
+    `${XML_HEAD}<Response><Dial callerId="${num.plain}" timeout="25" timeLimit="1920" action="${PUBLIC}${HOOK.status}" method="POST"><Number>${to}</Number></Dial></Response>`,
   );
   assert.ok(!bridge.text.includes(phone.plain));
 });

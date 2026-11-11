@@ -1,8 +1,8 @@
 // SMTP server for incoming mail from the internet.
 // It accepts mail for our own addresses only (no relay) and has no login.
-import { readFileSync } from 'node:fs';
 import { SMTPServer } from 'smtp-server';
 import { safeError } from './errors.js';
+import { chooseTlsFiles, fileStamp, readPair } from './tls.js';
 
 const MAX_RECIPIENTS = 20;
 const MAX_CLIENTS = 50;
@@ -127,19 +127,62 @@ export function createSmtp(app, inbound) {
     },
   };
 
-  if (config.mail.tlsKeyFile && config.mail.tlsCertFile) {
-    options.key = readFileSync(config.mail.tlsKeyFile);
-    options.cert = readFileSync(config.mail.tlsCertFile);
-  } else if (config.production) {
-    log.warn('SMTP uses the test certificate of the library. Set SMTP_TLS_KEY and SMTP_TLS_CERT.');
-  }
-
   const server = new SMTPServer(options);
   // Socket errors of single connections are normal on the internet. They must not stop the process.
   server.on('error', (err) => log.debug('smtp connection error', { code: err && err.code }));
 
+  // ---- TLS for STARTTLS (see tls.js) ----
+  let tlsFiles = null;   // { source, keyFile, certFile }, or null for the certificate of the library
+  let loadedStamp = '';  // state of the files that are in use now
+  let refusedStamp = ''; // state of files that could not be loaded, so that the log gets one line only
+
+  // Runs before the server listens. The server never shows a certificate that it should not show.
+  async function setUpTls() {
+    const { tlsKeyFile, tlsCertFile } = config.mail;
+    if (Boolean(tlsKeyFile) !== Boolean(tlsCertFile)) {
+      log.warn('Only one of SMTP_TLS_KEY and SMTP_TLS_CERT is set. Both are needed. A self-signed certificate is used.');
+    }
+    tlsFiles = await chooseTlsFiles(app);
+    if (!tlsFiles) {
+      log.warn('SMTP uses the test certificate of the smtp-server package. Its private key is public, so TLS on the mail port '
+        + 'does not protect the mail. To fix this, install the "openssl" program, or set SMTP_TLS_KEY and SMTP_TLS_CERT.');
+      return;
+    }
+    loadedStamp = fileStamp(tlsFiles.keyFile, tlsFiles.certFile);
+    const pair = readPair(tlsFiles.keyFile, tlsFiles.certFile);
+    // Old protocol versions are refused. A sender that cannot do TLS 1.2 sends without TLS or not at all.
+    server.updateSecureContext({ key: pair.key, cert: pair.cert, minVersion: 'TLSv1.2' });
+  }
+
+  // Loads the key and the certificate again if the files changed on disk (a renewed certificate).
+  // No restart is needed. Returns true if a new certificate is in use now.
+  function checkTls() {
+    if (!tlsFiles) return false;
+    let stamp;
+    try {
+      stamp = fileStamp(tlsFiles.keyFile, tlsFiles.certFile);
+    } catch {
+      return false; // a file is missing for a moment while it is replaced
+    }
+    if (stamp === loadedStamp || stamp === refusedStamp) return false;
+    try {
+      const pair = readPair(tlsFiles.keyFile, tlsFiles.certFile);
+      server.updateSecureContext({ key: pair.key, cert: pair.cert });
+    } catch {
+      // For example: the new certificate is on disk and the new key is not yet. The old pair stays in use.
+      refusedStamp = stamp;
+      log.warn('The changed SMTP certificate files could not be loaded. The old certificate stays in use.');
+      return false;
+    }
+    loadedStamp = stamp;
+    refusedStamp = '';
+    log.info('The SMTP certificate was loaded again from disk.');
+    return true;
+  }
+
   return {
-    listen() {
+    async listen() {
+      await setUpTls();
       return new Promise((resolve, reject) => {
         server.server.once('error', reject);
         server.listen(config.mail.smtpPort, config.mail.smtpHost, () => {
@@ -148,6 +191,7 @@ export function createSmtp(app, inbound) {
         });
       });
     },
+    checkTls,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }

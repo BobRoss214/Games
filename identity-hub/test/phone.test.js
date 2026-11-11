@@ -598,7 +598,8 @@ test('forwarding: an incoming call rings the verified phone; the status webhook 
   const v1 = await hook('voice', { to: num.plain, from: caller, callId: 'call-1' });
   assert.equal(v1.status, 200);
   // The real phone rings for 25 seconds and shows the original caller.
-  assert.deepEqual(v1.data.actions, [{ dial: { number: phone.plain, callerId: caller, timeout: 25, actionUrl: STATUS_URL } }]);
+  // The balance (10) pays for 3 minutes: the provider ends the call after 180 seconds.
+  assert.deepEqual(v1.data.actions, [{ dial: { number: phone.plain, callerId: caller, timeout: 25, timeLimit: 180, actionUrl: STATUS_URL } }]);
   assert.equal((await calls(a, num)).length, 1);
 
   const st = await hook('status', { callId: 'call-1', status: 'answered', seconds: 61 });
@@ -649,11 +650,18 @@ test('forwarding: an incoming call rings the verified phone; the status webhook 
 
   // A hidden caller: forwarded with no caller ID.
   const v5 = await hook('voice', { to: num.plain, from: 'anonymous', callId: 'call-5' });
-  assert.deepEqual(v5.data.actions, [{ dial: { number: phone.plain, callerId: null, timeout: 25, actionUrl: STATUS_URL } }]);
+  assert.deepEqual(v5.data.actions, [{ dial: { number: phone.plain, callerId: null, timeout: 25, timeLimit: 960, actionUrl: STATUS_URL } }]);
   await hook('status', { callId: 'call-5', status: 'failed', seconds: 0 });
   log = await calls(a, num);
   assert.equal(log[0].status, 'failed');
   assert.deepEqual(await openCall(a, log[0]), { peer: 'anonymous' });
+
+  // The caller tries to talk for an hour. The provider cuts the call at the time limit (50 credits = 16 minutes).
+  const long = await mock.simulateCall({ to: num.plain, from: caller, seconds: 3600 });
+  assert.equal(long.forwarded, true);
+  log = await calls(a, num);
+  assert.deepEqual({ seconds: log[0].seconds, status: log[0].status }, { seconds: 960, status: 'answered' });
+  assert.equal(app.store.balance(a.id), 2);
 
   // A call to a number that nobody has gets the same neutral answer, and nothing is stored.
   const total = app.db.get('SELECT COUNT(*) AS n FROM calls').n;
@@ -666,7 +674,7 @@ test('forwarding: an incoming call rings the verified phone; the status webhook 
   // Delete a call from the log.
   assert.equal((await a.api.del(`/api/calls/${log[0].id}`)).status, 204);
   assert.equal((await a.api.del(`/api/calls/${log[0].id}`)).status, 404);
-  assert.equal((await calls(a, num)).length, 5);
+  assert.equal((await calls(a, num)).length, 6);
 });
 
 test('click-to-call: the real phone rings first, the bridge webhook connects it with the VoIP number as caller ID', async () => {
@@ -713,7 +721,7 @@ test('click-to-call: the real phone rings first, the bridge webhook connects it 
   assert.deepEqual((await hook('bridge', { callId: first.ref })).data.actions, [{ hangup: true }]);
   const bridge = await hook('bridge', { callId: first.ref }, undefined, answerUrl.search);
   assert.equal(bridge.status, 200);
-  assert.deepEqual(bridge.data.actions, [{ dial: { number: to, callerId: num.plain, timeout: 25, actionUrl: STATUS_URL } }]);
+  assert.deepEqual(bridge.data.actions, [{ dial: { number: to, callerId: num.plain, timeout: 25, timeLimit: 1980, actionUrl: STATUS_URL } }]);
 
   // The call ends after 130 seconds: 3 minutes.
   const st = await hook('status', { callId: first.ref, status: 'answered', seconds: 130 });

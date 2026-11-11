@@ -725,9 +725,12 @@ Without this registration, US numbers in Postern can receive texts but cannot se
 2. Register a "Brand". Twilio asks for your business data, or for your personal data as a "sole proprietor".
 3. Register a "Campaign". Describe honestly what your service does.
 4. Wait for the approval. This can take from one week to some weeks `[R7]`. **Check this.**
-5. Twilio connects the campaign to a "Messaging Service". Add each number that must send texts to this Messaging Service.
+5. Twilio connects the campaign to a "Messaging Service". Copy the ID of the Messaging Service. It starts with `MG`.
+6. Put the ID in `.env` as `TWILIO_MESSAGING_SERVICE_SID`. Then start Postern again.
 
-**Check this:** Postern does not add new numbers to a Messaging Service. You must add each new number by hand. A "sole proprietor" brand can have only one number `[R2]`.
+Postern then adds each new number to this Messaging Service automatically. Numbers that users bought before this setting are not added: add those numbers by hand in the Twilio console.
+
+**Check this:** A "sole proprietor" brand can have only one number `[R2]`. This automatic step was tested with a simulated Twilio only.
 
 **Check:** send a text from a Postern number to a US phone. The text arrives.
 

@@ -18,7 +18,9 @@
 //   parseVoice(c)  → { to, from, callId }
 //   parseStatus(c) → { callId, status: 'answered' | 'missed' | 'failed' | null, seconds }
 //   voiceReply(actions) → { contentType, body }
-//       actions: [{ say: 'text' }, { dial: { number, callerId, timeout, actionUrl } }, { hangup: true }]
+//       actions: [{ say: 'text' }, { dial: { number, callerId, timeout, timeLimit, actionUrl } }, { hangup: true }]
+//       timeout: seconds to ring. timeLimit: the provider ends the connected call after this many seconds.
+//       actionUrl: the provider POSTs the result of the dial there (see parseStatus).
 //   textReply() → { contentType, body }     the answer to a text webhook
 //
 // All async functions throw ProviderError (see errors.js) with a plain message.
@@ -86,6 +88,8 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
   }
   const actionsOf = (out) => JSON.parse(String(out.body)).actions || [];
   const dialOf = (actions) => (actions.find((a) => a.dial) || {}).dial || null;
+  // A real provider cuts the call at the time limit of the dial.
+  const cut = (seconds, dial) => (dial.timeLimit ? Math.min(seconds, dial.timeLimit) : seconds);
 
   const provider = {
     name: 'mock',
@@ -198,7 +202,7 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
       const dial = dialOf(actions);
       if (!dial) return { callId, forwarded: false, actions };
       keep(outbox.calls, { from: dial.callerId || from, to: dial.number, at: now(), ref: callId });
-      const status = answered ? { callId, status: 'answered', seconds } : { callId, status: 'missed', seconds: 0 };
+      const status = answered ? { callId, status: 'answered', seconds: cut(seconds, dial) } : { callId, status: 'missed', seconds: 0 };
       await hooks.status(request(dial.actionUrl, status));
       return { callId, forwarded: true, actions };
     },
@@ -220,7 +224,7 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
         return { bridged: false, actions };
       }
       keep(outbox.calls, { from: dial.callerId, to: dial.number, at: now(), ref });
-      const status = peerAnswered ? { callId: ref, status: 'answered', seconds } : { callId: ref, status: 'missed', seconds: 0 };
+      const status = peerAnswered ? { callId: ref, status: 'answered', seconds: cut(seconds, dial) } : { callId: ref, status: 'missed', seconds: 0 };
       await hooks.status(request(dial.actionUrl, status));
       return { bridged: true, actions };
     },

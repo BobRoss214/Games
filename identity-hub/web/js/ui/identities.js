@@ -44,9 +44,9 @@ function madeDialog({ title, value, display, note }) {
 // The name part of a new address: random by default, or typed.
 function nameChoice() {
   const domains = config().mailDomains || [];
-  const local = field({ label: 'Name', mono: true, placeholder: 'for example: anna.reed', maxlength: 64, hint: '3 to 64 characters.' });
+  const local = field({ label: 'Name', mono: true, placeholder: 'anna.reed', maxlength: 64, hint: '3 to 64 characters: lower-case letters, numbers, dots and dashes.', suffix: domains.length === 1 ? '@' + domains[0] : null });
   const domain = domains.length > 1 ? selectField({ label: 'Domain', options: domains.map((d) => ({ value: d, label: '@' + d })), value: domains[0], mono: true }) : null;
-  const custom = h('div', { class: 'stack', hidden: true }, local.el, domain ? domain.el : (domains[0] ? h('p', { class: 'hint' }, 'The address ends with ', h('span', { class: 'mono' }, '@' + domains[0]), '.') : null));
+  const custom = h('div', { class: 'stack', hidden: true }, local.el, domain ? domain.el : null);
   const toggleBtn = h('button', { class: 'btn btn-quiet btn-sm disclose', type: 'button', 'aria-expanded': 'false' }, icon('chevronRight', { size: 14 }), h('span', null, 'Choose the name myself'));
   toggleBtn.addEventListener('click', () => {
     const open = custom.hidden;

@@ -66,6 +66,11 @@ export function loadConfig(env = process.env, overrides = {}) {
     phone: {
       provider: env.PHONE_PROVIDER || (production ? 'off' : 'mock'), // mock | twilio | off
       countries: list(env.PHONE_COUNTRIES, ['us', 'ca']).map((c) => c.toUpperCase()),
+      // Users can text and call only numbers that start with an allowed prefix and with no blocked prefix.
+      // This protects the operator from expensive destinations. The default blocks premium and
+      // high-cost area codes inside +1 (900, 976, and the Caribbean codes).
+      allowedPrefixes: list(env.PHONE_ALLOWED_PREFIXES, ['+1']),
+      blockedPrefixes: list(env.PHONE_BLOCKED_PREFIXES, ['900', '976', '242', '246', '264', '268', '284', '345', '441', '473', '649', '658', '664', '721', '758', '767', '784', '809', '829', '849', '868', '869', '876'].map((c) => '+1' + c)),
       twilio: {
         accountSid: env.TWILIO_ACCOUNT_SID || '',
         authToken: env.TWILIO_AUTH_TOKEN || '',

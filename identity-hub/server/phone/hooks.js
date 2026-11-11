@@ -10,6 +10,7 @@ const TEXT_MAX = 1600;
 const PEER_MAX = 32;
 const DIAL_TIMEOUT = 25;
 const MAX_CALL_SECONDS = 24 * 3600;
+const MAX_DIAL_SECONDS = 4 * 3600;
 // Stops a forwarding loop (two numbers that forward to each other).
 const FORWARDS_PER_MINUTE = 30;
 
@@ -27,6 +28,14 @@ export function createHooks(app, ph) {
   const answer = (r) => reply(200, r.body, { 'content-type': r.contentType });
   // A sender is not always a phone number (short codes, names, hidden callers). Keep it short.
   const peerOf = (from) => (typeof from === 'string' && from.trim() ? from.trim().slice(0, PEER_MAX) : 'unknown');
+
+  // The longest time that a call of this account can last: the minutes that the balance pays for.
+  // The provider ends the call at this limit, so a call cannot run far past the balance.
+  function timeLimit(accountId) {
+    const minute = config.prices.callMinute;
+    if (minute <= 0) return MAX_DIAL_SECONDS;
+    return Math.min(MAX_DIAL_SECONDS, Math.max(1, Math.floor(store.balance(accountId) / minute)) * 60);
+  }
 
   // The verified real phone that this number forwards to, in plain form. Null if there is none.
   function forwardTarget(num) {
@@ -85,7 +94,7 @@ export function createHooks(app, ph) {
       db.run('INSERT OR IGNORE INTO live_calls (call_hmac, account_id, number_id, direction, at, sealed) VALUES (?,?,?,?,?,?)',
         key, num.account_id, num.id, 'in', nowSec(), sealed);
       // The real phone shows who calls. A hidden caller has no number that we can show.
-      return [{ dial: { number: real, callerId: E164.test(peer) ? peer : null, timeout: DIAL_TIMEOUT, actionUrl: ph.urls.status } }];
+      return [{ dial: { number: real, callerId: E164.test(peer) ? peer : null, timeout: DIAL_TIMEOUT, timeLimit: timeLimit(num.account_id), actionUrl: ph.urls.status } }];
     }
     db.run('INSERT INTO calls (id, account_id, number_id, direction, at, seconds, status, sealed, call_hmac) VALUES (?,?,?,?,?,?,?,?,?)',
       randomId(), num.account_id, num.id, 'in', nowSec(), 0, 'missed', sealed, key);
@@ -101,7 +110,7 @@ export function createHooks(app, ph) {
     if (!num || num.status !== 'active' || !store.canAfford(b.accountId, config.prices.callMinute)) {
       return [{ say: 'This call cannot be connected.' }, { hangup: true }];
     }
-    return [{ dial: { number: b.to, callerId: b.number, timeout: DIAL_TIMEOUT, actionUrl: ph.urls.status } }];
+    return [{ dial: { number: b.to, callerId: b.number, timeout: DIAL_TIMEOUT, timeLimit: timeLimit(b.accountId), actionUrl: ph.urls.status } }];
   }
 
   // The call ended: write the call log and charge the minutes. Only the first
