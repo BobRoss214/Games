@@ -1,6 +1,6 @@
 // Sign in with a passkey or with the recovery key. Also the unlock screen.
 import { h } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { store, appName } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
 import { archFigure } from '../ui/icons.js';
 import { button, runBusy, callout, checkbox } from '../ui/components.js';
@@ -126,7 +126,7 @@ export function unlockScreen({ scope }) {
   return bareLayout(h('div', { class: 'stack stack-5' },
     h('div', { class: 'lock-figure' }, archFigure({ width: 84, keyhole: true })),
     h('div', { class: 'stack stack-2 center' },
-      h('h1', null, pending ? 'Unlock with your recovery key' : 'Unlock Postern'),
+      h('h1', null, pending ? 'Unlock with your recovery key' : `Unlock ${appName()}`),
       h('p', { class: 'muted' }, 'You are signed in, but this tab does not have your key. The key never goes to the server, so we ask for it here.'),
     ),
     pending

@@ -160,9 +160,9 @@ export function openExportDialog() {
       ),
       left.length ? callout('warn', 'Some things are not in the file', h('p', null, `${left.join(', ')} could not be read. The file says so when you open it.`)) : null,
       h('p', { class: 'read' }, 'Your recovery key opens this file. Keep the key and the file in two different places.'),
+      h('p', { class: 'read' }, 'To read the file later, use ', h('a', { href: VIEWER_PATH, onClick: (e) => { e.preventDefault(); dlg.close(); navigate(VIEWER_PATH); } }, 'Open an export file'), '. That page also works when you are signed out.'),
       h('div', { class: 'dialog-actions' },
         button('Save the file again', { iconName: 'download', onClick: save }),
-        button('Open an export file', { onClick: () => { dlg.close(); navigate(VIEWER_PATH); } }),
         close,
       ),
     );

@@ -143,6 +143,8 @@ async function everyStep(t, words) {
   await page.getByRole('heading', { name: 'Inbox made' }).waitFor();
   await dlg.getByRole('button', { name: 'Done' }).click();
   await isDone(page, 'inbox', words);
+  // A screen reader hears the sentence: it is in the line that stays on the page.
+  assert(await page.locator('.f-tutorial > [role="status"]').textContent() === words('inbox', 'done'), 'the done sentence is not announced');
   t.ok('step 5: the price shows first; an inbox is made');
 
   await next(page);

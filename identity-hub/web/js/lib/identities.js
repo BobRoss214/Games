@@ -69,7 +69,7 @@ export async function createIdentity({ name, note = '' }) {
   const id = b64u(randomBytes(16));
   await mutate((list) => {
     if (list.length >= MAX_IDENTITIES) throw new Error(`You can have ${MAX_IDENTITIES} identities. Delete one first.`);
-    return [...list, { id, name: String(name).trim().slice(0, NAME_MAX), note: String(note || '').trim().slice(0, NOTE_MAX), createdDay: today() }];
+    return [...list, { id, name: String(name).trim().slice(0, NAME_MAX), note: String(note || '').trim().slice(0, NOTE_MAX), createdDay: today(), events: [{ day: today(), type: 'made' }] }];
   });
   return id;
 }
@@ -105,6 +105,52 @@ export function setIdentityExtra(id, patch) {
       return next;
     });
   });
+}
+
+// ---- colour: identity.extra.colour = one of these names ----
+export const COLOURS = ['red', 'orange', 'gold', 'green', 'teal', 'blue', 'purple', 'pink'];
+export const colourOf = (g) => (g && g.extra && COLOURS.includes(g.extra.colour) ? g.extra.colour : '');
+// colour: a name from COLOURS, or '' for no colour.
+export function setIdentityColour(id, colour) {
+  return setIdentityExtra(id, { colour: COLOURS.includes(colour) ? colour : null });
+}
+
+// ---- history: identity.extra.events = [{ day: 'YYYY-MM-DD', type }], 50 at most, the oldest first ----
+// This file writes "made", "first-mail", "turned-off" and "turned-on".
+// The burn feature writes "burned" and sets identity.extra.burned = { day }.
+export const EVENT_TYPES = ['made', 'first-mail', 'turned-off', 'turned-on', 'burned'];
+const MAX_EVENTS = 50;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const ONCE = ['made', 'first-mail', 'burned'];
+const cleanEvents = (list) => (Array.isArray(list) ? list : [])
+  .filter((e) => isObject(e) && typeof e.day === 'string' && DAY.test(e.day) && EVENT_TYPES.includes(e.type))
+  .map((e) => ({ day: e.day, type: e.type })).slice(-MAX_EVENTS);
+// The history of an identity for the screen. An identity from before the history has its "made" day from createdDay.
+export function eventsOf(g) {
+  const list = cleanEvents(g && g.extra ? g.extra.events : null);
+  if (g && !list.some((e) => e.type === 'made') && DAY.test(g.createdDay)) list.unshift({ day: g.createdDay, type: 'made' });
+  return list;
+}
+// Adds one event. "made", "first-mail" and "burned" are kept one time. The same switch event is not written twice in a row.
+export function addIdentityEvent(id, type, day = today()) {
+  if (!EVENT_TYPES.includes(type) || !DAY.test(day)) return Promise.resolve();
+  return mutate((list) => list.map((raw) => {
+    if (raw.id !== id) return raw;
+    let events = cleanEvents(raw.events);
+    if (!events.some((e) => e.type === 'made')) events.unshift({ day: DAY.test(raw.createdDay) ? raw.createdDay : day, type: 'made' });
+    const last = events[events.length - 1];
+    if (ONCE.includes(type) ? events.some((e) => e.type === type) : (last && last.type === type)) return { ...raw, events };
+    events.push({ day, type });
+    if (events.length > MAX_EVENTS) events = [events[0], ...events.slice(-(MAX_EVENTS - 1))];
+    return { ...raw, events };
+  }));
+}
+
+// ---- state: the door of an identity ----
+// 'burned' when the burn feature marked it. 'on' when an alias inside is on or a number inside is active. Else 'off'.
+export function identityState(g, members = membersOf(g.id)) {
+  if (g && g.extra && isObject(g.extra.burned)) return 'burned';
+  return members.aliases.some((a) => a.enabled) || members.numbers.some((n) => n.status === 'active') ? 'on' : 'off';
 }
 
 // The aliases and numbers of a deleted identity stay. Their identityId then matches

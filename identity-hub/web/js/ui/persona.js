@@ -4,12 +4,13 @@
 import { h, replace, uid } from '../lib/dom.js';
 import { COUNTRIES, generatePersona, fullName, addressLines, singleLine, isPersona } from '../lib/persona/index.js';
 import { icon } from './icons.js';
-import { button, copyButton, runBusy, reportError } from './components.js';
+import { button, copyButton, checkbox, runBusy, reportError } from './components.js';
 import { openDialog, confirmDialog } from './dialog.js';
 import { toast } from './toast.js';
 import { phoneText } from '../lib/format.js';
-import { setItemPersona } from '../lib/data.js';
-import { store } from '../lib/store.js';
+import { setItemPersona, setItemExtra } from '../lib/data.js';
+import { store, appName } from '../lib/store.js';
+import { makeUsername, makePassword, passwordStrength, MIN_LENGTH } from '../lib/credentials.js';
 import { why, whyParts, whyGroup } from './why.js';
 
 // The words for the fields that differ between countries.
@@ -20,12 +21,86 @@ const WORDS = {
 
 export const HONEST_LINE = 'These identifiers are made up. Do not use them where the law requires your real name and address, for example at a bank or on a government form.';
 
+// A saved username, checked (another version of the app may have written it). '' = none.
+export const cleanUsername = (value) => (typeof value === 'string' && /^[a-z][a-z0-9_]{2,39}$/.test(value) ? value : '');
+
+const PASSWORD_LENGTHS = [12, 16, 20, 24, 32];
+// The strength in plain words, from the number of random bits of the password.
+function strengthWords(length, symbols) {
+  const bits = passwordStrength(length, symbols);
+  return bits >= 100 ? 'Very strong' : bits >= 75 ? 'Strong' : 'Good for most websites';
+}
+
 // persona: the saved details or null. onSave(next) saves and returns a promise
 // (next = new identifiers, or null to remove). The card repaints after a save.
-export function personaCard({ persona = null, onSave, headingLevel = 'h3', showTitle = true }) {
+// username: the saved username or ''. onSaveUsername(next) saves it (next = a username, or null to remove).
+// A password is made and shown here, and saved nowhere: it is gone when the card paints again or goes away.
+export function personaCard({ persona = null, onSave, username = '', onSaveUsername = null, headingLevel = 'h3', showTitle = true }) {
   let current = isPersona(persona) ? persona : null;
   let country = current ? current.country : COUNTRIES[0].code;
+  let name = cleanUsername(username);
   const el = h('section', { class: 'persona', 'aria-label': 'Random identifiers generator' });
+
+  // ---- username (saved encrypted) and password (never saved) ----
+  const loginSlot = h('div', { class: 'persona-login' });
+  let passwordLength = 20;
+  let passwordSymbols = true;
+  const passwordSlot = h('div', { class: 'persona-password' });
+
+  function paintPassword(value) {
+    if (!value) {
+      replace(passwordSlot, h('div', null, button('Make a password', { size: 'sm', iconName: 'key', onClick: () => { paintPassword(makePassword({ length: passwordLength, symbols: passwordSymbols })); passwordSlot.querySelector('.password-value')?.focus(); } })));
+      return;
+    }
+    const lengthId = uid('pwlen');
+    const length = h('select', { id: lengthId, class: 'input select', onChange: (e) => { passwordLength = Number(e.target.value) || 20; remake(); } },
+      PASSWORD_LENGTHS.filter((n) => n >= MIN_LENGTH).map((n) => h('option', { value: String(n), selected: n === passwordLength }, `${n} characters`)));
+    const symbols = checkbox('With symbols', { checked: passwordSymbols, onChange: (on) => { passwordSymbols = on; remake(); } });
+    const remake = () => { paintPassword(makePassword({ length: passwordLength, symbols: passwordSymbols })); };
+    replace(passwordSlot,
+      h('div', { class: 'password-box' },
+        h('p', { class: 'password-value mono break', tabIndex: -1, 'aria-label': 'New password' }, value),
+        copyButton(() => value, 'Copy password', { what: 'Password copied', withLabel: true, cls: 'btn-sm' }),
+      ),
+      h('p', { class: 'password-warning', role: 'note' }, `${appName()} does not save this password. Save it in your password manager now.`),
+      h('p', { class: 'small muted password-strength' }, 'Strength: ', h('span', { class: 'strong' }, strengthWords(passwordLength, passwordSymbols)), '.'),
+      h('div', { class: 'password-options' },
+        h('div', { class: 'field' }, h('label', { class: 'label', for: lengthId }, 'Length'), h('div', { class: 'select-wrap' }, length, icon('chevronDown', { size: 16, cls: 'select-caret' }))),
+        symbols.el,
+      ),
+      h('div', { class: 'row row-wrap row-2' },
+        button('Make another password', { size: 'sm', iconName: 'refresh', onClick: () => { remake(); passwordSlot.querySelector('.password-value')?.focus(); } }),
+        button('Hide', { size: 'sm', onClick: () => { paintPassword(''); passwordSlot.querySelector('button')?.focus(); } }),
+      ),
+    );
+  }
+
+  function paintLogin() {
+    if (!onSaveUsername || !current) { replace(loginSlot); return; }
+    const save = (btn, next, done) => runBusy(btn, async () => {
+      await onSaveUsername(next);
+      name = next || '';
+      paintLogin();
+      toast(done, { kind: 'ok', timeout: 2200 });
+      loginSlot.querySelector(next ? '.persona-username' : 'button')?.focus?.();
+    });
+    replace(loginSlot,
+      h('h4', { class: 'persona-subtitle' }, 'Username and password'),
+      name
+        ? h('div', { class: 'persona-username-row' },
+          h('span', { class: 'small muted' }, 'Username'),
+          h('span', { class: 'persona-username mono strong break', tabIndex: -1 }, name),
+          copyButton(() => name, 'Copy username', { what: 'Username copied', cls: 'icon-btn-sm' }),
+        )
+        : null,
+      h('div', { class: 'row row-wrap row-2' },
+        button(name ? 'Make new username' : 'Make a username', { size: 'sm', iconName: name ? 'refresh' : 'person', onClick: (e, btn) => save(btn, makeUsername(current), name ? 'New username made' : 'Username made') }),
+        name ? button('Remove username', { size: 'sm', onClick: (e, btn) => save(btn, null, 'Username removed') }) : null,
+      ),
+      h('p', { class: 'hint' }, 'The username is saved with these identifiers, encrypted. A password is never saved.'),
+      passwordSlot,
+    );
+  }
 
   const countryPicker = () => {
     const id = uid('country');
@@ -65,6 +140,8 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
 
   function paint() {
     const title = showTitle ? h(headingLevel, { class: 'persona-title' }, 'Random identifiers generator') : null;
+    paintPassword(''); // a password never stays when the card is painted again
+    paintLogin();
     if (!current) {
       replace(el,
         title,
@@ -99,6 +176,7 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
           fieldRow(words.region, p.region, p.regionName && p.regionName !== p.region ? p.regionName : ''),
           fieldRow(words.postalCode, p.postalCode),
         ),
+        loginSlot,
       ),
       h('p', { class: 'persona-honest hint' }, HONEST_LINE),
       why('made-up-details', { text: 'Why random identifiers?' }),
@@ -109,7 +187,14 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
           button('Remove identifiers', { size: 'sm', kind: 'danger', onClick: async (e, btn) => {
             const ok = await confirmDialog({ title: 'Remove these identifiers?', message: 'The random name and address are deleted. You cannot get the same ones back.', confirmLabel: 'Remove identifiers' });
             if (!ok) return;
-            await runBusy(btn, async () => { await onSave(null); current = null; paint(); toast('Identifiers removed', { kind: 'ok', timeout: 2200 }); });
+            await runBusy(btn, async () => {
+              await onSave(null);
+              current = null;
+              // The username belongs to the card: it goes with it.
+              if (name && onSaveUsername) { try { await onSaveUsername(null); } catch { /* the identifiers are removed; the username can be removed later */ } name = ''; }
+              paint();
+              toast('Identifiers removed', { kind: 'ok', timeout: 2200 });
+            });
           } }),
         ),
       ),
@@ -125,6 +210,13 @@ export function personaCard({ persona = null, onSave, headingLevel = 'h3', showT
     if (current) country = current.country;
     paint();
   };
+  // The saved username changed somewhere else. The password that is on the screen stays.
+  el.setUsername = (next) => {
+    const value = cleanUsername(next);
+    if (value === name) return;
+    name = value;
+    paintLogin();
+  };
   return el;
 }
 
@@ -137,7 +229,7 @@ export function openPersonaDialog(item) {
     title: 'Random identifiers generator', size: 'md',
     content: (api) => h('div', { class: 'stack' },
       h('p', { class: 'mono small muted break' }, kind === 'number' ? phoneText(now.number) : now.address),
-      personaCard({ persona: now.persona, showTitle: false, onSave: (next) => setItemPersona(kind, item.id, next) }),
+      personaCard({ persona: now.persona, showTitle: false, onSave: (next) => setItemPersona(kind, item.id, next), username: now.extra && now.extra.username, onSaveUsername: (next) => setItemExtra(kind, item.id, { username: next }) }),
       h('div', { class: 'dialog-actions' }, button('Done', { kind: 'primary', onClick: () => api.close() })),
     ),
     cls: 'persona-dialog',

@@ -42,6 +42,9 @@ export const store = createStore({
   online: true,
 });
 
+// The name of the product. The person who runs the server can change it (APP_NAME).
+export const appName = () => { const c = store.get('config'); return (c && typeof c.appName === 'string' && c.appName.trim()) || 'Postern'; };
+
 // A simple event bus for "this kind of data changed" notices (from the server event stream).
 const listeners = new Map();
 export const bus = {

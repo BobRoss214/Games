@@ -44,6 +44,7 @@ export async function loadMailboxes() {
     return {
       id: m.id, addressId: m.addressId, address: sealed ? sealed.address : '', label: e.label, note: e.note, extra: e.extra,
       status: m.status, paidUntil: m.paidUntil, createdDay: m.createdDay, unread: m.unread || 0, total: m.total || 0,
+      refused: m.refused || 0, // how many mails the address of the inbox refused (a number only)
     };
   }));
   if (!isUnlocked()) return [];
@@ -59,6 +60,9 @@ export async function loadAliases() {
     return {
       id: a.id, mailboxId: a.mailboxId, address: sealed ? sealed.address : '', label: e.label, note: e.note, persona: e.persona, identityId: e.identityId, extra: e.extra,
       enabled: !!a.enabled, createdDay: a.createdDay, received: a.received || 0,
+      // oneShot: the alias stops after the first mail. usedUp: it is off because that mail came.
+      // refused: how many mails the alias refused (a number only).
+      oneShot: !!a.oneShot, usedUp: !!a.usedUp, refused: a.refused || 0,
     };
   }));
   if (!isUnlocked()) return [];
@@ -236,17 +240,20 @@ export async function deleteMailbox(id) {
   await Promise.allSettled([loadMailboxes(), loadAliases()]);
 }
 
-export async function createAlias({ mailboxId, localPart, domain, label, identityId }) {
+// oneShot: the alias stops after the first mail.
+export async function createAlias({ mailboxId, localPart, domain, label, identityId, oneShot = false }) {
   const body = { mailboxId, enc: await newEnc('alias', { label, identityId }) };
   if (localPart) body.localPart = localPart;
   if (domain) body.domain = domain;
+  if (oneShot) body.oneShot = true;
   const res = await api.post('/api/aliases', body);
   await loadAliases();
   return res;
 }
-export async function updateAlias(id, { enabled, mailboxId, label }) {
+export async function updateAlias(id, { enabled, mailboxId, label, oneShot }) {
   const body = {};
   if (enabled !== undefined) body.enabled = enabled;
+  if (oneShot !== undefined) body.oneShot = !!oneShot;
   if (mailboxId !== undefined) body.mailboxId = mailboxId;
   if (label !== undefined) body.enc = await freshEnc('alias', id, (e) => { e.label = label; });
   // Show the change at once. Put the old value back if the server says no.

@@ -63,6 +63,17 @@ export default async function (t) {
   assert(new URL(page.url()).pathname === '/settings' && !page.url().includes('#') && !page.url().includes('?'), 'opening an explanation changed the address');
   t.ok('opening and closing explanations makes no request, saves nothing, changes no address');
   await note();
+
+  // Settings: the two lists follow docs/SECURITY.md, section 1
+  const can = (await page.locator('.see-list.is-yes li').allTextContents()).join(' | ');
+  const cannot = (await page.locator('.see-list.is-no li').allTextContents()).join(' | ');
+  for (const part of ['voicemail for a moment', 'for the moment that it sends them', 'automatic deletion', '"stop after the first mail"', 'how many mails it received, and how many it refused', 'Your real phone number, if you link one']) {
+    assert(can.includes(part), `"The server can see" does not say: ${part}`);
+  }
+  for (const part of ['Your identities: their names, their notes, and what is in them.', 'Your random identifiers and usernames.', 'call history and voicemail', 'The senders that you block', 'Which payment added credit to your account.']) {
+    assert(cannot.includes(part), `"The server cannot see" does not say: ${part}`);
+  }
+  t.ok('Settings: "What the server can and cannot see" covers identities, random identifiers, settings and counters, voicemail, outgoing messages');
   await page.getByRole('button', { name: 'Delete account' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'What happens when I delete?' }).click();
   // Escape closes the explanation first, then the dialog.

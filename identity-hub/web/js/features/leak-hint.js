@@ -28,7 +28,7 @@ registerMessagePanel((message, alias) => {
   const known = knownSenders(alias);
   return h('div', { dataset: { leakPanel: hint.domain } }, callout('warn', 'This alias was possibly leaked',
     h('p', null, 'This alias normally gets mail from ', list(known), '. This message says that it is from ', h('span', { class: 'mono strong break' }, hint.domain), '.'),
-    h('p', null, 'So the address was possibly passed on, sold or stolen. It is only a hint: the From line of a mail can be forged, and one company can use several domains.'),
+    h('p', null, 'It is only a hint: the From line of a mail can be forged, and one company can use several domains.'),
     h('div', { class: 'row row-wrap row-2 leak-actions' },
       button('This sender is expected', { size: 'sm', onClick: (e, btn) => runBusy(btn, async () => {
         await expectSender(alias, hint.domain);

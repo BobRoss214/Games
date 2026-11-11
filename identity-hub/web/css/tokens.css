@@ -35,6 +35,16 @@
   --danger-wash: #F7E3DF;
   --on-danger: #FFF8F5;
 
+  /* colour dots for identities: eight named colours, each 3:1 or more on every surface */
+  --dot-red: #B3362F;
+  --dot-orange: #B5591A;
+  --dot-gold: #8A6D00;
+  --dot-green: #2E7D4F;
+  --dot-teal: #1E7C86;
+  --dot-blue: #2F63B8;
+  --dot-purple: #7A4BB0;
+  --dot-pink: #B63C78;
+
   /* email paper inside the message frame stays white in both themes */
   --mail-paper: #FFFFFF;
 
@@ -110,6 +120,14 @@
     --danger-strong: #F6A69E;
     --danger-wash: #2E1917;
     --on-danger: #0F1412;
+    --dot-red: #F08A80;
+    --dot-orange: #F0A565;
+    --dot-gold: #E0C050;
+    --dot-green: #7FD0A0;
+    --dot-teal: #6FCBD4;
+    --dot-blue: #8CB4F5;
+    --dot-purple: #C3A0F0;
+    --dot-pink: #F090BC;
     --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
   }
 }
@@ -137,6 +155,14 @@
   --danger-strong: #F6A69E;
   --danger-wash: #2E1917;
   --on-danger: #0F1412;
+  --dot-red: #F08A80;
+  --dot-orange: #F0A565;
+  --dot-gold: #E0C050;
+  --dot-green: #7FD0A0;
+  --dot-teal: #6FCBD4;
+  --dot-blue: #8CB4F5;
+  --dot-purple: #C3A0F0;
+  --dot-pink: #F090BC;
   --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 

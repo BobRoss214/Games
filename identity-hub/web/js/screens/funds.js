@@ -1,6 +1,6 @@
 // Funds: balance, add funds with a private payment, prices, history.
 import { h, replace, region } from '../lib/dom.js';
-import { store, bus } from '../lib/store.js';
+import { store, bus, appName } from '../lib/store.js';
 import { api } from '../lib/api.js';
 import { money, dayText } from '../lib/format.js';
 import { icon } from '../ui/icons.js';
@@ -122,7 +122,7 @@ export function fundsScreen({ scope }) {
   function paintPurchases(state) {
     const list = state.purchases || [];
     if (!list.length) { replace(purchasesSlot); return; }
-    replace(purchasesSlot, section({ title: 'Payments in progress', lede: 'You can close this page. The credit is added the next time you open Postern.' },
+    replace(purchasesSlot, section({ title: 'Payments in progress', lede: `You can close this page. The credit is added the next time you open ${appName()}.` },
       h('ul', { class: 'sheet pay-list' }, list.map(purchaseRow))));
   }
   scope.add(store.subscribe(['purchases'], paintPurchases));

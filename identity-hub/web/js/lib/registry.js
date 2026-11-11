@@ -64,12 +64,13 @@ export function registerRoute(path, loader, { signedOut = false, title = '', nav
 }
 
 // One more place in the sidebar. On a phone the bottom bar holds five places; when there are
-// more, the last place is "More" and it lists the rest.
+// more, the bar shows the first four and "More", and "More" lists the rest.
 // order: Home 10, Mail 20, Aliases 30, Numbers 40, Funds 50, Settings 90.
-export function registerNavItem({ id, label, icon = 'dot', path, order = 60 } = {}) {
+// more: true = on a phone this place is always under "More", also when the bar has room.
+export function registerNavItem({ id, label, icon = 'dot', path, order = 60, more = false } = {}) {
   need(isText(label), `menu item "${id}" needs a label`);
   need(typeof path === 'string' && path.startsWith('/'), `menu item "${id}" needs a path`);
-  addUnique(navItems, { id, label, icon, path, order }, 'menu item');
+  addUnique(navItems, { id, label, icon, path, order, more: !!more }, 'menu item');
 }
 
 // ---------- rows ----------

@@ -8,7 +8,7 @@ import { button, iconButton, emptyState, skeletonRows, pageHeader, field, select
 import { menuButton } from '../ui/menu.js';
 import { formDialog, confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
-import { findNumber, findPhone, updateNumber, loadNumbers, phoneName, renewDays, graceDays, setItemPersona } from '../lib/data.js';
+import { findNumber, findPhone, updateNumber, loadNumbers, phoneName, renewDays, graceDays, setItemPersona, setItemExtra } from '../lib/data.js';
 import { listTexts, sendText, markTextsSeen, deleteText, listCalls, startCall, deleteCall, threadsOf, takeNumberOpen } from '../lib/phone.js';
 import { personaCard } from '../ui/persona.js';
 import { openPutInIdentity, takeOutOfIdentity } from '../ui/identity.js';
@@ -352,6 +352,7 @@ export function numberScreen({ params, scope }) {
 
   // ---------- settings ----------
   const settingsPane = h('div', { class: 'number-settings stack stack-6' });
+  let personaEl = null;
   function paintSettings() {
     const number = findNumber(id);
     if (!number) return;
@@ -396,6 +397,10 @@ export function numberScreen({ params, scope }) {
       } catch (err) { reportError(err); }
       if (!scope.disposed) paintSettings();
     });
+    // The card is made one time and kept: a password that is on the screen must not go away
+    // when something else of the number changes.
+    if (!personaEl) personaEl = personaCard({ persona: number.persona, headingLevel: 'h2', onSave: (next) => setItemPersona('number', id, next), username: number.extra.username, onSaveUsername: (next) => setItemExtra('number', id, { username: next }) });
+    else { personaEl.setPersona(number.persona); personaEl.setUsername(number.extra.username); }
     const forwardRow = (title, textValue, key, on) => h('div', { class: 'switch-row' },
       h('div', { class: 'grow' }, h('p', { class: 'strong' }, title), h('p', { class: 'small muted' }, textValue)),
       toggle({ checked: on && hasTarget, label: title, disabled: !hasTarget, withText: true, onChange: (v) => updateNumber(id, { [key]: v }) }),
@@ -429,7 +434,7 @@ export function numberScreen({ params, scope }) {
           ),
         ),
       ),
-      h('section', { class: 'sheet sheet-pad' }, personaCard({ persona: number.persona, headingLevel: 'h2', onSave: (next) => setItemPersona('number', id, next) })),
+      h('section', { class: 'sheet sheet-pad' }, personaEl),
       h('section', { class: 'stack stack-3' },
         h('div', null,
           h('h2', { class: 'section-title' }, 'Old texts'),

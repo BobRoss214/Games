@@ -273,7 +273,7 @@ export function mailScreen({ params, scope }) {
     const aliases = store.get('aliases') || [];
     return aliases.find((a) => a.id === msg.addressId) || aliases.find((a) => a.address === msg.meta.deliveredTo) || null;
   }
-  const markOf = (msg) => { const a = msg ? aliasOf(msg) : null; return a ? `${a.id}:${a.enabled}:${a.label}:${JSON.stringify(a.extra || {})}` : ''; };
+  const markOf = (msg) => { const a = msg ? aliasOf(msg) : null; return a ? `${a.id}:${a.enabled}:${a.usedUp}:${a.label}:${JSON.stringify(a.extra || {})}` : ''; };
 
   function renderMessage(msg) {
     const meta = msg.meta;
@@ -340,7 +340,7 @@ export function mailScreen({ params, scope }) {
         incoming && meta.deliveredTo ? h('div', { class: 'message-via' },
           icon(alias ? 'alias' : 'inbox', { size: 16 }),
           h('span', { class: 'message-via-text' }, 'Sent to ', h('span', { class: 'mono break' }, meta.deliveredTo)),
-          alias ? (alias.enabled ? tag('Alias') : tag('Alias, off')) : null,
+          alias ? (alias.enabled ? tag('Alias') : alias.usedUp ? tag('Alias, used up', 'warn') : tag('Alias, off')) : null,
           alias && alias.label ? h('span', { class: 'small muted' }, alias.label) : null,
           turnOff,
           whyOff ? whyOff.button : null,

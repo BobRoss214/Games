@@ -36,7 +36,12 @@ const stepText = (n) => `Step ${n} of ${TOTAL}`;
 export default function screen({ scope }) {
   // The person is here again: the notice with "Back to the tutorial" is not needed.
   stopWatch();
-  const root = h('div', { class: 'page page-narrow f-tutorial' });
+  // The page is painted again and again. The line for screen readers must stay the same
+  // element, so it lives next to the painted part.
+  const body = h('div', null);
+  const live = h('p', { class: 'sr-only', role: 'status' });
+  const root = h('div', { class: 'page page-narrow f-tutorial' }, body, live);
+  let shown = { id: '', status: '' }; // what the last paint showed, to say "done" one time
   let index = -1;          // the step on the screen; -1 until the progress is read
   let failed = '';         // why the progress did not load
   let focusTitle = false;  // after a change of step, the title of the new step gets the focus
@@ -137,7 +142,7 @@ export default function screen({ scope }) {
   function doPart(step, st, app) {
     const t = (text) => fill(text, step, app.config);
     if (st === 'off') return h('div', { class: 'f-tutorial-do stack stack-3' }, h('p', { class: 'read muted' }, t(step.offNote)));
-    if (st === 'done') return h('div', { class: 'f-tutorial-do', role: 'status' }, callout('ok', t(step.done)));
+    if (st === 'done') return h('div', { class: 'f-tutorial-do' }, callout('ok', t(step.done)));
 
     const dev = !!(app.config && app.config.dev);
     const payOn = !!(app.config && app.config.features && app.config.features.pay);
@@ -233,11 +238,11 @@ export default function screen({ scope }) {
     const app = store.get();
     const saved = progress.get('value');
     if (failed) {
-      replace(root, pageHeader({ title: 'Tutorial' }), loadError(failed, () => { failed = ''; paint(); start(); }));
+      replace(body, pageHeader({ title: 'Tutorial' }), loadError(failed, () => { failed = ''; paint(); start(); }));
       return;
     }
     if (saved === undefined || !listsReady(app)) {
-      replace(root, pageHeader({ title: 'Tutorial' }), skeletonRows(4));
+      replace(body, pageHeader({ title: 'Tutorial' }), skeletonRows(4));
       return;
     }
     if (index < 0) {
@@ -247,7 +252,7 @@ export default function screen({ scope }) {
     }
 
     const active = document.activeElement;
-    const hadKey = active && root.contains(active) ? (active.dataset.key || 'title') : null;
+    const hadKey = active && body.contains(active) ? (active.dataset.key || 'title') : null;
 
     const ctx = { config: app.config, saved, proven: provenNow() };
     const statuses = STEPS.map((s) => statusOf(s, ctx));
@@ -262,17 +267,14 @@ export default function screen({ scope }) {
     const title = h('h2', { id: 'tutorial-step-title', tabIndex: -1, 'data-key': 'title' }, t(step.title));
     const nav = h('div', { class: 'f-tutorial-nav' },
       back !== index ? button('Back', { iconName: 'arrowLeft', attrs: { 'data-key': 'back' }, onClick: () => go(back) }) : h('span', null),
-      h('div', { class: 'row row-wrap row-end' },
-        last && finished ? button('Start again', { iconName: 'refresh', attrs: { 'data-key': 'again' }, onClick: startAgain }) : null,
-        last
-          ? (finished
-            ? button('Go to Home', { kind: 'primary', attrs: { 'data-key': 'next' }, onClick: () => navigate('/') })
-            : button('Finish the tutorial', { kind: 'primary', iconName: 'check', attrs: { 'data-key': 'next' }, onClick: finish }))
-          : button('Next', { kind: 'primary', iconAfter: 'arrowRight', attrs: { 'data-key': 'next' }, onClick: () => go(next) }),
-      ),
+      last
+        ? (finished
+          ? button('Go to Home', { kind: 'primary', attrs: { 'data-key': 'next' }, onClick: () => navigate('/') })
+          : button('Finish the tutorial', { kind: 'primary', iconName: 'check', attrs: { 'data-key': 'next' }, onClick: finish }))
+        : button('Next', { kind: 'primary', iconAfter: 'arrowRight', attrs: { 'data-key': 'next' }, onClick: () => go(next) }),
     );
 
-    replace(root,
+    replace(body,
       pageHeader({ title: 'Tutorial' }),
       h('div', { class: 'f-tutorial-progress' },
         h('p', { class: 'small strong nowrap', id: 'tutorial-progress-text' }, stepText(index + 1)),
@@ -285,10 +287,16 @@ export default function screen({ scope }) {
         h('div', { class: 'stack stack-1' }, h('p', { class: 'label' }, 'Why it exists'), h('p', { class: 'read' }, t(step.why))),
         doPart(step, st, app),
         last && finished ? summary(statuses) : null,
+        last && finished ? h('div', null, button('Start again', { iconName: 'refresh', attrs: { 'data-key': 'again' }, onClick: startAgain })) : null,
       ),
       nav,
       stepList(statuses, app),
     );
+
+    // A screen reader hears the sentence when the step on the screen becomes done.
+    if (shown.id === step.id && shown.status !== 'done' && st === 'done') live.textContent = t(step.done);
+    else if (shown.id !== step.id) live.textContent = '';
+    shown = { id: step.id, status: st };
 
     if (focusTitle) {
       focusTitle = false;
@@ -296,7 +304,7 @@ export default function screen({ scope }) {
       title.focus({ preventScroll: true });
     } else if (hadKey !== null) {
       // The part with the focus was made again. Keep the focus on the same control, or on "Next".
-      const same = root.querySelector(`[data-key="${CSS.escape(hadKey)}"]`) || root.querySelector('[data-key="next"]') || title;
+      const same = body.querySelector(`[data-key="${CSS.escape(hadKey)}"]`) || body.querySelector('[data-key="next"]') || title;
       same.focus({ preventScroll: true });
     }
   }

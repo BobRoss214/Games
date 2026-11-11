@@ -13,7 +13,8 @@ import { rowItems, itemRows } from '../ui/rows.js';
 import { personaCard } from '../ui/persona.js';
 import { openAddExisting, confirmDeleteIdentity } from '../ui/identity.js';
 import { openNewAlias, openGetNumber } from '../ui/items.js';
-import { findIdentity, membersOf, forwardingOf, updateIdentity, identityItem, NAME_MAX, NOTE_MAX } from '../lib/identities.js';
+import { findIdentity, membersOf, forwardingOf, updateIdentity, setIdentityExtra, identityItem, identityState, colourOf, eventsOf, addIdentityEvent, NAME_MAX, NOTE_MAX } from '../lib/identities.js';
+import { doorMark, colourDot, stateWord, colourPicker, historyList } from '../ui/identitylook.js';
 import { registered } from '../lib/registry.js';
 import { phoneName, mailboxName, findMailbox } from '../lib/data.js';
 import { listMessages, personShort } from '../lib/mail.js';
@@ -113,6 +114,8 @@ export function identityScreen({ params, scope }) {
   const membersSlot = h('div', { class: 'sheet item-sheet' });
   const feedSlot = h('div', { class: 'sheet feed-sheet' });
   const sideSlot = h('aside', { class: 'identity-side' });
+  const colourSlot = h('div', null);
+  const historySlot = h('div', null);
   let built = false;
   let editing = false;
   let personaEl = null;
@@ -152,6 +155,7 @@ export function identityScreen({ params, scope }) {
       name.input.focus();
       return;
     }
+    const door = identityState(g, m);
     // Marks and menu entries of feature files (registerRowBadge, registerRowAction with the kind 'identity').
     const item = identityItem(g);
     const marks = registered.rowBadges('identity', item);
@@ -159,9 +163,9 @@ export function identityScreen({ params, scope }) {
     replace(headSlot, back,
       h('div', { class: 'page-head-row' },
         h('div', { class: 'grow' },
-          h('h1', { class: 'page-title break', tabIndex: -1 }, g.name),
+          h('div', { class: 'identity-title' }, doorMark(door, { size: 28 }), colourDot(g), h('h1', { class: 'page-title break', tabIndex: -1 }, g.name)),
           g.note ? h('p', { class: 'page-lede identity-note' }, g.note) : null,
-          h('p', { class: 'identity-count small muted' }, h('span', null, `${plural(m.aliases.length, 'address', 'addresses')}, ${plural(m.numbers.length, 'number')}`), marks),
+          h('p', { class: 'identity-count small muted' }, stateWord(door), h('span', null, `${plural(m.aliases.length, 'address', 'addresses')}, ${plural(m.numbers.length, 'number')}`), marks),
         ),
         h('div', { class: 'page-actions' },
           button('Edit name and note', { iconName: 'edit', onClick: () => { editing = true; paintHead(); }, attrs: { class: 'btn identity-edit-btn' } }),
@@ -252,6 +256,8 @@ export function identityScreen({ params, scope }) {
     feedState = failed && fresh.every((s) => !s.items.length) ? 'error' : 'ready';
     feedError = failed ? (failed.reason && failed.reason.message) || 'The feed did not load.' : '';
     paintFeed();
+    const g = findIdentity(id);
+    if (g) noteHistory(g, membersOf(id));
   }
   async function loadMoreFeed() {
     const token = feedToken;
@@ -268,9 +274,17 @@ export function identityScreen({ params, scope }) {
     const g = findIdentity(id);
     if (!g) return;
     if (!personaEl) {
-      personaEl = personaCard({ persona: g.persona, headingLevel: 'h2', onSave: (next) => updateIdentity(id, { persona: next }) });
+      personaEl = personaCard({ persona: g.persona, headingLevel: 'h2', onSave: (next) => updateIdentity(id, { persona: next }), username: g.extra.username, onSaveUsername: (next) => setIdentityExtra(id, { username: next }) });
       replace(sideSlot,
         h('div', { class: 'sheet sheet-pad' }, personaEl),
+        h('section', { class: 'sheet sheet-pad stack stack-3', 'aria-labelledby': 'colour-title' },
+          h('div', null, h('h2', { class: 'section-title', id: 'colour-title' }, 'Colour'), h('p', { class: 'section-lede' }, 'A dot next to the name, to spot this identity fast.')),
+          colourSlot,
+        ),
+        h('section', { class: 'sheet sheet-pad stack stack-3', 'aria-labelledby': 'history-title' },
+          h('h2', { class: 'section-title', id: 'history-title' }, 'History'),
+          historySlot,
+        ),
         h('section', { class: 'danger-zone stack stack-3 identity-delete' },
           h('h2', { class: 'section-title' }, 'Delete this identity'),
           h('p', { class: 'muted small' }, 'Its aliases and numbers stay. They are then not in an identity.'),
@@ -280,7 +294,33 @@ export function identityScreen({ params, scope }) {
           } })),
         ),
       );
-    } else personaEl.setPersona(g.persona);
+    } else { personaEl.setPersona(g.persona); personaEl.setUsername(g.extra.username); }
+    // The colour choice is made again only when the saved colour is not the one it shows,
+    // so that the focus stays in it while the person moves through the colours.
+    const shown = colourSlot.firstElementChild;
+    if (!shown || shown.dataset.colour !== colourOf(g)) {
+      const hadFocus = colourSlot.contains(document.activeElement);
+      replace(colourSlot, colourPicker(g, 'colour-title'));
+      if (hadFocus) colourSlot.querySelector('input:checked')?.focus();
+    }
+    replace(historySlot, historyList(g));
+  }
+
+  // ---- history: the events that this screen can see ----
+  let allOff = null;        // every alias of the identity is off (null = not looked yet)
+  let askedFirstMail = false;
+  function noteHistory(g, m) {
+    const nowOff = m.aliases.length > 0 && m.aliases.every((a) => !a.enabled);
+    if (allOff !== null && nowOff !== allOff) addIdentityEvent(id, nowOff ? 'turned-off' : 'turned-on').catch(() => {});
+    allOff = nowOff;
+    if (!askedFirstMail && !eventsOf(g).some((e) => e.type === 'first-mail')) {
+      const mails = sources.flatMap((src) => src.items).filter((it) => it.type === 'mail');
+      if (mails.length) {
+        askedFirstMail = true;
+        const oldest = Math.min(...mails.map((it) => it.at));
+        addIdentityEvent(id, 'first-mail', new Date(oldest * 1000).toISOString().slice(0, 10)).catch(() => {});
+      }
+    }
   }
 
   function build() {
@@ -323,6 +363,7 @@ export function identityScreen({ params, scope }) {
     paintMembers();
     paintSide();
     const m = membersOf(id, state);
+    noteHistory(g, m);
     const key = `${m.aliases.map((a) => a.id).join(',')}|${m.numbers.map((n) => n.id).join(',')}`;
     if (key !== memberKey) { memberKey = key; sources = []; feedToken++; loadFeed(); }
   }

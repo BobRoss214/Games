@@ -1,7 +1,7 @@
 // The frame around signed-in screens: sidebar (desktop), top bar and tab bar (phone),
 // and the test-mode banner.
 import { h, replace } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { store, appName } from '../lib/store.js';
 import { money } from '../lib/format.js';
 import { icon, logoMark } from './icons.js';
 import { button } from './components.js';
@@ -26,7 +26,7 @@ const TAB_PLACES = 5;
 // The places of the app plus the ones that feature files registered, in order.
 function navItems(config) {
   const own = NAV.filter((n) => !n.feature || config.features[n.feature]);
-  const extra = registered.navItems().filter((n) => !NAV.some((b) => b.id === n.id)).map((n) => ({ id: n.id, label: n.label, href: n.path, icon: n.icon, order: n.order }));
+  const extra = registered.navItems().filter((n) => !NAV.some((b) => b.id === n.id)).map((n) => ({ id: n.id, label: n.label, href: n.path, icon: n.icon, order: n.order, more: n.more }));
   return [...own, ...extra].sort((a, b) => a.order - b.order);
 }
 
@@ -38,7 +38,7 @@ let hooks = { onTestTools: null, onSignedOut: null };
 export function setShellHooks(h2) { hooks = { ...hooks, ...h2 }; }
 
 export function brand(href = '/') {
-  return h('a', { class: 'brand', href, 'data-link': true, 'aria-label': 'Postern, home' }, logoMark({ size: 30 }), h('span', { class: 'brand-name' }, 'Postern'));
+  return h('a', { class: 'brand', href, 'data-link': true, 'aria-label': `${appName()}, home` }, logoMark({ size: 30 }), h('span', { class: 'brand-name' }, appName()));
 }
 
 function unreadFor(id, state) {
@@ -118,12 +118,16 @@ function build() {
     ),
   );
 
-  // Phone: Settings is the gear in the top bar. When there are more places than the bar can
-  // hold, the last place is "More" and it lists the rest.
+  // Phone: the bar holds five places. When there are more places than that, the bar shows the
+  // first four and "More", and "More" lists every other place (Funds, Help, …, Settings).
+  // Funds and Settings are also in the top bar (the balance and the gear).
+  // A place registered with more: true is always under "More".
   const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Main' });
   const tabItems = items.filter((n) => n.id !== 'settings');
-  const onBar = tabItems.length > TAB_PLACES ? tabItems.slice(0, TAB_PLACES - 1) : tabItems;
-  const inMore = tabItems.slice(onBar.length);
+  const wanted = tabItems.filter((n) => !n.more);
+  const needMore = wanted.length < tabItems.length || wanted.length > TAB_PLACES;
+  const onBar = needMore ? wanted.slice(0, TAB_PLACES - 1) : wanted;
+  const inMore = needMore ? items.filter((n) => !onBar.includes(n)) : [];
   tabbar.style.gridTemplateColumns = `repeat(${onBar.length + (inMore.length ? 1 : 0)}, 1fr)`;
   for (const n of onBar) {
     const a = h('a', { class: 'tab-link', href: n.href, 'data-link': true }, icon(n.icon, { size: 22 }), h('span', null, n.label));

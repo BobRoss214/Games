@@ -131,21 +131,27 @@ export function settingsScreen({ scope }) {
   }
 
   // ---- what the server sees ----
+  // These two lists follow docs/SECURITY.md, section 1. Change them together.
   const can = [
     'That an account exists, and its credit balance.',
     'Which inboxes, aliases and numbers belong to one account. It needs this to deliver.',
-    'New mail and texts for a moment when they arrive. It encrypts them for you, then forgets the readable form.',
-    'Mail and texts you send, while it delivers them.',
-    'The size and time of each message.',
-    'Your real phone number, if you link one. It needs it to forward.',
+    'New mail, texts and voicemail for a moment when they arrive. It encrypts them for you, then forgets the readable form.',
+    'Mail and texts that you send, for the moment that it sends them.',
+    'The size and the time of each message.',
+    'Your settings for each item: on or off, forwarding, voicemail, automatic deletion, an end date, "stop after the first mail".',
+    'Two numbers for each address: how many mails it received, and how many it refused.',
+    'Your real phone number, if you link one. It needs it to forward. The phone company sees it too.',
     'Your IP address while you are connected. It is kept in memory only, not in logs.',
   ];
   const cannot = [
-    'Your name or who you are. We never ask.',
+    'Your name or who you are. It never asks.',
     'Your recovery key and your account key.',
-    'Stored mail, texts and call history.',
+    'Stored mail, texts, call history and voicemail.',
     'Your labels and notes.',
+    'Your identities: their names, their notes, and what is in them.',
+    'Your random identifiers and usernames. A password that the app makes is saved nowhere.',
     'A readable list of your addresses and numbers in the database.',
+    'The senders that you block, in readable form.',
     'Which payment added credit to your account.',
   ];
   const seeList = (items, kind) => h('ul', { class: `see-list is-${kind}` }, items.map((t) => h('li', null, icon(kind === 'no' ? 'eyeOff' : 'eye', { size: 16 }), h('span', null, t))));

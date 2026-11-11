@@ -55,6 +55,9 @@
 .warn-list { list-style: disc; padding-left: 1.125rem; }
 .warn-list li + li { margin-top: var(--s-1); }
 .home-slot .callout-body > div { margin-top: var(--s-1); }
+.warn-actions { align-items: flex-start; gap: var(--s-2) var(--s-4); }
+.warn-actions > .why { flex: 1 1 14rem; padding-top: 0.375rem; }
+.callout-warn .why-btn { color: inherit; }
 
 /* ---- help: start (features/help.js, features/help/screens.js) ---- */
 
@@ -129,6 +132,8 @@
 @media (max-width: 720px) {
   .f-tutorial-card > .row { width: 100%; }
   .f-tutorial-card > .row .btn { flex: 1 1 auto; }
+  /* a line of the step list has one line of text: its number sits in the middle, like the text */
+  .f-tutorial-steps .item-icon { align-self: center; padding-top: 0; }
 }
 /* ---- tutorial: end ---- */
 
@@ -137,5 +142,19 @@
 .f-export-row { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .f-export-list li:last-child > .f-export-row, .f-export-list li:last-child > .thread { border-bottom: 0; }
 .f-export-value { white-space: normal; }
-.f-export-counts { grid-template-columns: max-content max-content; }
+.f-export-counts { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: var(--s-4) var(--s-5); margin: 0; }
+.f-export-counts dd { margin: 0; }
+.f-export-items .phone-row { align-items: start; }
+.f-export-items .item-main > .stack { margin-top: var(--s-2); }
+.f-export-items .item-label { white-space: normal; overflow-wrap: anywhere; }
+.f-export-items .item-sub { flex-wrap: wrap; }
+.f-export-when { padding-right: var(--s-2); }
 /* --- end export --- */
+
+/* ---- insights: start (features/insights.js, features/insights/) ---- */
+/* "Who leaked me": the address of an alias is the heading of its card */
+.f-insights-address { font-family: var(--font-mono); font-size: var(--fs-md); font-weight: 600; line-height: var(--lh-ui); letter-spacing: -0.01em; overflow-wrap: anywhere; text-wrap: wrap; }
+/* one hint: the sender on the left, its action on the right; on a narrow card the action goes under it */
+.f-insights-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-4); padding: var(--s-3) 0; border-top: 1px solid var(--line); }
+.f-insights-hint:last-child { border-bottom: 1px solid var(--line); }
+/* ---- insights: end ---- */

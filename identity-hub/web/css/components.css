@@ -358,3 +358,8 @@
   .code-copy { min-height: var(--touch); }
   .feed-sheet .recent-code { padding-left: calc(var(--s-3) + 18px + var(--s-3)); padding-right: var(--s-3); }
 }
+
+/* a hint under a checkbox, in line with its label */
+.check-hint { padding-left: calc(1.25rem + var(--s-3)); }
+.own-domain-note:empty { display: none; }
+.item-refused { white-space: nowrap; }

@@ -100,6 +100,9 @@ export default async function (t) {
     t.ok('Settings says what is in the file, what is not, which key opens it, and the size limits');
 
     // Every request from the click to the download: only reads, and no plain data in them.
+    // First wait until the app itself is quiet (another feature saves encrypted notes about senders after mail loads).
+    await page.evaluate(async () => { try { const m = await import('/js/lib/leakwatch.js'); if (m.whenIdle) await m.whenIdle(); } catch { /* no such file */ } });
+    await page.waitForLoadState('networkidle');
     const requests = [];
     const record = (r) => requests.push({ method: r.method(), url: r.url(), body: r.postData() || '' });
     page.on('request', record);
@@ -176,17 +179,19 @@ export default async function (t) {
     t.ok('Cancel stops the export; nothing is saved');
 
     // Progress in words on a slower run: "Mail 1 of 3" shows before the end.
-    await page.route('**/api/messages/*', async (route) => { await new Promise((r) => setTimeout(r, 400)); await route.continue().catch(() => {}); });
+    // The three messages answer one after the other, 700 ms apart.
+    let slow = 0;
+    await page.route('**/api/messages/*', async (route) => { slow += 700; await new Promise((r) => setTimeout(r, slow)); await route.continue().catch(() => {}); });
     await section.getByRole('button', { name: 'Download my data' }).click();
     const [third] = await Promise.all([
       page.waitForEvent('download'),
-      build.click().then(() => dlg.locator('[data-export="progress"]').filter({ hasText: /^Mail [1-3] of 3$/ }).first().waitFor()),
+      build.click().then(() => dlg.locator('[data-export="progress"]').filter({ hasText: /^Mail [12] of 3$/ }).first().waitFor()),
     ]);
     await third.cancel().catch(() => {});
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await dlg.getByText('Your file is ready').waitFor();
     // "Open an export file" in the dialog goes to the viewer. Signed in, the account key opens the file.
-    await dlg.getByRole('button', { name: 'Open an export file' }).click();
+    await dlg.getByRole('link', { name: 'Open an export file' }).click();
     await page.getByRole('heading', { name: 'Open an export file', level: 1 }).waitFor();
     assert(new URL(page.url()).pathname === '/open-export', 'the button did not open the viewer');
     await chooseFile(page, fullPath);
@@ -274,7 +279,7 @@ export default async function (t) {
     const message = vp.locator('[data-export="message"]');
     await message.locator('iframe.mail-frame').waitFor();
     const messageText = await message.innerText();
-    assert(messageText.includes(MARK.subject) && messageText.includes('Maple Shop') && messageText.includes(made.aliasAddress), 'the message head is not complete');
+    assert(messageText.includes(MARK.subject) && messageText.includes('Maple Shop') && messageText.includes(made.aliasAddress) && messageText.includes(`${MARK.label}, ${made.aliasAddress}`), 'the message head is not complete');
     assert(await message.locator('iframe.mail-frame').getAttribute('sandbox') === 'allow-popups allow-popups-to-escape-sandbox', 'the mail frame has a different sandbox');
     await message.getByText('Remote images are blocked to stop tracking.').waitFor();
     const [att] = await Promise.all([vp.waitForEvent('download'), message.getByRole('button', { name: 'Download receipt.txt' }).click()]);

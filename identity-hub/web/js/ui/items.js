@@ -5,7 +5,7 @@ import { store } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
 import { money, phoneText, countryName, plural } from '../lib/format.js';
 import { icon } from './icons.js';
-import { button, field, selectField, copyButton, runBusy, reportError, needFunds, tag, skeletonRows, emptyState } from './components.js';
+import { button, field, selectField, checkbox, callout, copyButton, runBusy, reportError, needFunds, tag, skeletonRows, emptyState } from './components.js';
 import { openDialog, formDialog, confirmDialog } from './dialog.js';
 import { toast } from './toast.js';
 import {
@@ -44,12 +44,20 @@ function madeDialog({ title, value, display, note }) {
   });
 }
 
+export const OWN_DOMAIN_WARNING = 'Only you use this domain. Websites can see that all addresses on it belong together. It helps when a website refuses alias addresses. It is worse for privacy than a shared domain.';
+
 // The name part of a new address: random by default, or typed.
+// The domain: when the server has more than one, the choice is always visible. A domain that
+// only this person uses (config.personalDomains) shows a warning when it is picked.
 function nameChoice() {
   const domains = config().mailDomains || [];
+  const own = new Set(config().personalDomains || []);
   const local = field({ label: 'Name', mono: true, placeholder: 'anna.reed', maxlength: 64, hint: '3 to 64 characters: lower-case letters, numbers, dots and dashes.', suffix: domains.length === 1 ? '@' + domains[0] : null });
-  const domain = domains.length > 1 ? selectField({ label: 'Domain', options: domains.map((d) => ({ value: d, label: '@' + d })), value: domains[0], mono: true }) : null;
-  const custom = h('div', { class: 'stack', hidden: true }, local.el, domain ? domain.el : null);
+  const domain = domains.length > 1 ? selectField({ label: 'Domain', options: domains.map((d) => ({ value: d, label: own.has(d) ? `@${d} (only you use it)` : `@${d}` })), value: domains[0] }) : null;
+  const ownNote = h('div', { class: 'own-domain-note', 'aria-live': 'polite' });
+  const paintOwn = () => replace(ownNote, domain && own.has(domain.value) ? callout('warn', 'Your own domain', h('p', null, OWN_DOMAIN_WARNING)) : null);
+  if (domain) { domain.input.addEventListener('change', paintOwn); paintOwn(); }
+  const custom = h('div', { class: 'stack', hidden: true }, local.el);
   const toggleBtn = h('button', { class: 'btn btn-quiet btn-sm disclose', type: 'button', 'aria-expanded': 'false' }, icon('chevronRight', { size: 14 }), h('span', null, 'Choose the name myself'));
   toggleBtn.addEventListener('click', () => {
     const open = custom.hidden;
@@ -58,12 +66,15 @@ function nameChoice() {
     if (open) local.input.focus(); else local.value = '';
   });
   return {
-    el: h('div', { class: 'stack stack-3' }, h('p', { class: 'hint' }, 'We pick a random, readable name. For example ', h('span', { class: 'mono' }, 'quiet.river482'), '.'), toggleBtn, custom),
+    el: h('div', { class: 'stack stack-3' },
+      domain ? domain.el : null,
+      domain ? ownNote : null,
+      h('p', { class: 'hint' }, 'We pick a random, readable name. For example ', h('span', { class: 'mono' }, 'quiet.river482'), '.'), toggleBtn, custom),
     read() {
       const value = custom.hidden ? '' : local.value.trim().toLowerCase();
       const problem = checkLocalPart(value);
       if (problem) { local.setError(problem); return null; }
-      return { localPart: value || undefined, domain: !custom.hidden && domain ? domain.value : undefined };
+      return { localPart: value || undefined, domain: domain ? domain.value : undefined };
     },
     local,
   };
@@ -90,18 +101,23 @@ export async function openNewAlias({ mailboxId = '', identityId = '' } = {}) {
   const target = selectField({ label: 'Delivers to', options: boxes.map((m) => ({ value: m.id, label: m.label ? `${m.label} (${m.address})` : m.address })), value: boxes.some((m) => m.id === mailboxId) ? mailboxId : boxes[0].id });
   const label = field({ label: 'Label', optional: true, placeholder: 'for example: Shop X', maxlength: 60, hint: 'What you use it for. Only you see this.' });
   const name = nameChoice();
+  const once = checkbox('Stop after the first mail');
+  const onceHint = h('p', { class: 'hint check-hint', id: 'once-hint' }, 'Good when you only need a sign-up code.');
+  once.input.setAttribute('aria-describedby', 'once-hint');
   const made = await formDialog({
     title: 'New alias', description: 'An alias is an extra address. Mail to it lands in your inbox. Turn it off when you get spam.',
     submitLabel: 'Make alias',
-    build: () => h('div', { class: 'stack' }, why('inbox-vs-alias'), boxes.length > 1 ? target.el : null, label.el, name.el),
+    build: () => h('div', { class: 'stack' }, why('inbox-vs-alias'), boxes.length > 1 ? target.el : null, label.el, name.el,
+      h('div', { class: 'stack stack-1' }, once.el, onceHint),
+    ),
     onSubmit: async () => {
       const n = name.read();
       if (!n) return false;
-      return createAlias({ mailboxId: target.value, label: label.value.trim(), identityId, ...n });
+      return createAlias({ mailboxId: target.value, label: label.value.trim(), identityId, oneShot: once.checked, ...n });
     },
     onError: (err) => { if (err.code === 'taken') { name.local.setError(err.message); return true; } return false; },
   });
-  if (made && made.address) madeDialog({ title: 'Alias made', value: made.address, note: `Mail to this address goes to ${mailboxName(findMailbox(target.value))}.` });
+  if (made && made.address) madeDialog({ title: 'Alias made', value: made.address, note: once.checked ? `The first mail to this address goes to ${mailboxName(findMailbox(target.value))}. Then the alias stops.` : `Mail to this address goes to ${mailboxName(findMailbox(target.value))}.` });
 }
 
 // ---- new inbox ----

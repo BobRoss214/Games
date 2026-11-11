@@ -11,3 +11,4 @@ import './help.js';
 import './leak-hint.js';
 import './tutorial.js';
 import './recovery-test.js';
+import './insights.js';

@@ -1,6 +1,7 @@
 // Signed-out start screen.
 import { h } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { store, appName } from '../lib/store.js';
+import { registered } from '../lib/registry.js';
 import { navigate } from '../lib/router.js';
 import { icon, logoMark } from '../ui/icons.js';
 import { button, linkButton, runBusy } from '../ui/components.js';
@@ -35,6 +36,7 @@ export function welcomeScreen({ scope }) {
   const closed = config.signup === 'closed';
   const domain = (config.mailDomains && config.mailDomains[0]) || 'postern.example';
   const errorBox = h('p', { class: 'form-error', role: 'alert', hidden: true });
+  const help = registered.navItems().find((n) => n.id === 'help') || null;
 
   const passkeyBtn = button('Sign in with a passkey', { iconName: 'passkey', size: 'lg', block: true, onClick: (e, btn) => runBusy(btn, async () => {
     errorBox.hidden = true;
@@ -57,7 +59,9 @@ export function welcomeScreen({ scope }) {
   return h('div', { class: 'welcome' },
     testBanner(),
     h('header', { class: 'welcome-head' },
-      h('span', { class: 'brand' }, logoMark({ size: 30 }), h('span', { class: 'brand-name' }, 'Postern')),
+      h('span', { class: 'brand' }, logoMark({ size: 30 }), h('span', { class: 'brand-name' }, appName())),
+      // Help is a feature file. Its pages are open to people without an account.
+      help ? h('a', { class: 'btn btn-quiet welcome-help', href: help.path, 'data-link': true }, icon('info', { size: 18 }), h('span', null, 'Help')) : null,
     ),
     h('main', { class: 'welcome-main', id: 'main', tabIndex: -1 },
       h('div', { class: 'welcome-copy' },

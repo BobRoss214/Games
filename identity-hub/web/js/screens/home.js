@@ -8,7 +8,7 @@ import { button, chips, emptyState, skeletonRows, pageHeader, copyButton } from 
 import { rowItems, itemRows, matchesSearch } from '../ui/rows.js';
 import { openNewChooser, openNewAlias, openNewInbox, openGetNumber } from '../ui/items.js';
 import { openNewIdentity } from '../ui/identity.js';
-import { forwardingOf, identityItem } from '../lib/identities.js';
+import { forwardingOf, identityItem, identityState } from '../lib/identities.js';
 import { fullName } from '../lib/persona/index.js';
 import { listMessages, personShort } from '../lib/mail.js';
 import { listTexts } from '../lib/phone.js';
@@ -17,6 +17,7 @@ import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
 import { why, whyParts, whyGroup } from '../ui/why.js';
 import { codeChip } from '../ui/code.js';
 import { findCode } from '../lib/codes.js';
+import { doorMark, colourDot, stateWord } from '../ui/identitylook.js';
 
 function statTile({ label, value, note, href, loading }) {
   return h('a', { class: 'stat', href, 'data-link': true },
@@ -71,15 +72,17 @@ export function homeScreen({ scope }) {
     const unread = members.reduce((n, m) => n + (m.unread || 0), 0);
     const forwards = forwardingOf(numbers.map((m) => m.raw), state);
     const marks = registered.rowBadges('identity', identityItem(g));
+    const door = identityState(g, { aliases: aliases.map((m) => m.raw), numbers: numbers.map((m) => m.raw) });
     return h('li', null,
       h('a', { class: 'identity-card', href: `/identities/${g.id}`, 'data-link': true, dataset: { identity: g.id } },
         h('span', { class: 'identity-card-top' },
-          icon('folder', { size: 18 }),
+          doorMark(door),
+          colourDot(g),
           h('span', { class: 'identity-card-name truncate' }, g.name),
           unread > 0 ? h('span', { class: 'badge', 'aria-label': `${unread} unread` }, unread > 99 ? '99+' : String(unread)) : null,
         ),
         g.note ? h('span', { class: 'identity-card-note' }, g.note) : null,
-        h('span', { class: 'identity-card-count' }, members.length ? `${plural(aliases.length, 'address', 'addresses')}, ${plural(numbers.length, 'number')}` : 'Empty'),
+        h('span', { class: 'identity-card-count' }, stateWord(door), ' · ', members.length ? `${plural(aliases.length, 'address', 'addresses')}, ${plural(numbers.length, 'number')}` : 'Empty'),
         forwards.length || marks.length ? h('span', { class: 'identity-card-marks' },
           forwards.length ? h('span', { class: 'tag tag-warn identity-card-forward' }, icon('phone', { size: 12 }), 'Forwards to real phone') : null,
           marks,

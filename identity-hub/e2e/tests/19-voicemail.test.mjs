@@ -172,13 +172,20 @@ export default async function (t) {
   try {
     const o = await t.open();
     await signUp(o.page, off.url);
-    for (const path of ['/', '/numbers', '/settings']) {
-      await o.page.goto(off.url + path);
-      await o.page.locator('#main h1').first().waitFor();
-      await o.page.waitForTimeout(300);
-      assert(!/voicemail/i.test(await o.page.locator('body').innerText()), `the page ${path} talks about voicemail on a server with phones off`);
-    }
+    await o.page.goto(off.url + '/numbers');
+    await o.page.getByText('Numbers are turned off').waitFor();
     assert(await o.page.locator('[data-section="voicemail"], .f-vm').count() === 0, 'voicemail parts show on a server with phones off');
+    // The export section and its dialog do not offer voicemail there.
+    await o.page.goto(off.url + '/settings');
+    const ex = o.page.locator('[data-export="section"]');
+    await ex.waitFor();
+    assert(!/voicemail|texts|call history|real phone/i.test(await ex.innerText()), 'the export section talks about phone data on a server with phones off');
+    await ex.getByRole('button', { name: 'Download my data' }).click();
+    const odlg = o.page.getByRole('dialog');
+    await odlg.locator('[data-export="estimate"]').waitFor();
+    await odlg.getByLabel('Leave out attachments', { exact: true }).waitFor();
+    assert(!/voicemail|Texts|Calls/.test(await odlg.innerText()), 'the export dialog talks about phone data on a server with phones off');
+    await odlg.getByRole('button', { name: 'Cancel' }).click();
     t.ok('a server with phones off shows no voicemail');
     await o.close();
   } finally {

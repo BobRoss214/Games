@@ -4,11 +4,10 @@
 // an explanation asks the server for nothing and saves nothing ("do not track what I read").
 // No navigation. Works with the keyboard: Enter or Space opens and closes, Escape closes.
 import { h, uid } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { appName } from '../lib/store.js';
 import { icon } from './icons.js';
 import { WHY } from '../help/content.js';
 
-const appName = () => { const c = store.get('config'); return (c && c.appName) || 'Postern'; };
 const words = (text) => String(text).split('{app}').join(appName());
 
 // Returns { button, panel } for the places where the two cannot sit in one box:

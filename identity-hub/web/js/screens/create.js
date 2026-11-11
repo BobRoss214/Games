@@ -2,7 +2,7 @@
 // The account is made on the server only after the person confirms that the
 // recovery key is saved. Before that, nothing is stored anywhere.
 import { h, replace } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { store, appName } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
 import { icon } from '../ui/icons.js';
 import { button, runBusy, callout, checkbox, copyButton, field } from '../ui/components.js';
@@ -108,14 +108,14 @@ export function createScreen({ scope }) {
     const download = button('Download', { iconName: 'download', onClick: () => {
       const day = new Date().toISOString().slice(0, 10);
       const lines = [
-        'Postern recovery key', '', keyText, '',
+        `${appName()} recovery key`, '', keyText, '',
         'This key is the only way to get back in if you lose your passkey.',
-        'Postern cannot reset it. Anyone who has this key can open your account.',
+        `${appName()} cannot reset it. Anyone who has this key can open your account.`,
         'Keep this file private, for example in a password manager.', '',
         `Sign in at: ${location.origin}`, `Saved on: ${day}`, '',
       ];
       const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/plain' }));
-      const a = h('a', { href: url, download: 'postern-recovery-key.txt', hidden: true });
+      const a = h('a', { href: url, download: `${appName().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'app'}-recovery-key.txt`, hidden: true });
       document.body.appendChild(a);
       a.click();
       a.remove();

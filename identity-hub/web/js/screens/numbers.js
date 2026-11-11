@@ -73,7 +73,7 @@ export async function openLinkPhone() {
     openDialog({
       title: 'Get a number first', size: 'sm',
       content: (api) => h('div', { class: 'stack' },
-        h('p', { class: 'read' }, 'We send the code to your real phone from one of your Postern numbers. You have no active number yet.'),
+        h('p', { class: 'read' }, 'We send the code to your real phone from one of your numbers here. You have no active number yet.'),
         h('div', { class: 'dialog-actions' }, button('Cancel', { onClick: () => api.close() }), button('Get a number', { kind: 'primary', onClick: () => { api.close(); openGetNumber(); } })),
       ),
     });

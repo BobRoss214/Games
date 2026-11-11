@@ -10,6 +10,10 @@ export default function screen({ params }) {
     pageHeader({ title: 'Test place' }),
     word,
     h('p', null, h('a', { href: '/e2e/pear', 'data-link': true }, 'Go to pear')),
+    h('p', null, h('a', { href: `${location.pathname}#e2e-far`, 'data-link': true }, 'Go to the far part')),
+    h('div', { style: { height: '200vh' } }),
+    h('h2', { id: 'e2e-far' }, 'The far part'),
+    h('div', { style: { height: '100vh' } }),
   );
   return { el, update(p) { word.textContent = p.word || 'none'; } };
 }

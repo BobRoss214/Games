@@ -11,20 +11,20 @@ For everybody who adds a feature to the web app (`web/`). Read it before the fir
 ## 1. A feature in three steps
 
 ```js
-// web/js/features/help.js  (small; loads with the app; registers only)
+// web/js/features/stats.js  (small; loads with the app; registers only)
 import { registerRoute, registerNavItem } from '../lib/registry.js';
-registerRoute('/help', () => import('./help/screen.js'), { signedOut: true, title: 'Help' });
-registerNavItem({ id: 'help', label: 'Help', icon: 'info', path: '/help', order: 80 });
+registerRoute('/stats', () => import('./stats/screen.js'), { title: 'My stats' });
+registerNavItem({ id: 'stats', label: 'My stats', icon: 'group', path: '/stats', order: 60 });
 
-// web/js/features/help/screen.js  (loads when somebody opens /help)
+// web/js/features/stats/screen.js  (loads when somebody opens /stats)
 import { h } from '../../lib/dom.js';
 import { pageHeader } from '../../ui/components.js';
 export default function screen({ params, scope }) {
-  return h('div', { class: 'page page-narrow' }, pageHeader({ title: 'Help' }), h('div', { class: 'prose' }, h('p', null, 'Text.')));
+  return h('div', { class: 'page page-narrow' }, pageHeader({ title: 'My stats' }), h('div', { class: 'prose' }, h('p', null, 'Text.')));
 }
 
 // web/js/features/index.js: one line per feature, nothing else
-import './help.js';
+import './stats.js';
 ```
 Register at the top level of the file, not later. Keep heavy code in files that load on demand.
 
@@ -36,7 +36,7 @@ Register at the top level of the file, not later. Keep heavy code in files that 
 | Clean-up with the screen | `scope.add(fn)`, `scope.listen(target, type, fn)`, `scope.timer(fn, ms)`, `scope.disposed` | given to your screen |
 | A part that paints again | `region(scope, store, ['aliases'], (state) => node or null)` | `lib/dom.js` |
 | App data | `store.get('aliases')`, `store.subscribe(keys, fn)` (returns the function that stops it). Keys: `phase`, `config`, `account`, `balance`, `mailboxes`, `aliases`, `numbers`, `phones`, `identities`, `prefs`. A list is `null` while it loads. | `lib/store.js` |
-| Go to a screen | `navigate('/help')`, or `h('a', { href: '/help', 'data-link': true }, 'Help')` | `lib/router.js` |
+| Go to a screen | `navigate('/help')`, or `h('a', { href: '/help', 'data-link': true }, 'Help')`. With `#id` at the end the page moves to that element and puts the focus on it; a screen that paints later calls `jumpToAnchor()` itself. After a screen change the focus goes to the `h1` of the new screen. | `lib/router.js` |
 | Call the server | `api.get/post/put/patch/del(path, body)`; throws `ApiError { status, code, message }` | `lib/api.js` |
 | Show an error | `reportError(err)`: a toast; a 402 opens "Add funds to continue" | `ui/components.js` |
 | A button that waits | `button('Save', { kind: 'primary', onClick: (e, btn) => runBusy(btn, async () => { ... }) })` | `ui/components.js` |
@@ -48,6 +48,9 @@ Register at the top level of the file, not later. Keep heavy code in files that 
 | "…" menu | `menuButton({ label, items: () => [{ label, icon, onSelect, danger }, 'separator'] })` | `ui/menu.js` |
 | Page parts | `pageHeader({ title, lede, actions, back })`, `section({ title, lede, actions }, ...nodes)`, `callout('info' or 'warn' or 'danger' or 'ok', title, ...nodes)`, `tag('Off', 'warn')` | `ui/components.js` |
 | Icons | `icon('mail', { size: 18, label: 'Email' })`. The names are in `ui/icons.js`. Ask the owner for a new one. | `ui/icons.js` |
+| "Why?" | `why('alias-off')`: a small button that opens a short explanation in place (no request, nothing saved). The words are `WHY` in `help/content.js`. `whyParts(key)` gives `{ button, panel }` to place apart; `whyGroup([[key], [key]])` puts buttons on one line. | `ui/why.js` |
+| A code with "Copy" | `codeIn(text, subject)` gives the "Code 482913 · Copy" chip or `null`; `codeChip(found)` | `ui/code.js` |
+| The product name | `appName()`, never the word "Postern" in a string: the person who runs the server can change the name | `lib/store.js` |
 | Format | `money(credits)`, `shortTime(at)`, `fullTime(at)`, `dayText('2026-11-11')`, `phoneText(e164)`, `plural(n, 'message')`, `bytesText(n)`, `duration(seconds)` | `lib/format.js` |
 
 **Loading, empty, error.** Every list has all three. Never an empty white box.
@@ -68,6 +71,17 @@ if (!list.length) return emptyState({ title: 'No mail yet', text: 'Mail to this 
 | On one identity | `identity.extra.myField` | `setIdentityExtra(id, { myField: value })` (`lib/identities.js`) |
 | For the account (max 256 KB for one key, 50 keys) | `await vaultGet('my-key')` | `await vaultChange('my-key', (old) => next)` (`lib/session.js`); key: small letters, digits, `-` |
 
+Extra fields that exist (do not reuse a name; tell the owner before you add one):
+
+| Field | On | Value | Written by |
+|---|---|---|---|
+| `senders` | alias | list of main domains that the alias knows, 50 at most: `["shop.example"]` | the "possibly leaked" watch (`lib/leakwatch.js`: `knownSenders(alias)`, `expectSender(alias, domain)`) |
+| `username` | alias, number, identity | the username of the "Random identifiers generator" card | `ui/persona.js` (`cleanUsername(value)` checks it) |
+| `colour` | identity | one name of `COLOURS` (`red`, `orange`, `gold`, `green`, `teal`, `blue`, `purple`, `pink`) | `setIdentityColour(id, name)` |
+| `events` | identity | history, 50 at most, oldest first: `[{ day: 'YYYY-MM-DD', type }]`, types `made`, `first-mail`, `turned-off`, `turned-on`, `burned` | `addIdentityEvent(id, type)`; read with `eventsOf(identity)` |
+| `burned` | identity | `{ day: 'YYYY-MM-DD' }` when the identity is burned; the door then shows "Burned" (`identityState(identity)`) | the burn feature |
+
+The hints of "possibly leaked" are in memory only: `store.get('leaks')` = `{ [aliasId]: [{ domain, fromAddress, firstAt, lastAt, count, messageId }] }`.
 Do not write to `label`, `note`, `persona`, `identityId`: they have their own functions (`updateAlias`, `setItemPersona`, `setItemIdentity`).
 Check what you read (`typeof`, length): another version of the app may have written it. Small one-word preferences: `setPref(key, value)`, read `store.get('prefs')`.
 Other helpers: `findAlias(id)`, `findNumber(id)`, `findMailbox(id)`, `findIdentity(id)`, `membersOf(identityId)`, `listMessages({ addressIds })`, `getMessage(id)`, `listTexts(numberId)`, `listCalls(numberId)`.
@@ -81,11 +95,15 @@ For the kind `identity`: `{ kind, id, name, note, persona, extra, raw }`.
 ```js
 // A screen. The file loads on first use. signedOut: true = also without an account (then on a plain page).
 // Options: signedOut, title (browser tab), nav (id of the menu item to mark; found from the path when left out).
-registerRoute('/stats/:kind', () => import('./stats/screen.js'), { title: 'My numbers' });
+registerRoute('/stats/:kind', () => import('./stats/screen.js'), { title: 'My stats' });
+// "Do not track what I read": a file request tells the server which page was opened. For such a page,
+// import the screen at the top of your file and let the loader give the loaded function.
+registerRoute('/help/:page', () => helpScreen, { signedOut: true, title: 'Help' });
 
 // A place in the sidebar. Orders: Home 10, Mail 20, Aliases 30, Numbers 40, Funds 50, Settings 90.
-// Phone: the bottom bar holds five places. With more, the fifth is "More" and lists the rest.
-registerNavItem({ id: 'stats', label: 'My numbers', icon: 'group', path: '/stats', order: 60 });
+// Phone: the bottom bar holds five places. With more, it shows the first four and "More"; "More" lists
+// the rest (Funds, Help, …, Settings). more: true = always under "More" on a phone.
+registerNavItem({ id: 'stats', label: 'My stats', icon: 'group', path: '/stats', order: 60, more: true });
 
 // One more entry in the "…" menu of a row. kind: 'alias' | 'number' | 'inbox' | 'identity'.
 // danger: true puts it under the line, next to Delete. For an identity the entry is in "More" on its screen.
@@ -119,7 +137,9 @@ registerNumberSetting({ id: 'voicemail', title: 'Voicemail', order: 25, render: 
 registerGlobalKey('/', () => openQuickJump());
 ```
 `render` of a number setting runs again each time the number changes: keep it cheap, and do not fetch in it.
-Working examples: `features/first-steps.js` (Home section), `features/test-tools.js` (Settings section), `e2e/fixtures/zz-e2e.js` (every point).
+The feature files load before the sign-in state is known. If one of them fails to load, the app starts without all of them and says so.
+Working examples: `features/first-steps.js`, `features/home-warnings.js` (Home sections), `features/code-helper.js` (panel, text part),
+`features/leak-hint.js` (row mark, panel), `features/test-tools.js` (Settings section), `e2e/fixtures/zz-e2e.js` (every point).
 
 ## 4. The look
 
@@ -161,13 +181,20 @@ Warm paper, ink, one deep green. Calm and dense. It must not look like a differe
 
 Simple English for people who are not technical. Short sentences. Active voice. One word for one thing, everywhere.
 
+**Names are very simple and say what the thing is or does.** (The owner's rule.)
+- A name of a feature, a button, a page or a state is short and plain, with no jargon: "Stop after the first mail", not "one-shot";
+  "Delete old messages automatically", not "retention"; "Used up", not "consumed".
+- Next to a control: one line of explanation at most. A longer explanation goes behind a "why?" button, into Help, or into the tutorial.
+- The names that the owner chose stay exactly as they are: "Random identifiers generator", "Identity", "Who leaked me",
+  "Possibly leaked", "Test my recovery key", "Download my data", "My stats", "Burn".
+
 | Say | Meaning | Do not say |
 |---|---|---|
 | inbox | a place that holds mail, with its own address | mailbox, account, folder |
 | alias | an extra address that delivers to an inbox | mask, forwarder, burner address |
 | number | a phone number from this service | VoIP number, line, DID |
 | real phone | the person's own phone, linked for forwarding | device, mobile, verified number |
-| identity | a named **group** of aliases and numbers. Nothing else. | persona, profile, account, group (alone) |
+| identity | a named **group** of aliases and numbers. Nothing else. Its state: On, Off, Burned. | persona, profile, account, group (alone) |
 | random identifiers | the generated name and address; the card is the "Random identifiers generator" | made-up details, identity, persona, fake identity, profile |
 | label | the private name of an item | name, title, tag |
 | recovery key | the long key that opens the account | password, seed, secret, backup code |
@@ -175,6 +202,9 @@ Simple English for people who are not technical. Short sentences. Active voice. 
 | funds / Add funds | the screen and the act of paying in | top up, deposit, wallet, recharge |
 | credit, balance | money on the account: "$12.40 of credit", "Balance" | credits, tokens, coins, points |
 | turn on / turn off | an alias, forwarding, a setting | enable, disable, activate, toggle, mute |
+| used up | an alias that stopped after its one mail ("Stop after the first mail", "One mail only") | one-shot, burned, expired, consumed |
+| possibly leaked | an alias that got mail from a sender it does not know. Always with "possibly". | leaked, compromised, breached |
+| code | a sign-up or login code found in a text or an email | OTP, token, 2FA code, PIN |
 | paused | an inbox or a number that waits for funds | suspended, frozen, inactive, expired |
 | delete | remove for good: mail, an alias, an inbox, an identity, the account | remove (for these), erase, destroy, trash |
 | remove | take away a link, not data: a passkey, a real phone, random identifiers | delete (for these), unlink, revoke |
@@ -246,6 +276,7 @@ export default async function (t) {
 - Helpers (`e2e/lib.mjs`): `signUp`, `signIn(page, base, key)`, `signOut`, `seedAccount`, `addCredit(page, dollars)`, `lastPhoneCode(page)`,
   `inApp(page, ({ data, phone, api, store, mail, identities, session }, arg) => ..., arg)` runs code inside the app with its own modules.
 - A test fails when the page logs an error. An error that the test causes on purpose: `s.allow(/pattern/)`.
+  Before a test counts requests ("this makes no request"), call `await settle(page)`: the app then finished its background work.
   Find things by role and name (`getByRole('button', { name: 'Delete alias' })`), as a person does. No screenshots in the suite.
 - Other server settings for one file: `export const server = { PHONE_PROVIDER: 'off' };` gives that file its own server.
 - Every feature needs: one test on a desktop size, one check at 390px (no sideways scroll, 44px targets), one path with the keyboard only.

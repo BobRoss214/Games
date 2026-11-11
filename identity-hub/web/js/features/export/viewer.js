@@ -180,7 +180,7 @@ export default function openExportScreen({ scope }) {
       return h('div', { class: 'stack stack-6' },
         h('section', { class: 'stack stack-3' },
           h('h2', { class: 'section-title' }, 'In this file'),
-          h('dl', { class: 'kv kv-left sheet sheet-pad f-export-counts', dataset: { export: 'counts' } }, counts.map(([label, n]) => [h('dt', null, label), h('dd', { class: 'mono' }, String(n))])),
+          h('dl', { class: 'sheet sheet-pad f-export-counts', dataset: { export: 'counts' } }, counts.map(([label, n]) => h('div', null, h('dt', { class: 'small muted' }, label), h('dd', { class: 'mono strong' }, String(n))))),
         ),
         idx.notIncluded.length ? h('section', { class: 'stack stack-3' },
           h('h2', { class: 'section-title' }, 'Not in this file'),
@@ -306,6 +306,7 @@ export default function openExportScreen({ scope }) {
         const subject = h('h2', { class: 'message-subject', tabIndex: -1 }, m.subject || '(no subject)');
         const bodySlot = h('div', { class: 'mail-body' }, h('p', { class: 'muted', role: 'status' }, 'Opening the message…'));
         const inbox = inboxById.get(m.inboxId);
+        const via = m.addressId ? aliasById.get(m.addressId) : null;
         const line = (label, value) => (value ? h('div', { class: 'head-line' }, h('dt', null, label), h('dd', { class: 'break' }, value)) : null);
         const files = m.attachments.length ? h('section', { class: 'message-atts' },
           h('h3', { class: 'message-atts-title' }, plural(m.attachments.length, 'attachment')),
@@ -336,7 +337,7 @@ export default function openExportScreen({ scope }) {
               h('dl', { class: 'message-lines' },
                 line('To', m.to.map(personText).filter(Boolean).join(', ')),
                 line('Cc', m.cc.map(personText).filter(Boolean).join(', ')),
-                line('Via', m.deliveredTo && m.direction === 'in' ? m.deliveredTo : ''),
+                line(m.direction === 'out' ? 'From' : 'Via', via ? `${via.label ? `${via.label}, ` : ''}${via.address}` : (m.direction === 'in' && m.deliveredTo && !m.to.some((p) => p.address === m.deliveredTo) ? m.deliveredTo : '')),
                 line('In', inbox ? (inbox.label || inbox.address) : ''),
               ),
             ),
@@ -442,7 +443,7 @@ export default function openExportScreen({ scope }) {
       const noteOf = (x) => (x.note ? h('p', { class: 'small muted break' }, x.note) : null);
       const block = (title, list, empty, make) => h('section', { class: 'stack stack-3' },
         h('h2', { class: 'section-title' }, title),
-        list.length ? h('div', { class: 'sheet item-sheet' }, h('ul', { class: 'item-list' }, list.map(make))) : h('p', { class: 'muted' }, empty),
+        list.length ? h('div', { class: 'sheet item-sheet' }, h('ul', { class: 'item-list f-export-items' }, list.map(make))) : h('p', { class: 'muted' }, empty),
       );
       return h('div', { class: 'stack stack-6', dataset: { export: 'items' } },
         block('Inboxes', idx.inboxes, 'No inboxes in this file.', (m) => row('inbox', m.address, [
@@ -475,7 +476,7 @@ export default function openExportScreen({ scope }) {
       const addressOf = (id) => { const a = aliasById.get(id); if (a) return a.address; const m = inboxByAddressId.get(id); return m ? m.address : ''; };
       return h('div', { class: 'stack stack-6', dataset: { export: 'blocks' } }, [...groups].map(([addressId, list]) => h('section', { class: 'stack stack-3' },
         h('div', null, h('h2', { class: 'section-title' }, 'Blocked on'), h('p', { class: 'mono small break' }, addressOf(addressId) || 'An address that is not in the file')),
-        h('div', { class: 'sheet item-sheet' }, h('ul', { class: 'item-list' }, list.map((b) => h('li', { class: 'phone-row' },
+        h('div', { class: 'sheet item-sheet' }, h('ul', { class: 'item-list f-export-items' }, list.map((b) => h('li', { class: 'phone-row' },
           h('span', { class: 'item-icon' }, icon(b.kind === 'domain' ? 'globe' : 'mail', { size: 18 })),
           h('div', { class: 'item-main' }, h('span', { class: 'item-value mono break f-export-value' }, b.value), h('div', { class: 'item-sub' }, h('span', { class: 'item-label' }, b.kind === 'domain' ? 'Every address of this domain' : 'One address'))),
           h('span', null),

@@ -1,8 +1,8 @@
 // Start of the app: load settings, find out the sign-in state, set up routes.
 import { h, replace } from './lib/dom.js';
-import { store } from './lib/store.js';
+import { store, appName } from './lib/store.js';
 import { api, setSignedOutHandler } from './lib/api.js';
-import { defineRoutes, setOutlet, setResolver, startRouter, render, navigate } from './lib/router.js';
+import { defineRoutes, setOutlet, setResolver, setPhaseKey, startRouter, render, navigate, jumpToAnchor } from './lib/router.js';
 import { onRoute, runGlobalKey, registered } from './lib/registry.js';
 import { boot, dropLocal } from './lib/session.js';
 import { loadAll, startEvents, stopEvents } from './lib/data.js';
@@ -81,7 +81,9 @@ function featureScreen(route) {
       const result = fn({ params: lastParams, scope });
       inner = result instanceof Node ? null : result;
       loaded = true;
+      const waited = document.activeElement && document.activeElement.id === 'main'; // the focus waited on the frame for this screen
       replace(slot, result instanceof Node ? result : result.el);
+      if (!jumpToAnchor() && waited) focusScreen();
     }).catch((err) => {
       if (scope.disposed) return;
       replace(slot, h('div', { class: 'page page-narrow' }, loadError('This page did not load. Check your connection, then try again.', () => { replace(slot, h('div', { class: 'page page-narrow' }, skeletonRows(4))); load(); })));
@@ -110,6 +112,9 @@ function navFor(route) {
   return item ? item.id : '';
 }
 onRoute((r) => defineRoutes([{ path: r.path, name: `feature:${r.path}`, title: r.title, layout: 'auto', nav: () => navFor(r), signedOut: r.signedOut, screen: featureScreen(r) }]));
+
+// The same address shows a different screen when the sign-in state changes.
+setPhaseKey(() => store.get('phase'));
 
 // Which screen may show in which sign-in state.
 setResolver((m) => {
@@ -141,8 +146,18 @@ setOutlet((m, el) => {
   }
   root.removeAttribute('aria-busy');
   const main = document.getElementById('main');
-  if (main && hadFocus && !main.contains(document.activeElement)) main.focus({ preventScroll: true });
+  if (main && hadFocus && !main.contains(document.activeElement)) focusScreen();
 });
+
+// After a screen change the keyboard focus goes to the title of the new screen (its h1), so that
+// a screen reader says where the person is. A screen with no title yet gets the focus on its frame.
+function focusScreen() {
+  const main = document.getElementById('main');
+  if (!main) return;
+  const title = main.querySelector('h1');
+  if (title && !title.hasAttribute('tabindex')) title.tabIndex = -1;
+  (title || main).focus({ preventScroll: true });
+}
 
 // What runs when the sign-in state changes.
 let running = false;
@@ -181,7 +196,7 @@ window.addEventListener('offline', () => toast('You are offline. Changes do not 
 
 function fatal(message, retry) {
   replace(root, bareLayout(h('div', { class: 'stack stack-3' },
-    h('h1', null, 'Postern did not start'),
+    h('h1', null, `${appName()} did not start`),
     h('p', { class: 'muted' }, message),
     h('div', null, button('Try again', { kind: 'primary', iconName: 'refresh', onClick: retry })),
   )));

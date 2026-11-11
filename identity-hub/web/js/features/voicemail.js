@@ -53,7 +53,7 @@ function voicemailSetting({ number, scope }) {
     const balance = store.get('balance') || 0;
     const control = on === undefined
       ? h('span', { class: 'small muted', role: 'status' }, 'Loading…')
-      : toggle({ checked: on, label: 'Voicemail', withText: true, onChange: async (next) => {
+      : toggle({ checked: on, label: 'Take voicemail', withText: true, onChange: async (next) => {
         let res;
         try {
           res = await api.patch(`/api/numbers/${number.id}`, { voicemail: next });

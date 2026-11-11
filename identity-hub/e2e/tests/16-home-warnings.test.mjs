@@ -40,10 +40,13 @@ export default async function (t) {
   const renew = slot.locator('[data-warning="renewals"]');
   await renew.getByText('Your balance does not cover the next renewals').waitFor();
   const text = (await renew.textContent()).replace(/\s+/g, ' ');
-  assert(text.includes('2 renewals in the next 7 days cost $5.00. Your balance is $3.00.'), 'the total or the balance is wrong: ' + text);
+  assert(text.includes(`2 renewals in the next 7 days cost $5.00, the first on ${dayText(dueBox)}. Your balance is $3.00.`), 'the total, the first day or the balance is wrong: ' + text);
   assert(text.includes(`Inbox Personal: $1.00 on ${dayText(dueBox)}`), 'the inbox is not named with its price and day: ' + text);
   assert(text.includes(`${shown.n1} (Selling the bike): $4.00 on ${dayText(dueNumber)}`), 'the number is not named with its price and day: ' + text);
-  assert(text.includes(`The first one is on ${dayText(dueBox)}.`), 'the day of the first renewal is missing: ' + text);
+  // the long explanation is behind a "why?" button, not on the screen
+  await renew.getByRole('button', { name: 'What happens if I do not add funds?' }).click();
+  await renew.getByText('When your credit is too low to renew, the inbox or the number is paused.').waitFor();
+  await renew.getByRole('button', { name: 'What happens if I do not add funds?' }).click();
   assert(text.indexOf('Inbox Personal') < text.indexOf(shown.n1), 'the earliest renewal is not first');
   assert(await slot.locator('[data-warning="paused"]').count() === 0, 'a paused warning shows for active items');
   const above = await page.evaluate(() => document.querySelector('.home-slot[data-section="warnings"]').getBoundingClientRect().bottom <= document.querySelector('.stats').getBoundingClientRect().top);
@@ -71,11 +74,11 @@ export default async function (t) {
   sql("UPDATE numbers SET status = 'suspended', paid_until = ? WHERE id = ?", numberPaid, ids.n2);
   await reload();
   const paused = slot.locator('[data-warning="paused"]');
-  await paused.getByText('2 things are paused').waitFor();
+  await paused.getByText('2 things are paused: the balance was too low').waitFor();
   const ptext = (await paused.textContent()).replace(/\s+/g, ' ');
   assert(ptext.includes('Inbox Side project is paused. It receives no mail.'), 'the paused inbox is not explained: ' + ptext);
   assert(ptext.includes(`${shown.n2} (Deliveries) is paused. It receives no texts and no calls.`), 'the paused number is not explained: ' + ptext);
-  assert(ptext.includes(`It is released on ${dayText(numberPaid + graceDays * DAY)} if the balance stays too low.`), 'the release day is wrong: ' + ptext);
+  assert(ptext.includes(`It is released on ${dayText(numberPaid + graceDays * DAY)}.`), 'the release day is wrong: ' + ptext);
   assert(!ptext.split('Number ')[0].includes('released'), 'an inbox is said to be released');
   await paused.getByRole('link', { name: 'Add funds' }).waitFor();
   // a paused item is not counted as a renewal

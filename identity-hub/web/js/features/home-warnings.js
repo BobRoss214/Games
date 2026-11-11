@@ -8,6 +8,7 @@ import { homeWarnings, WARN_DAYS } from '../lib/warnings.js';
 import { money, dayText, phoneText, plural } from '../lib/format.js';
 import { callout, linkButton } from '../ui/components.js';
 import { graceDays } from '../lib/data.js';
+import { why } from '../ui/why.js';
 
 const day = (at) => dayText(new Date(at * 1000).toISOString().slice(0, 10));
 
@@ -32,24 +33,22 @@ function warnings(state) {
   const parts = [];
 
   if (w.paused.length) {
-    parts.push(h('div', { dataset: { warning: 'paused' } }, callout('warn', w.paused.length === 1 ? 'One thing is paused' : `${w.paused.length} things are paused`,
+    parts.push(h('div', { dataset: { warning: 'paused' } }, callout('warn', w.paused.length === 1 ? 'Paused: the balance was too low' : `${w.paused.length} things are paused: the balance was too low`,
       h('ul', { class: 'warn-list' }, w.paused.map((p) => h('li', null,
         nameOf(p.kind, p.id, state),
-        p.kind === 'inbox' ? ' is paused. It receives no mail. Mail to it and to its aliases is refused. Your old mail is kept.'
-          : [' is paused. It receives no texts and no calls.', p.releaseAt ? ` It is released on ${day(p.releaseAt)} if the balance stays too low. Then the number and its texts are gone.` : ''],
+        p.kind === 'inbox' ? ' is paused. It receives no mail.'
+          : [' is paused. It receives no texts and no calls.', p.releaseAt ? ` It is released on ${day(p.releaseAt)}.` : ''],
       ))),
-      h('p', null, 'The balance was too low to renew. Add funds to turn ', w.paused.length === 1 ? 'it' : 'them', ' on again.'),
-      addFunds(),
+      h('div', { class: 'row row-wrap warn-actions' }, addFunds(), why('balance', { text: 'What does paused mean?' })),
     )));
   }
 
   if (w.renewals) {
     const r = w.renewals;
     parts.push(h('div', { dataset: { warning: 'renewals' } }, callout('warn', 'Your balance does not cover the next renewals',
-      h('p', null, `${plural(r.items.length, 'renewal')} in the next ${WARN_DAYS} days ${r.items.length === 1 ? 'costs' : 'cost'} `, h('span', { class: 'mono strong' }, money(r.total)), '. Your balance is ', h('span', { class: 'mono strong' }, money(state.balance)), '.'),
+      h('p', null, `${plural(r.items.length, 'renewal')} in the next ${WARN_DAYS} days ${r.items.length === 1 ? 'costs' : 'cost'} `, h('span', { class: 'mono strong' }, money(r.total)), `, the first on ${day(r.firstAt)}. Your balance is `, h('span', { class: 'mono strong' }, money(state.balance)), '.'),
       h('ul', { class: 'warn-list' }, r.items.map((it) => h('li', null, nameOf(it.kind, it.id, state), ': ', h('span', { class: 'mono' }, money(it.cost)), ` on ${day(it.dueAt)}`))),
-      h('p', null, `The first one is on ${day(r.firstAt)}. What the balance does not cover is paused: a paused inbox receives no mail, a paused number receives no texts and no calls.`),
-      addFunds(),
+      h('div', { class: 'row row-wrap warn-actions' }, addFunds(), why('balance', { text: 'What happens if I do not add funds?' })),
     )));
   }
   return h('div', { class: 'stack stack-3' }, parts);

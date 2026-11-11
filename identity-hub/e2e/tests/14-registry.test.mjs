@@ -31,6 +31,10 @@ export default async function (t) {
   assert(await page.locator('.sidebar').count() === 0, 'a signed-out feature screen shows the shell');
   await page.getByRole('link', { name: 'Sign in' }).waitFor();
   assert(await page.title() === 'Open test place · Postern', 'the title of a feature screen is wrong: ' + await page.title());
+  // the start page has a link to Help (a feature file with pages for everybody)
+  await page.goto(t.base + '/');
+  await page.locator('.welcome-head').getByRole('link', { name: 'Help' }).click();
+  await page.waitForFunction(() => location.pathname.startsWith('/help'));
   await page.goto(t.base + '/e2e/apple');
   await page.getByRole('heading', { name: 'Sign in', level: 1 }).waitFor();
   assert(new URL(page.url()).pathname === '/sign-in', 'a feature screen that needs an account opened without one');
@@ -48,10 +52,10 @@ export default async function (t) {
   assert(await page.evaluate(() => window.e2eScreenLoads || 0) === 0, 'the screen file loaded before its path was opened');
   const navLink = page.locator('.sidebar .nav-item', { hasText: 'Test place' });
   // Other feature files may add places of their own (Help): look at the order of the ones this test knows.
-  const KNOWN = ['Home', 'Mail', 'Aliases', 'Numbers', 'Funds', 'Test place', 'Settings', 'More'];
+  const KNOWN = ['Test more', 'Home', 'Mail', 'Aliases', 'Numbers', 'Funds', 'Test place', 'Settings', 'More'];
   const known = (list) => list.map((x) => x.replace(/\d+/g, '')).filter((x) => KNOWN.includes(x)).join('|');
   const order = await page.locator('.sidebar .nav-item').allTextContents();
-  assert(known(order) === 'Home|Mail|Aliases|Numbers|Funds|Test place|Settings', 'the menu order is wrong: ' + order.join('|'));
+  assert(known(order) === 'Test more|Home|Mail|Aliases|Numbers|Funds|Test place|Settings', 'the menu order is wrong: ' + order.join('|'));
   await navLink.click();
   await page.getByRole('heading', { name: 'Test place', level: 1 }).waitFor();
   assert(await navLink.getAttribute('aria-current') === 'page', 'the menu item of the feature is not marked');
@@ -65,6 +69,44 @@ export default async function (t) {
   assert(await page.locator('.e2e-word').getAttribute('data-kept') === 'yes', 'the screen was made again in place of update()');
   assert(await navLink.getAttribute('aria-current') === 'page', 'the menu item is not marked on a deeper path');
   t.ok('signed in: menu item in order, screen file loads on demand, params update in place');
+
+  // ---- the focus goes to the title of the new screen; "#id" moves the page and the focus ----
+  await page.goto(t.base + '/e2e');
+  await page.getByRole('heading', { name: 'Test place', level: 1 }).waitFor();
+  await page.locator('.sidebar .nav-item', { hasText: 'Funds' }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('heading', { name: 'Funds', level: 1 }).waitFor();
+  assert(await page.evaluate(() => document.activeElement.tagName + ':' + document.activeElement.textContent) === 'H1:Funds', 'the focus is not on the title of the new screen');
+  await navLink.focus();
+  await page.keyboard.press('Enter');
+  await page.locator('.e2e-word').waitFor();
+  await page.waitForFunction(() => document.activeElement && document.activeElement.tagName === 'H1' && document.activeElement.textContent === 'Test place');
+  await page.goto(t.base + '/e2e/apple#e2e-far');
+  await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'e2e-far');
+  assert(await page.evaluate(() => window.scrollY) > 500, 'the page did not move to the element of the address');
+  await page.goto(t.base + '/e2e/apple');
+  await page.locator('.e2e-word').waitFor();
+  await page.evaluate(() => { document.querySelector('.e2e-word').dataset.kept = 'yes'; });
+  await page.getByRole('link', { name: 'Go to the far part' }).click();
+  await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'e2e-far' && window.scrollY > 500);
+  assert(await page.locator('.e2e-word').getAttribute('data-kept') === 'yes', 'a jump inside one screen made the screen again');
+  assert(page.url().endsWith('/e2e/apple#e2e-far'), 'the address did not get the "#id" part');
+  await page.goBack();
+  await page.waitForFunction(() => location.hash === '');
+  assert(await page.locator('.e2e-word').getAttribute('data-kept') === 'yes', 'going back inside one screen made the screen again');
+  t.ok('screen change: focus on the h1 of the new screen; "#id" in an address moves the page and the focus, without a new screen');
+
+  // ---- a loader that gives a loaded function: no file is asked from the server ----
+  await page.goto(t.base + '/e2e');
+  await page.locator('.e2e-word').waitFor();
+  const asked = [];
+  const onAsk = (r) => { if (/\/js\//.test(r.url())) asked.push(r.url()); };
+  page.on('request', onAsk);
+  await page.locator('.sidebar .nav-item', { hasText: 'Test more' }).click();
+  await page.getByRole('heading', { name: 'Loaded already', level: 1 }).waitFor();
+  page.off('request', onAsk);
+  assert(asked.length === 0, 'a screen that was loaded already asked the server for a file: ' + asked.join(', '));
+  t.ok('a route whose loader gives a loaded function opens with no request for a file');
 
   await page.goto(t.base + '/e2e-broken');
   await page.getByText('This page did not load.').waitFor();
@@ -178,7 +220,7 @@ export default async function (t) {
   assert(places.join('|') === 'Home|Mail|Aliases|Numbers|More', 'the phone bar is wrong: ' + places.join('|'));
   await bar.getByRole('button', { name: 'More' }).click();
   const more = await p.page.getByRole('menu').getByRole('menuitem').allTextContents();
-  assert(known(more) === 'Funds|Test place', 'the More list is wrong: ' + more.join('|'));
+  assert(known(more) === 'Test more|Funds|Test place|Settings', 'the More list is wrong: ' + more.join('|'));
   const box = await p.page.getByRole('menu').boundingBox();
   assert(box.y >= 0 && box.y + box.height <= 844 - 60 + 1 && box.x >= 0 && box.x + box.width <= 390, 'the More list is off the screen or over the bar: ' + JSON.stringify(box));
   const small = await p.page.getByRole('menu').getByRole('menuitem').evaluateAll((els) => els.filter((el) => el.getBoundingClientRect().height < 44).length);
@@ -192,8 +234,8 @@ export default async function (t) {
   await p.page.keyboard.press('Escape');
   assert(await p.page.evaluate(() => document.activeElement && document.activeElement.textContent) === 'More', 'Escape did not give the focus back to More');
   await p.page.keyboard.press('Enter');
-  await p.page.keyboard.press('Enter');
-  await p.page.getByRole('heading', { name: 'Funds', level: 1 }).waitFor();
+  await p.page.keyboard.press('Enter'); // the first entry: "Test more", a place that is always under "More"
+  await p.page.getByRole('heading', { name: 'Loaded already', level: 1 }).waitFor();
   const overflow = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert(overflow <= 0, 'the phone screen scrolls sideways with the More place');
   t.ok('phone: four places and "More"; the list opens above the bar, works with the keyboard, marks the open place');

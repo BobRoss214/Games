@@ -54,6 +54,12 @@ img, svg { display: block; max-width: 100%; }
   border-radius: var(--r-sm);
 }
 
+/* A screen change puts the focus on the title of the new screen. A title is not a control: no ring. */
+main h1:focus, main h1:focus-visible { outline: none; }
+/* An address with "#id" moves the page to that element. Keep it clear of the top bar. */
+html { scroll-padding-top: var(--s-4); }
+@media (max-width: 720px) { html { scroll-padding-top: calc(var(--topbar-h) + var(--s-4)); } }
+
 ::selection { background: var(--accent); color: var(--on-accent); }
 
 /* text helpers */

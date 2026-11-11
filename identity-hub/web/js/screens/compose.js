@@ -8,7 +8,7 @@ import { toast } from '../ui/toast.js';
 import { allAddresses } from '../lib/data.js';
 import { sendMail, attachmentLimit, personText } from '../lib/mail.js';
 import { openNewInbox } from '../ui/items.js';
-import { bus } from '../lib/store.js';
+import { bus, appName } from '../lib/store.js';
 import { htmlToText } from '../lib/sanitize.js';
 
 const quote = (text) => String(text || '').split('\n').map((l) => '> ' + l).join('\n');
@@ -147,7 +147,7 @@ export function openCompose({ mailboxId = '', reply = null } = {}) {
         subject.el,
         body.el,
         h('div', { class: 'stack stack-2' }, h('div', { class: 'row row-wrap' }, attachBtn, fileInput, h('span', { class: 'hint' }, `Up to ${bytesText(limit)} in total.`)), fileList, fileError),
-        reply ? null : callout('info', '', h('p', null, 'Mail to people outside Postern is not end-to-end encrypted. Your Sent copy is encrypted in this browser before it is stored.')),
+        reply ? null : callout('info', '', h('p', null, `Mail to people outside ${appName()} is not end-to-end encrypted. Your Sent copy is encrypted in this browser before it is stored.`)),
         h('div', { class: 'dialog-actions' }, button('Discard', { onClick: () => api.tryClose() }), send),
       );
     },

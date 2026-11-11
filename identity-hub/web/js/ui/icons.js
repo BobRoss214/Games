@@ -55,6 +55,10 @@ const ICONS = {
   folder: ['M3.5 7.5a1.5 1.5 0 0 1 1.5-1.5h4.2l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v7.8A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5v-10Z'],
   group: [['rect', { x: 3.5, y: 4.5, width: 17, height: 15, rx: 1.5 }], 'M3.5 9.5h17', 'M8 13.5h8M8 16.5h5'],
   dot: [['circle', { cx: 12, cy: 12, r: 4, fill: 'currentColor', stroke: 'none' }]],
+  // The door of an identity. Open = something inside is on. Shut = all off. Bricked up = burned.
+  doorOpen: ['M5.5 20.25V10a6.5 6.5 0 0 1 13 0v10.25', 'M3 20.25h18', 'M5.5 9.6l5 2.6v10.3l-5-2.25', ['circle', { cx: 8.9, cy: 16.2, r: 0.8, fill: 'currentColor', stroke: 'none' }]],
+  doorShut: ['M5.5 20.25V10a6.5 6.5 0 0 1 13 0v10.25', 'M3 20.25h18', 'M8.25 20.25V10.4a3.75 3.75 0 0 1 7.5 0v9.85', ['circle', { cx: 13.6, cy: 14.6, r: 0.8, fill: 'currentColor', stroke: 'none' }]],
+  doorBricked: ['M5.5 20.25V10a6.5 6.5 0 0 1 13 0v10.25', 'M3 20.25h18', 'M5.5 10.5h13M5.5 13.75h13M5.5 17h13', 'M12 3.6v6.9M9 10.5v3.25M15 10.5v3.25M12 13.75V17M9 17v3.25M15 17v3.25'],
 };
 
 export function icon(name, { size = 20, label = '', cls = '' } = {}) {

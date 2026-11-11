@@ -20,6 +20,10 @@ registerRoute('/e2e/:word', () => import('./zz-e2e-screen.js'), { title: 'Test p
 registerRoute('/e2e-open', () => import('./zz-e2e-screen.js'), { signedOut: true, title: 'Open test place' });
 registerRoute('/e2e-broken', () => import('./zz-e2e-missing.js'), { title: 'Broken' });
 registerNavItem({ id: 'e2e', label: 'Test place', icon: 'tools', path: '/e2e', order: 60 });
+// more: true = under "More" on a phone, although its order would put it first in the bar
+registerNavItem({ id: 'e2e-more', label: 'Test more', icon: 'dot', path: '/e2e-now', order: 5, more: true });
+// a screen that is loaded already: the loader gives the function, and opening it asks the server for no file
+registerRoute('/e2e-now', () => () => h('div', { class: 'page page-narrow' }, h('h1', null, 'Loaded already')), { signedOut: true, title: 'Loaded already' });
 
 // rows: an action that saves a field of its own, and a mark that reads it
 registerRowAction('alias', (item) => (item.extra.e2eMark ? null : { label: 'Test mark', icon: 'check', run: () => setItemExtra('alias', item.id, { e2eMark: 'yes' }).then(() => toast('Test mark saved')) }));
