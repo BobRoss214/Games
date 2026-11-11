@@ -112,7 +112,7 @@ export default async function (t) {
   }, ids.shop);
   await page.goto(`${t.base}/identities/${identityId}`);
   await page.getByRole('heading', { name: 'Maple', level: 1 }).waitFor();
-  await page.getByRole('button', { name: 'More' }).click();
+  await page.locator('.page-head').getByRole('button', { name: 'More', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Test colour' }).click();
   await page.locator('.page-head').getByText('E2E green').waitFor();
   await page.goto(t.base + '/');
@@ -142,8 +142,8 @@ export default async function (t) {
   await page.goto(`${t.base}/numbers/${ids.n1}`);
   await page.locator('.thread').first().click();
   await page.locator('.bubble-addons', { hasText: 'E2E text in Selling the bike' }).first().waitFor();
-  await page.getByRole('button', { name: 'Back' }).or(page.getByRole('link', { name: 'Numbers' })).first().waitFor();
   await page.goto(`${t.base}/numbers/${ids.n1}`);
+  await page.getByRole('tab', { name: 'Settings' }).waitFor();
   const tabNames = await page.getByRole('tab').allTextContents();
   assert(tabNames.map((x) => x.replace(/\d+/g, '')).join('|') === 'Texts|Calls|Test tab|Settings', 'the tab order is wrong: ' + tabNames.join('|'));
   await page.getByRole('tab', { name: 'Test tab' }).click();
