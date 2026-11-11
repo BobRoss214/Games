@@ -2,6 +2,7 @@
 // the account. This file opens them.
 import { api, query } from './api.js';
 import { openSealed } from './session.js';
+import { bus } from './store.js';
 
 export async function searchNumbers(country, areaCode) {
   const res = await api.get('/api/numbers/search' + query({ country, areaCode }));
@@ -20,6 +21,7 @@ export async function listTexts(numberId, { before, limit = 100 } = {}) {
 // number = { id, number } (our own VoIP number in plain form)
 export async function sendText(number, to, body) {
   const res = await api.post(`/api/numbers/${number.id}/texts`, { number: number.number, to, body });
+  bus.emit('text-sent', { numberId: number.id }); // for other parts of the app (the tutorial)
   return res ? res.text : null;
 }
 

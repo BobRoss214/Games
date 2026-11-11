@@ -36,6 +36,7 @@ export const store = createStore({
   phones: null,
   identities: null,     // named groups of aliases and numbers (encrypted in the vault)
   leaks: {},            // "possibly leaked" hints by alias id, in memory only (see lib/leakwatch.js)
+  passkeyCount: null,   // how many passkeys the account has (null = not loaded yet)
   purchases: [],        // pending private payments (see lib/pay.js)
   prefs: {},            // small encrypted preferences from the vault
   theme: 'system',

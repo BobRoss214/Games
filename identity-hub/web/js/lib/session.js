@@ -49,6 +49,7 @@ function forget() {
   pendingPrf = null;
   lockReason = null;
   vaultKeyList = null;
+  vaultValues.clear();
   sealedCache.clear();
   try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* nothing to remove */ }
 }
@@ -67,7 +68,7 @@ function setAccount(account) {
 }
 
 function resetData() {
-  store.set({ mailboxes: null, aliases: null, numbers: null, phones: null, identities: null, leaks: {}, purchases: [], prefs: {} });
+  store.set({ mailboxes: null, aliases: null, numbers: null, phones: null, identities: null, leaks: {}, passkeyCount: null, purchases: [], prefs: {} });
 }
 
 // Called once at start. Decides: signed out, locked, or signed in.
@@ -251,30 +252,42 @@ export async function openSealed(sealed, aad) {
 // The encrypted key-value vault. The list of keys is asked first, so that the
 // browser does not log a "404" for a value that was never saved.
 let vaultKeyList = null;
+// The last value that this tab read or wrote for each key (kept as text, so that nobody changes it by accident).
+const vaultValues = new Map();
 async function vaultHas(key, fresh) {
   if (!vaultKeyList || fresh) vaultKeyList = ((await api.get('/api/vault')) || {}).keys || [];
   return vaultKeyList.includes(key);
 }
 // fresh: ask the server for the key list again (another tab may have saved a value).
 export async function vaultGet(key, { fresh = false } = {}) {
-  if (!(await vaultHas(key, fresh))) return null;
+  if (!(await vaultHas(key, fresh))) { vaultValues.set(key, 'null'); return null; }
   let res;
   try { res = await api.get(`/api/vault/${key}`); } catch (err) { if (err.status === 404) return null; throw err; }
   if (!res || !res.value) return null;
-  try { return await decryptJson(need().vaultKey, unb64u(res.value), `vault:${key}`); } catch { return null; }
+  try {
+    const value = await decryptJson(need().vaultKey, unb64u(res.value), `vault:${key}`);
+    vaultValues.set(key, JSON.stringify(value === undefined ? null : value));
+    return value;
+  } catch { return null; }
 }
 export async function vaultPut(key, value) {
   const blob = b64u(await encryptJson(need().vaultKey, value, `vault:${key}`));
   await api.put(`/api/vault/${key}`, { value: blob });
   if (vaultKeyList && !vaultKeyList.includes(key)) vaultKeyList.push(key);
+  vaultValues.set(key, JSON.stringify(value === undefined ? null : value));
   return blob.length;
 }
 // Read the newest value, change it, write it: change(current) gets the stored value (or null)
 // and returns the new one. Changes to one key in this tab run one after the other.
+// A write costs three requests (the key list, the value, the write). fresh: false is the cheap
+// path for a key that only one feature writes: after the first read, a change is one request
+// (the value that this tab read or wrote last is used). A second tab that writes the same key
+// is then not seen until the next load of the page.
 const vaultChains = new Map();
-export function vaultChange(key, change) {
+export function vaultChange(key, change, { fresh = true } = {}) {
   const run = (vaultChains.get(key) || Promise.resolve()).then(async () => {
-    const next = await change(await vaultGet(key, { fresh: true }));
+    const current = !fresh && vaultValues.has(key) ? JSON.parse(vaultValues.get(key)) : await vaultGet(key, { fresh });
+    const next = await change(current);
     await vaultPut(key, next);
     return next;
   });
@@ -285,4 +298,5 @@ export async function vaultDelete(key) {
   if (!(await vaultHas(key, true))) return;
   try { await api.del(`/api/vault/${key}`); } catch (err) { if (err.status !== 404) throw err; }
   vaultKeyList = (vaultKeyList || []).filter((k) => k !== key);
+  vaultValues.delete(key);
 }

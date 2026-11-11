@@ -15,6 +15,12 @@ export function defineRoutes(list) {
   for (const r of list) routes.push({ ...r, segs: r.path.split('/').filter(Boolean) });
 }
 
+// Is there a screen at this path? (The app's own screens and the screens of feature files.)
+export function hasRoute(path) {
+  const m = match(String(path || '').split(/[?#]/)[0]);
+  return !!m.route && m.route.name !== 'notfound';
+}
+
 export function setOutlet(fn) { outlet = fn; }
 export function setResolver(fn) { resolver = fn; }
 

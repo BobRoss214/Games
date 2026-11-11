@@ -2,7 +2,7 @@
 // The account is made on the server only after the person confirms that the
 // recovery key is saved. Before that, nothing is stored anywhere.
 import { h, replace } from '../lib/dom.js';
-import { store, appName } from '../lib/store.js';
+import { store, bus, appName } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
 import { icon } from '../ui/icons.js';
 import { button, runBusy, callout, checkbox, copyButton, field } from '../ui/components.js';
@@ -164,6 +164,7 @@ export function createScreen({ scope }) {
     add.addEventListener('click', () => runBusy(add, async () => {
       err.hidden = true;
       const { passkey, prf } = await registerPasskey(label.value.trim());
+      bus.emit('passkeys', { added: true });
       if (prf && isUnlocked()) {
         await saveKeyForPasskey(passkey.id, prf);
         toast('Passkey added', { kind: 'ok' });

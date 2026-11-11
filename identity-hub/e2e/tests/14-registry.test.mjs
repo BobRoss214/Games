@@ -208,6 +208,52 @@ export default async function (t) {
   assert(heads.indexOf('Test setting') === heads.indexOf('Old texts') + 1, 'the number setting is in the wrong place: ' + heads.join('|'));
   t.ok('number: registered tab, setting, part under a text, part under a call');
 
+  // ---- helpers for feature files: hasRoute, the cheap vault path, passkey count and events, "Add funds", "text sent" ----
+  const helpers = await inApp(page, async ({ session, store, wait }) => {
+    const registry = await import('/js/lib/registry.js');
+    const { bus } = await import('/js/lib/store.js');
+    const out = { routes: [registry.hasRoute('/funds'), registry.hasRoute('/numbers/abc'), registry.hasRoute('/e2e/word#part'), registry.hasRoute('/e2e-open?x=1'), registry.hasRoute('/no-such-place'), registry.hasRoute('/e2e/a/b')] };
+    // vaultChange with fresh: false asks the server one time for the value, then only writes
+    const seen = [];
+    const realFetch = window.fetch;
+    window.fetch = (url, init) => { if (String(url).includes('/api/vault')) seen.push(`${(init && init.method) || 'GET'} ${String(url).replace(/^.*\/api/, '/api')}`); return realFetch(url, init); };
+    try {
+      await session.vaultChange('e2e-cheap', (old) => ({ n: ((old && old.n) || 0) + 1 }), { fresh: false });
+      const first = seen.splice(0).length;
+      await session.vaultChange('e2e-cheap', (old) => ({ n: old.n + 1 }), { fresh: false });
+      await session.vaultChange('e2e-cheap', (old) => ({ n: old.n + 1 }), { fresh: false });
+      out.cheap = { first, later: seen.splice(0) };
+      await session.vaultChange('e2e-cheap', (old) => ({ n: old.n + 1 }));
+      out.full = seen.splice(0).length;
+      out.value = await session.vaultGet('e2e-cheap', { fresh: true });
+    } finally { window.fetch = realFetch; }
+    out.passkeys = store.get('passkeyCount');
+    let sent = 0;
+    bus.on('text-sent', () => { sent++; });
+    const phone = await import('/js/lib/phone.js');
+    const n = store.get('numbers').find((x) => x.status === 'active');
+    await phone.sendText({ id: n.id, number: n.number }, '+14155550142', 'Test from the registry test.');
+    await wait(50);
+    out.sent = sent;
+    return out;
+  });
+  assert(helpers.routes.join() === 'true,true,true,true,false,false', 'hasRoute is wrong: ' + helpers.routes.join());
+  assert(helpers.cheap.later.join('|') === 'PUT /api/vault/e2e-cheap|PUT /api/vault/e2e-cheap', 'the cheap vault path makes more than one request for a change: ' + helpers.cheap.later.join('|'));
+  assert(helpers.full === 3 && helpers.value.n === 4, 'the usual vault path or the saved value is wrong: ' + JSON.stringify(helpers));
+  assert(helpers.passkeys === 0 && helpers.sent === 1, 'the passkey count or the "text sent" event is wrong: ' + JSON.stringify(helpers));
+  // "Add a passkey" from another screen; the store and the bus know it
+  await page.goto(t.base + '/');
+  await page.getByRole('heading', { name: 'Home', level: 1 }).waitFor();
+  await page.evaluate(() => { window.e2ePasskeyEvents = 0; import('/js/lib/store.js').then((m) => m.bus.on('passkeys', () => { window.e2ePasskeyEvents++; })); import('/js/ui/passkeys.js').then((m) => m.openAddPasskey()); });
+  await page.getByRole('dialog').getByRole('button', { name: 'Add a passkey' }).click();
+  await page.getByText('Passkey added').waitFor();
+  await page.waitForFunction(() => window.e2ePasskeyEvents === 1);
+  await inApp(page, async ({ store, wait }) => { for (let i = 0; i < 50 && store.get('passkeyCount') !== 1; i++) await wait(100); if (store.get('passkeyCount') !== 1) throw new Error('the passkey count did not change'); });
+  // "Add funds" from another screen
+  await page.evaluate(() => import('/js/screens/funds.js').then((m) => m.openAddFunds()));
+  await page.waitForFunction(() => location.pathname === '/funds' && document.activeElement && document.activeElement.id === 'add-funds');
+  t.ok('helpers for feature files: hasRoute, vaultChange with one request, passkey count and event, "Add a passkey" and "Add funds" openers, "text sent" event');
+
   assert(d.errors.some((e) => /e2e broken badge/.test(e)), 'the error of a broken feature part is hidden; it must still show in the console');
   await d.close();
 

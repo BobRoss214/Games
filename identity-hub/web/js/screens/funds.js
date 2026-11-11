@@ -10,6 +10,7 @@ import { toast } from '../ui/toast.js';
 import { renewDays, graceDays } from '../lib/data.js';
 import { payInfo, startPurchase, simulatePayment, removePurchase, forgetDone, pollNow, resumePurchases } from '../lib/pay.js';
 import { why, whyParts, whyGroup } from '../ui/why.js';
+import { navigate } from '../lib/router.js';
 
 const METHOD_NOTE = {
   'BTC-LN': 'Fast and cheap. Good for small amounts.',
@@ -17,6 +18,15 @@ const METHOD_NOTE = {
   'BTC-CHAIN': 'Slow, with a network fee. Use it for larger amounts.',
 };
 const ledgerText = (kind) => ({ topup: 'Funds added', mailbox: `Inbox, ${renewDays()} days`, number: `Number, ${renewDays()} days`, text: 'Text sent', call: 'Call', refund: 'Refund' }[kind] || kind);
+
+// Opens Funds at the "Add funds" part, from any screen.
+export function openAddFunds() { navigate('/funds#add-funds'); }
+// The "Add funds" section has an id, so that an address with "#add-funds" moves the page to it.
+function addFundsSection(...args) {
+  const el = section(...args);
+  el.id = 'add-funds';
+  return el;
+}
 
 export function fundsScreen({ scope }) {
   const config = store.get('config');
@@ -181,7 +191,7 @@ export function fundsScreen({ scope }) {
           h('p', { class: 'small muted' }, 'US dollars of credit'),
           why('balance'),
         ),
-        section({ title: 'Add funds' }, formSlot, mock ? h('p', { class: 'hint test-hint' }, tag('Test mode', 'warn'), ' No real money moves. Use "Simulate payment" after you start a payment.') : null),
+        addFundsSection({ title: 'Add funds' }, formSlot, mock ? h('p', { class: 'hint test-hint' }, tag('Test mode', 'warn'), ' No real money moves. Use "Simulate payment" after you start a payment.') : null),
         purchasesSlot,
         section({ title: 'History' }, historySlot),
       ),

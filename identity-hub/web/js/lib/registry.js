@@ -177,6 +177,14 @@ export function renderSafe(render, ctx) {
 // Mixes the parts of a shared screen with the registered parts: [{ order, ... }], lowest order first.
 export const mergeByOrder = (...lists) => byOrder(lists.flat());
 
+// Is there a screen at this path? It knows the app's own screens too ('/funds', '/numbers/x').
+// A feature can ask before it shows a link to a screen of another feature file.
+let routeCheck = null;
+export function setRouteCheck(fn) { routeCheck = fn; } // main.js gives the check of the router
+export function hasRoute(path) {
+  return routeCheck ? !!routeCheck(path) : routes.some((r) => r.path === path);
+}
+
 // main.js gives the router here. It gets the routes that exist now and each later one.
 export function onRoute(sink) {
   routeSinks.push(sink);

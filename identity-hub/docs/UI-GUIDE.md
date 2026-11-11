@@ -51,6 +51,9 @@ Register at the top level of the file, not later. Keep heavy code in files that 
 | "Why?" | `why('alias-off')`: a small button that opens a short explanation in place (no request, nothing saved). The words are `WHY` in `help/content.js`. `whyParts(key)` gives `{ button, panel }` to place apart; `whyGroup([[key], [key]])` puts buttons on one line. | `ui/why.js` |
 | A code with "Copy" | `codeIn(text, subject)` gives the "Code 482913 · Copy" chip or `null`; `codeChip(found)` | `ui/code.js` |
 | The product name | `appName()`, never the word "Postern" in a string: the person who runs the server can change the name | `lib/store.js` |
+| Open a shared dialog or place | `openAddPasskey()` gives `{ unlocks }` or `undefined` (`ui/passkeys.js`); `openAddFunds()` goes to Funds at "Add funds" (`screens/funds.js`); `openNewAlias()`, `openNewInbox()`, `openGetNumber()` (`ui/items.js`); `openNewIdentity()` (`ui/identity.js`) | see left |
+| Is a screen there? | `hasRoute('/stats')`: true for the app's own screens and for screens of feature files | `lib/registry.js` |
+| Things that happened in this tab | `bus.on('passkeys', fn)` (a passkey was added or removed), `bus.on('text-sent', fn)`; `store.get('passkeyCount')` (`null` while it loads) | `lib/store.js` |
 | Format | `money(credits)`, `shortTime(at)`, `fullTime(at)`, `dayText('2026-11-11')`, `phoneText(e164)`, `plural(n, 'message')`, `bytesText(n)`, `duration(seconds)` | `lib/format.js` |
 
 **Loading, empty, error.** Every list has all three. Never an empty white box.
@@ -69,7 +72,7 @@ if (!list.length) return emptyState({ title: 'No mail yet', text: 'Mail to this 
 |---|---|---|
 | On one inbox, alias or number (max 2 KB together with label and details) | `alias.extra.myField` | `setItemExtra('alias', id, { myField: value })`; `null` removes (`lib/data.js`) |
 | On one identity | `identity.extra.myField` | `setIdentityExtra(id, { myField: value })` (`lib/identities.js`) |
-| For the account (max 256 KB for one key, 50 keys) | `await vaultGet('my-key')` | `await vaultChange('my-key', (old) => next)` (`lib/session.js`); key: small letters, digits, `-` |
+| For the account (max 256 KB for one key, 50 keys) | `await vaultGet('my-key')` | `await vaultChange('my-key', (old) => next)` (`lib/session.js`); key: small letters, digits, `-`. It costs 3 requests. If your feature is the only writer of the key: `vaultChange(key, fn, { fresh: false })` costs 1 request after the first read. |
 
 Extra fields that exist (do not reuse a name; tell the owner before you add one):
 
@@ -79,10 +82,11 @@ Extra fields that exist (do not reuse a name; tell the owner before you add one)
 | `username` | alias, number, identity | the username of the "Random identifiers generator" card | `ui/persona.js` (`cleanUsername(value)` checks it) |
 | `colour` | identity | one name of `COLOURS` (`red`, `orange`, `gold`, `green`, `teal`, `blue`, `purple`, `pink`) | `setIdentityColour(id, name)` |
 | `events` | identity | history, 50 at most, oldest first: `[{ day: 'YYYY-MM-DD', type }]`, types `made`, `first-mail`, `turned-off`, `turned-on`, `burned` | `addIdentityEvent(id, type)`; read with `eventsOf(identity)` |
-| `burned` | identity | `{ day: 'YYYY-MM-DD' }` when the identity is burned; the door then shows "Burned" (`identityState(identity)`) | the burn feature |
+| `burned`, `burning` | identity (`burned` also on one alias) | `burned = { day: 'YYYY-MM-DD' }` when it is burned; the door then shows "Burned" (`identityState(identity)`) | the burn feature |
 
 The hints of "possibly leaked" are in memory only: `store.get('leaks')` = `{ [aliasId]: [{ domain, fromAddress, firstAt, lastAt, count, messageId }] }`.
 Do not write to `label`, `note`, `persona`, `identityId`: they have their own functions (`updateAlias`, `setItemPersona`, `setItemIdentity`).
+Writes to one item run one after the other in a tab, so two features that save different fields at the same moment both keep their change.
 Check what you read (`typeof`, length): another version of the app may have written it. Small one-word preferences: `setPref(key, value)`, read `store.get('prefs')`.
 Other helpers: `findAlias(id)`, `findNumber(id)`, `findMailbox(id)`, `findIdentity(id)`, `membersOf(identityId)`, `listMessages({ addressIds })`, `getMessage(id)`, `listTexts(numberId)`, `listCalls(numberId)`.
 

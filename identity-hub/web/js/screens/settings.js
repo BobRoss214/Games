@@ -1,6 +1,6 @@
 // Settings: passkeys, sessions, theme, what the server sees, delete account.
 import { h, replace } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { store, bus } from '../lib/store.js';
 import { api } from '../lib/api.js';
 import { navigate } from '../lib/router.js';
 import { dayText } from '../lib/format.js';
@@ -11,8 +11,8 @@ import { formDialog, confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { setTheme } from '../lib/theme.js';
 import { decLabel, encLabel, saveKeyForPasskey, dropLocal, signOut } from '../lib/session.js';
-import { passkeysSupported, registerPasskey, passkeyPrf } from '../lib/webauthn.js';
-import { guessDeviceName } from './create.js';
+import { passkeysSupported, passkeyPrf } from '../lib/webauthn.js';
+import { openAddPasskey } from '../ui/passkeys.js';
 import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
 import { why, whyParts, whyGroup } from '../ui/why.js';
 
@@ -31,23 +31,9 @@ export function settingsScreen({ scope }) {
       if (!scope.disposed) replace(passkeySlot, loadError(err.message, loadPasskeys));
     }
   }
-  async function addPasskey() {
-    if (!passkeysSupported()) { toast('This browser does not support passkeys.', { kind: 'error' }); return; }
-    const label = field({ label: 'Name for this passkey', value: guessDeviceName(), maxlength: 40, hint: 'Only you see this name. It is encrypted.' });
-    const result = await formDialog({
-      title: 'Add a passkey', submitLabel: 'Add a passkey', size: 'sm',
-      description: 'Your device asks for your fingerprint, your face or your PIN.',
-      build: () => h('div', { class: 'stack' }, label.el),
-      onSubmit: async () => {
-        const { passkey, prf } = await registerPasskey(label.value.trim());
-        if (prf) await saveKeyForPasskey(passkey.id, prf);
-        return { unlocks: !!prf };
-      },
-    });
-    if (!result) return;
-    toast(result.unlocks ? 'Passkey added' : 'Passkey added. It can sign you in, but it cannot unlock your data alone.', { kind: 'ok', timeout: result.unlocks ? 3000 : 8000 });
-    loadPasskeys();
-  }
+  // The dialog is in ui/passkeys.js, so that other screens can open it too. The list loads again on the bus event.
+  const addPasskey = () => openAddPasskey();
+  scope.add(bus.on('passkeys', () => loadPasskeys()));
   function paintPasskeys() {
     if (passkeys === null) { replace(passkeySlot, skeletonRows(2)); return; }
     if (!passkeys.length) {
@@ -87,7 +73,7 @@ export function settingsScreen({ scope }) {
           { label: 'Remove', icon: 'trash', danger: true, onSelect: async () => {
             const ok = await confirmDialog({ title: 'Remove this passkey?', message: 'You cannot sign in with it any more. Check that you have your recovery key or another passkey.', confirmLabel: 'Remove' });
             if (!ok) return;
-            try { await api.del(`/api/passkeys/${encodeURIComponent(p.id)}`); toast('Passkey removed', { kind: 'ok' }); loadPasskeys(); } catch (err) { reportError(err); }
+            try { await api.del(`/api/passkeys/${encodeURIComponent(p.id)}`); toast('Passkey removed', { kind: 'ok' }); bus.emit('passkeys', { removed: true }); } catch (err) { reportError(err); }
           } },
         ] }),
       ),

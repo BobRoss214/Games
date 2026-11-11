@@ -106,6 +106,14 @@ export async function loadBalance() {
   return account.balance || 0;
 }
 
+// How many passkeys the account has: store.get('passkeyCount'). Loaded again after bus event "passkeys".
+export async function loadPasskeyCount() {
+  const res = await api.get('/api/passkeys');
+  const count = ((res && res.passkeys) || []).length;
+  if (isUnlocked()) store.set({ passkeyCount: count });
+  return count;
+}
+
 export async function loadPrefs() {
   try {
     const prefs = await vaultGet('prefs');
@@ -127,7 +135,7 @@ function phoneOn() {
 // Loads everything for the dashboard. Each part fails on its own, so one broken
 // module does not empty the whole screen.
 export async function loadAll() {
-  const jobs = [loadMailboxes(), loadAliases(), loadNumbers(), loadPhones(), loadBalance(), loadPrefs(), loadIdentities()];
+  const jobs = [loadMailboxes(), loadAliases(), loadNumbers(), loadPhones(), loadBalance(), loadPrefs(), loadIdentities(), loadPasskeyCount()];
   const results = await Promise.allSettled(jobs);
   const s = store.get();
   const patch = {};
@@ -193,10 +201,26 @@ async function freshEnc(kind, id, change) {
   if (enc.length > ENC_MAX_CHARS) throw new Error('This is too much text to save here. Make the label shorter.');
   return enc;
 }
-async function patchEnc(kind, id, change) {
+// The writes to the "enc" of one item run one after the other in this tab. Without this, two
+// parts of the app that change different fields at the same moment (a label, and the known
+// senders of the "possibly leaked" watch) could each read the old value, and one change would be lost.
+const encQueues = new Map();
+function inEncQueue(kind, id, fn) {
+  const key = `${kind}:${id}`;
+  const run = (encQueues.get(key) || Promise.resolve()).then(fn);
+  const tail = run.catch(() => {});
+  encQueues.set(key, tail);
+  tail.then(() => { if (encQueues.get(key) === tail) encQueues.delete(key); });
+  return run;
+}
+// Read the newest "enc", change it, write it. Does not load the list again.
+function writeEnc(kind, id, change) {
   const k = KINDS[kind];
-  await api.patch(`/api/${k.path}/${id}`, { enc: await freshEnc(kind, id, change) });
-  await k.reload();
+  return inEncQueue(kind, id, async () => api.patch(`/api/${k.path}/${id}`, { enc: await freshEnc(kind, id, change) }));
+}
+async function patchEnc(kind, id, change) {
+  await writeEnc(kind, id, change);
+  await KINDS[kind].reload();
 }
 
 // The first "enc" of a new item.
@@ -255,7 +279,8 @@ export async function updateAlias(id, { enabled, mailboxId, label, oneShot }) {
   if (enabled !== undefined) body.enabled = enabled;
   if (oneShot !== undefined) body.oneShot = !!oneShot;
   if (mailboxId !== undefined) body.mailboxId = mailboxId;
-  if (label !== undefined) body.enc = await freshEnc('alias', id, (e) => { e.label = label; });
+  if (label !== undefined) await writeEnc('alias', id, (e) => { e.label = label; });
+  if (Object.keys(body).length === 0) { await loadAliases(); return; }
   // Show the change at once. Put the old value back if the server says no.
   const before = store.get('aliases');
   if (before && (enabled !== undefined || mailboxId !== undefined)) {
@@ -281,12 +306,12 @@ export async function buyNumber({ number, label, identityId }) {
 }
 export async function updateNumber(id, { label, forwardPhoneId, forwardTexts, forwardCalls, retentionDays }) {
   const body = {};
-  if (label !== undefined) body.enc = await freshEnc('number', id, (e) => { e.label = label; });
+  if (label !== undefined) await writeEnc('number', id, (e) => { e.label = label; });
   if (forwardPhoneId !== undefined) body.forwardPhoneId = forwardPhoneId;
   if (forwardTexts !== undefined) body.forwardTexts = forwardTexts;
   if (forwardCalls !== undefined) body.forwardCalls = forwardCalls;
   if (retentionDays !== undefined) body.retentionDays = retentionDays;
-  await api.patch(`/api/numbers/${id}`, body);
+  if (Object.keys(body).length) await api.patch(`/api/numbers/${id}`, body);
   await loadNumbers();
 }
 export async function releaseNumber(id) {
@@ -313,6 +338,9 @@ export async function removePhone(id) {
   await api.del(`/api/phones/${id}`);
   await Promise.allSettled([loadPhones(), loadNumbers()]);
 }
+
+// A passkey was added or removed in this tab (bus event "passkeys" from ui/passkeys.js).
+bus.on('passkeys', () => { if (isUnlocked()) loadPasskeyCount().catch(() => {}); });
 
 // ---- live updates ----
 let source = null;

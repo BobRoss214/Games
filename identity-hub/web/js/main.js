@@ -2,8 +2,8 @@
 import { h, replace } from './lib/dom.js';
 import { store, appName } from './lib/store.js';
 import { api, setSignedOutHandler } from './lib/api.js';
-import { defineRoutes, setOutlet, setResolver, setPhaseKey, startRouter, render, navigate, jumpToAnchor } from './lib/router.js';
-import { onRoute, runGlobalKey, registered } from './lib/registry.js';
+import { defineRoutes, setOutlet, setResolver, setPhaseKey, startRouter, render, navigate, jumpToAnchor, hasRoute } from './lib/router.js';
+import { onRoute, runGlobalKey, registered, setRouteCheck } from './lib/registry.js';
 import { boot, dropLocal } from './lib/session.js';
 import { loadAll, startEvents, stopEvents } from './lib/data.js';
 import { resumePurchases, stopPolling } from './lib/pay.js';
@@ -112,6 +112,8 @@ function navFor(route) {
   return item ? item.id : '';
 }
 onRoute((r) => defineRoutes([{ path: r.path, name: `feature:${r.path}`, title: r.title, layout: 'auto', nav: () => navFor(r), signedOut: r.signedOut, screen: featureScreen(r) }]));
+
+setRouteCheck(hasRoute);
 
 // The same address shows a different screen when the sign-in state changes.
 setPhaseKey(() => store.get('phase'));

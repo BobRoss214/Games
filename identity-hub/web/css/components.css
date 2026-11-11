@@ -361,5 +361,6 @@
 
 /* a hint under a checkbox, in line with its label */
 .check-hint { padding-left: calc(1.25rem + var(--s-3)); }
+@media (max-width: 720px) { .check-hint { padding-left: calc(1.5rem + var(--s-3)); } }
 .own-domain-note:empty { display: none; }
 .item-refused { white-space: nowrap; }
