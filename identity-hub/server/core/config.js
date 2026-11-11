@@ -65,8 +65,17 @@ export function loadConfig(env = process.env, overrides = {}) {
 
     phone: {
       provider: env.PHONE_PROVIDER || (production ? 'off' : 'mock'), // mock | twilio | off
-      countries: list(env.PHONE_COUNTRIES, ['us', 'ca', 'gb']).map((c) => c.toUpperCase()),
-      twilio: { accountSid: env.TWILIO_ACCOUNT_SID || '', authToken: env.TWILIO_AUTH_TOKEN || '' },
+      countries: list(env.PHONE_COUNTRIES, ['us', 'ca']).map((c) => c.toUpperCase()),
+      twilio: {
+        accountSid: env.TWILIO_ACCOUNT_SID || '',
+        authToken: env.TWILIO_AUTH_TOKEN || '',
+        baseUrl: (env.TWILIO_BASE_URL || 'https://api.twilio.com').replace(/\/+$/, ''),
+        // Optional. US numbers can send texts only from a Messaging Service with an approved 10DLC campaign.
+        messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID || '',
+        // Optional. Some countries need a regulatory bundle and an address to buy a number.
+        bundleSid: env.TWILIO_BUNDLE_SID || '',
+        addressSid: env.TWILIO_ADDRESS_SID || '',
+      },
     },
 
     pay: {
@@ -97,7 +106,7 @@ export function loadConfig(env = process.env, overrides = {}) {
       aliases: int(env.LIMIT_ALIASES, 0), // 0 = no limit
       numbers: int(env.LIMIT_NUMBERS, 25),
       phones: int(env.LIMIT_PHONES, 5),
-      sendPerDay: int(env.LIMIT_SEND_PER_DAY, 100),
+      sendPerDay: int(env.LIMIT_SEND_PER_DAY, 100), // 0 = no limit
       mailboxBytes: int(env.LIMIT_MAILBOX_BYTES, 1024 * 1024 * 1024),
       requestsPerMinute: int(env.LIMIT_REQUESTS_PER_MINUTE, 900),
     },

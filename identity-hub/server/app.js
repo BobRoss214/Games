@@ -61,6 +61,10 @@ export async function createApp(overrides = {}, env = process.env) {
         t.unref();
         timers.push(t);
       }
+      const paid = Object.entries(config.prices).filter(([, v]) => v > 0).map(([k]) => k);
+      if (config.pay.provider === 'off' && paid.length) {
+        log.warn(`Payments are off but these items have a price: ${paid.join(', ')}. Nobody can add funds. Set the prices to 0 or turn payments on.`);
+      }
       log.info(`${config.appName} is ready at ${config.publicUrl} (port ${app.port})`);
       return app;
     },
