@@ -21,6 +21,7 @@ One word has one meaning here: an **identity** is a named group of aliases and n
 | Your alias addresses and VoIP numbers | Not from the database. | The database has keyed hashes only. See Limits 2. |
 | The senders that you block | Not from the database. | The database has a keyed hash of each one, and a copy that only you can read. |
 | A linked real phone number | **Yes.** | The server must know it to forward calls and texts. The phone company sees it too. The link is optional. |
+| The numbers of the operator's own phones ("own phone" provider) | **Yes.** | The server hands these numbers out and sends from them. It stores each one encrypted with the server secret key, not in plain form. See Limits 15. |
 | Which items belong to one account | Yes. | The server must route mail and texts to the correct account. |
 | Sizes and times of messages | Yes. | Necessary to sort and to apply limits. |
 | Your settings for each item, and two counters | Yes. | See the next table. |
@@ -45,6 +46,7 @@ The server keeps a value in plain form only when it must use that value itself.
 | Identities and random identifiers | Encrypted entries that only your browser can open. | Names, notes, groups, identifiers, usernames. The colour, the history, and the "burned" mark of an identity. |
 | Known senders of an alias ("Possibly leaked") | Nothing in plain form. The sender domains that an alias knows are inside the encrypted data of the alias. The app saves the first sender of an alias there. | The senders. The hints: they are in the memory of your browser only. |
 | Tutorial | One encrypted entry with the name `tutorial`. It always has the same size. | The step that you are at. See Limits 14. |
+| Own phone (the pool of phones and SIM cards) | For each phone: its label, its gateway login and password, and its signing key, encrypted with the server secret key. For each SIM card: a keyed hash of the number, and the number encrypted with the server secret key. Only a hash of the secret token in the report address. | A plain number. The token itself. Which account will take a number: the pool has no account in it. |
 | Burn | No record of the burn. The server does three normal things: it turns the aliases off, deletes their stored mail, and releases the numbers. See section 5. | That these changes were one burn. The identity keeps an encrypted "burned" mark that only your browser can read. |
 | A payment in progress | An encrypted entry in your account. Your browser needs it to finish the payment. | A link between the account and the invoice. |
 
@@ -127,7 +129,7 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 
 1. **Mail and texts arrive unencrypted.** Email (SMTP) and the telephone network are not end-to-end encrypted. The server sees an incoming message for a moment, encrypts it for you, and forgets the plain form. A server that an attacker controls *at that moment* can read new messages as they arrive. It cannot read messages that are stored already. This is the same model as Proton Mail and Tuta for mail from other providers.
 2. **A seized server can test guesses.** The database stores keyed hashes of addresses, numbers, and blocked senders. An attacker who has the database *and* the server secret key can test "does address X exist here?" or "does this address block sender Y?". The attacker cannot list the addresses of an account.
-3. **The telephone provider sees everything on its side.** The provider (for example Twilio) sees the numbers, the texts, and the call records. It keeps logs under its own policy. Postern cannot change that. If you link a real phone, the provider also sees that phone number each time it forwards a call or a text to it. Use phone numbers for convenience, not for secrets.
+3. **The telephone provider sees everything on its side.** The provider (for example Twilio) sees the numbers, the texts, and the call records. It keeps logs under its own policy. Postern cannot change that. If you link a real phone, the provider also sees that phone number each time it forwards a call or a text to it. Use phone numbers for convenience, not for secrets. With the "own phone" provider, the carrier of the SIM card is in this place: see limit 15.
 4. **Outgoing mail is visible to the relay and to the recipient's provider.** This is how email works. The server also sees a message or a text that you send, for the moment in which it sends it.
 5. **You must trust the web app code that the server sends.** This is true for every web app with browser encryption. If you run your own server, you control that code. A future improvement is a signed browser extension or a packaged app.
 6. **Timing can link things.** The server stores no link between a payment and an account. But a modified server could log times and IP addresses and compare them. Postern does not do this. There are two moments:
@@ -143,17 +145,26 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 12. **Two export files of one account can be recognised.** The plain header of an export file has the app name, the day, sizes, and the encrypted account key. The encrypted account key is the same in each export of one account. A person who has two export files can tell that they come from the same account. That person cannot read them without the recovery key. A person who has one file *and* the recovery key can read everything in it.
 13. **Some settings and counts are plain for the server.** The server does the deleting and the refusing, so it knows your settings for automatic deletion, end dates, "stop after the first mail", forwarding, and voicemail. It also knows how many messages each address received and refused. It does not know who wrote them.
 14. **The server sees that an encrypted entry changes, and when.** It sees the name and the size of each encrypted entry of your account, not the contents. Example: the tutorial saves its progress in the entry `tutorial`, and the entry changes with each step that you take. So the server can count these changes and see their times. It cannot read which step it is, and the size tells nothing, because it is always the same. The same is true for the entry with your identities. It is also true for the encrypted data of an alias, when the app saves a known sender in it.
+15. **With the "own phone" provider, three more places see your texts.** This provider uses an Android phone of the operator, an app on it, and a gateway program on the server. Texts only, no calls.
+    - **The carrier of the SIM card** sees each text, in the two directions, with the two numbers. It knows who bought the SIM card, if it asked.
+    - **The phone** has each text in plain form, as each phone has. A person who holds the phone can read them.
+    - **The gateway program on the server** stores a text that waits for the phone in plain form. After the phone has sent it, the gateway changes it to a hash. The app also uploads a copy of each incoming text to the gateway. The gateway deletes these rows after 24 hours with the settings of the setup guide. Postern itself stores texts only in the form that is encrypted for you.
+    - **A push company, only if the operator selects it.** With the setting "Auto" in the app, the server of the app project and Google get a wake-up signal for each text that waits. The signal has no text and no number. They learn that something waits, when, and for which phone. With "SSE Only", which the setup guide uses, no signal goes to them.
+    - **A number from the pool had an earlier holder.** It can get texts that are for that person.
+    - **The phone is one device.** If it is off, texts wait. A text that the phone does not send in 1 hour fails.
+    - This provider was tested with a simulated gateway only, not with a real phone.
 
 ## 7. What an attacker gets
 
 | Attacker | Gets | Does not get |
 |---|---|---|
 | Steals a database backup | Encrypted blobs, hashes, balances, settings and counters, real phone numbers in encrypted form. Also data that was deleted or burned after the backup. | Mail, texts, voicemail, labels, identities, random identifiers, usernames, the known senders of an alias, addresses, numbers, blocked senders, real phone numbers (they need the server secret key) |
-| Steals the database and the server secret key | Linked real phone numbers; can test guesses of addresses and of blocked senders; can make false credit tokens | Stored mail, texts and voicemail, labels, identities, lists of addresses |
+| Steals the database and the server secret key | Linked real phone numbers; the numbers and the gateway logins of the operator's own phones; can test guesses of addresses and of blocked senders; can make false credit tokens | Stored mail, texts and voicemail, labels, identities, lists of addresses |
 | Controls the running server for some time | New incoming mail, texts and voicemail during that time; can send bad web app code; can log times and IP addresses, also the times at which encrypted entries change | Old stored messages (unless you sign in during that time) |
 | Watches the network | Nothing useful with HTTPS; SMTP between mail servers uses opportunistic TLS | — |
 | Gets a payment processor record | That an invoice was paid | Which account got the credit |
 | Gets the records of the phone company | Numbers, texts, call records; a linked real phone that got forwarded calls or texts, and which numbers forward to it; a voicemail recording until Postern deleted it | Stored mail, labels, your aliases |
+| Gets the phone of the "own phone" provider, or the records of its SIM carrier | Each text of the numbers on that phone, with the two numbers. From the gateway database on the server: texts that wait, and hashes of sent texts, for 24 hours. | Mail, labels, your aliases, which account holds a number |
 | Gets two export files, without the recovery key | That the two files come from the same account; their sizes and days | The contents |
 | Websites that compare their lists | That aliases on a domain of one person belong together | Aliases on a domain that many people share |
 

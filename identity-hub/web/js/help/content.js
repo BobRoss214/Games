@@ -203,6 +203,13 @@ export const TIPS = [
     limit: 'A person who has the file and your recovery key can read everything in it.',
   },
   {
+    id: 'before-you-release-a-number',
+    title: 'Take a number out of your accounts before you release it',
+    doThis: 'Before you release a number, remove it from each website account that uses it.',
+    why: 'A released number goes to a different person later. That person then gets the sign-in codes that a website sends to the number.',
+    limit: 'This is true for each phone number. On a server that uses its own phone, the next person can get the number soon.',
+  },
+  {
     id: 'trust-the-server',
     title: 'Use a server that you trust',
     doThis: 'Use {app} on a server that you operate, or that a person you trust operates.',
@@ -276,7 +283,7 @@ export const WHY = {
     title: 'Why are payments private?',
     paragraphs: [
       'You pay an invoice with Bitcoin or Monero. The invoice has no link to your account.',
-      'Your browser makes secret credit tokens. The payment system signs them but cannot see them. Then your browser adds them to your account as credit.',
+      'Your browser makes secret values. The payment system signs them but cannot see them. Then your browser gives them to your account, and they become credit.',
       'So the server stores no link between a payment and an account. A changed server could still compare the times. To lower this risk, pay first and add the credit later.',
     ],
   },
@@ -505,6 +512,24 @@ export const WHY = {
       'If your copy is wrong, do not sign out of this browser. Find a correct copy first.',
     ],
   },
+  'own-phone': {
+    title: 'Where do the numbers of this server come from?',
+    paragraphs: [
+      'Here, each number is a SIM card in a phone of the person who runs the server. An app on that phone sends and gets your texts.',
+      'These numbers do texts only, no calls.',
+      'When that phone is off, {app} shows "Phone offline", and a text that you send shows "Waiting for the phone". After one hour it fails, and you get the credit back.',
+      'The phone company of the SIM card sees each text. Other people had the number before you, so it can get texts for them.',
+    ],
+  },
+  'own-phone-calls': {
+    title: 'Why can this number not make or get calls?',
+    paragraphs: [
+      'This number is a SIM card in a phone of the person who runs the server. The app on that phone handles texts only.',
+      'So a call to this number rings on that phone, and {app} does not see it. This number has no call list and no voicemail.',
+      'The person who runs the server can set call forwarding on the SIM card. The phone network then sends each call to one other number.',
+      'The phone company then knows that other number. {app} keeps no record of these calls.',
+    ],
+  },
 };
 
 // ---- The groups of the "why?" explanations on the Help page ----
@@ -512,7 +537,7 @@ export const WHY = {
 export const WHY_GROUPS = [
   { title: 'Basics', keys: ['recovery-key', 'passkey', 'inbox-vs-alias', 'balance', 'payments', 'test-mode', 'quick-jump'] },
   { title: 'Mail', keys: ['alias-off', 'end-date', 'first-mail-only', 'block-sender', 'refused-mail', 'newsletter', 'remote-images', 'code-helper', 'own-domain', 'my-stats'] },
-  { title: 'Numbers', keys: ['link-phone', 'phone-by-call', 'forwarding', 'delivery-status', 'voicemail'] },
+  { title: 'Numbers', keys: ['link-phone', 'phone-by-call', 'forwarding', 'delivery-status', 'voicemail', 'own-phone', 'own-phone-calls'] },
   { title: 'Identities', keys: ['identity', 'identity-look', 'made-up-details', 'username-password', 'burn'] },
   { title: 'Safety', keys: ['recovery-test', 'possibly-leaked', 'who-leaked-me', 'deleting', 'auto-delete', 'export', 'home-warnings'] },
 ];
@@ -758,4 +783,5 @@ export const WORDS = [
   { word: 'possibly leaked', meaning: 'An alias that got mail from a sender that it does not know. This is a hint only.' },
   { word: 'burn', meaning: 'End an identity for good. Its aliases go off, their mail is deleted, and its numbers are released.' },
   { word: 'code', meaning: 'A sign-up or sign-in code that a website sends you in a mail or a text.' },
+  { word: 'phone online, phone offline', meaning: 'On some servers a number is a SIM card in a phone. Offline means that this phone cannot send or get texts now.' },
 ];

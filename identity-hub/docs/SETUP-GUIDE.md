@@ -1413,7 +1413,8 @@ The website https://dontkillmyapp.com collects the steps for each brand. **Check
    ```
    unset PHONE_PASS
    ```
-8. On the phone, open the app. Pull down on the tab "Home". The app then loads its new settings.
+8. On the phone, open the app.
+9. Select "Stop Service", then select "Start Service". The app then loads its new settings.
 
 **Check:** the tool shows these lines:
 
@@ -1423,6 +1424,8 @@ Added the phone "Phone 1" with 1 SIM card(s):
 Done at the gateway:
   - 5 webhooks for this phone (texts in, sent, delivered, failed, ping). ...
   - the signing key for webhooks, and a ping every 300 seconds.
+What to check now:
+  ...
 ```
 
 **Check:** in the app, "SETTINGS", "Webhooks…", "Registered Webhooks" shows 5 lines. "Signing Key" has a value.
@@ -1439,12 +1442,13 @@ Notes:
 
 ### I8. Check that it works
 
-1. Wait 5 minutes.
+1. Wait 6 minutes. The phone reports to Postern each 5 minutes.
 2. List the phones:
    ```
    docker compose exec app node --disable-warning=ExperimentalWarning server/tools/ownphone.js list
    ```
-   The line of the phone must show `online`. The line of the SIM card must show `free`.
+   The line of the phone must show `online` and 1 or more accepted webhooks. The line of the SIM card must show `free`.
+   If the list shows refused webhooks, it also shows the cause and what to do.
 3. Send one test text to a different phone of yours. Use its number:
    ```
    docker compose exec app node --disable-warning=ExperimentalWarning server/tools/ownphone.js test --label "Phone 1" --to +15559876543
@@ -1564,7 +1568,7 @@ The simulated gateway is a test program that answers like the real gateway. It i
 
 **Not confirmed with the real app and the real gateway.** Postern depends on these points. They come from the source code and from the simulated gateway:
 
-- That the settings which the tool sends to the gateway (the 5 report addresses, the signing key, the "I am alive" time) reach the phone, and how fast.
+- That the settings which the tool sends to the gateway reach the phone, and how fast. These are the 5 report addresses, the signing key, and the "I am alive" time.
 - That the phone reports a failed text when the time limit of the text is over. Postern has its own timer for this case, so a text does not wait for all time.
 - The exact form of the phone numbers in the reports of the phone.
 - That the id of the phone at the gateway is the same id that the phone puts in its reports. If it is different, Postern refuses the reports and the phone stays offline.
@@ -1771,7 +1775,7 @@ docker compose logs --tail 50 app
 | **The page does not update itself. You must load it again to see new mail.** | Caddy is older than version 2.11.7 `[N6]`, or a different proxy is in front of Caddy. | Run `docker compose exec caddy caddy version`. Run `docker compose pull --ignore-buildable`, then `docker compose up -d`. |
 | **Own phone: the app shows "Failed to register device".** | "API URL" is wrong. "Private Token" is not the value of `SMSGATE_PRIVATE_TOKEN`. The DNS record of `sms.example.com` is not active. The gateway does not run. | Do the checks of Part I3. Compare "API URL" with Part I5, step 4. Type the token again. |
 | **Own phone: "Server address" in the app shows `api.sms-gate.app`.** | The app is registered at the public server of the app project, not at your gateway. | Do the 4 steps under the check of Part I5. |
-| **Own phone: the phone stays offline.** Postern shows "Phone offline", or the tool shows `OFFLINE`. | "API URL" or "Private Token" in the app is wrong. The battery saving of Android stopped the app. The phone has no internet. The clock of the phone is wrong: Postern refuses a report whose time is more than 5 minutes off. The id of the phone at the gateway is not the id in its reports. | Open the app and select "Start Service". Do Part I6 again. Set the clock of the phone to automatic. Run the tool with `list`. In the app, open "SETTINGS", "Webhooks…", "Webhook Queue": a failed line shows its "Last error". If nothing helps, take the phone out of the pool and add it again (Parts I9 and I7). |
+| **Own phone: the phone stays offline.** Postern shows "Phone offline", or the tool shows `OFFLINE`. | "API URL" or "Private Token" in the app is wrong. The battery saving of Android stopped the app. The phone has no internet. The clock of the phone is wrong: Postern refuses a report whose time is more than 5 minutes off. The id of the phone at the gateway is not the id in its reports. | Open the app and select "Start Service". Do Part I6 again. Run the tool with `list`: it shows the reports that Postern refused, with the cause and what to do. Set the clock of the phone to automatic. In the app, open "SETTINGS", "Webhooks…", "Webhook Queue": a failed line shows its "Last error". If nothing helps, take the phone out of the pool and add it again (Parts I9 and I7). |
 | **Own phone: texts stay on "Waiting for the phone".** | The phone is offline. The SIM card has no network or no money. The carrier blocked the text. The limit in the app is reached. | Do the row above first. Then send a text by hand from the SMS app of the phone. If that fails too, the problem is the SIM card or the carrier. Look at "SETTINGS", "Messages…", "Limits" in the app. A text that waits longer than 1 hour fails, and the user gets the credit back. |
 | **Own phone: the user sees "The phone did not accept this text."** | The gateway refused the destination. It refuses numbers that are not mobile numbers, for example landlines. | Use a mobile number. The user got the credit back. |
 | **Own phone: a text arrives on the phone but not in Postern.** | The SIM card that got the text is not in the pool. The number of the SIM card in the pool is wrong. No user holds the number: Postern does not store a text for a free number. The app has no permission to receive SMS. | Run the tool with `list --show`, and compare each number with the SIM cards of the phone. Add a missing SIM card with `add-sim`. Take the number in Postern first (Part I8, steps 5 and 6). Look at the permissions of the app in the Android settings. |

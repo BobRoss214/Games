@@ -14,6 +14,9 @@ import { safeEqual } from '../core/keys.js';
 import { E164 } from './common.js';
 
 const CLOCK_SECONDS = 5 * 60;
+// The number of a SIM in the national form must have this many digits to name a pool number.
+const NATIONAL_MIN_DIGITS = 7;
+const DEVICE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const BODY_LIMIT = 256 * 1024;
 // After the time to live of a text, the phone reports "failed". If that report never comes
 // (the phone is gone), this much later the server says "failed" itself and gives the charge back.
@@ -37,13 +40,16 @@ export function registerOwnPhone(app, ph, hooks, pool) {
   // The number object of an account says if the phone of the number is online.
   ph.gatewayOf = (row) => pool.gatewayOf(row.number_hmac) || { online: false, lastSeen: null };
 
+  // Returns 'ok', or why the request is refused: 'signature' (wrong or absent), or 'clock'
+  // (signed well, but its time is more than 5 minutes off: the clock of the phone is wrong,
+  // or somebody sends a recorded request again).
   function verify(c, device) {
     const stamp = c.headers['x-timestamp'];
     const given = c.headers['x-signature'];
-    if (typeof stamp !== 'string' || !/^\d{1,12}$/.test(stamp) || typeof given !== 'string' || !/^[0-9a-fA-F]{64}$/.test(given)) return false;
-    // Compare first, in constant time. Then the time: an old request that was recorded cannot be sent again later.
-    if (!safeEqual(Buffer.from(given.toLowerCase(), 'utf8'), Buffer.from(signWebhook(device.signingKey, c.raw, stamp), 'utf8'))) return false;
-    return Math.abs(nowSec() - Number(stamp)) <= CLOCK_SECONDS;
+    if (typeof stamp !== 'string' || !/^\d{1,12}$/.test(stamp) || typeof given !== 'string' || !/^[0-9a-fA-F]{64}$/.test(given)) return 'signature';
+    // Compare first, in constant time. Then the time.
+    if (!safeEqual(Buffer.from(given.toLowerCase(), 'utf8'), Buffer.from(signWebhook(device.signingKey, c.raw, stamp), 'utf8'))) return 'signature';
+    return Math.abs(nowSec() - Number(stamp)) <= CLOCK_SECONDS ? 'ok' : 'clock';
   }
 
   // The pool number that got an incoming text, in plain form, or null.
@@ -53,24 +59,47 @@ export function registerOwnPhone(app, ph, hooks, pool) {
       return sim ? sim.number : null;
     }
     // The phone could not say which SIM it was. It can still know the number of the SIM.
+    const sims = pool.sims(device.id);
     if (typeof payload.recipient === 'string') {
-      const clean = payload.recipient.replace(/[\s()-]/g, '');
+      const clean = payload.recipient.replace(/[\s().-]/g, '');
       const sim = E164.test(clean) ? pool.simByNumber(clean) : null;
       if (sim && sim.deviceId === device.id) return sim.number;
+      // A phone often has the number of its SIM in the national form ("(415) 555-0123", "07700 900123").
+      // Take it when its digits are the end of exactly one number of this phone.
+      const digits = payload.recipient.replace(/\D/g, '').replace(/^0+/, '');
+      if (digits.length >= NATIONAL_MIN_DIGITS) {
+        const fits = sims.filter((s) => s.number.slice(1).endsWith(digits));
+        if (fits.length === 1) return fits[0].number;
+      }
     }
-    const sims = pool.sims(device.id);
     return sims.length === 1 ? sims[0].number : null;
   }
 
   http.post('/api/hooks/ownphone/:token', { body: 'raw', limit: BODY_LIMIT }, async (c) => {
     const device = pool.deviceByToken(c.params.token);
     if (!device) throw fail(404, 'not_found', 'This address does not exist.');
-    if (!verify(c, device)) throw fail(403, 'bad_signature', 'The signature is not valid.');
+    const checked = verify(c, device);
+    if (checked !== 'ok') {
+      // The operator sees these counts in the tool ("list"): a wrong key, or a wrong clock on the phone.
+      pool.refused(device.id, checked);
+      throw fail(403, 'bad_signature', 'The signature is not valid.');
+    }
     let body = null;
     try { body = JSON.parse(c.raw.toString('utf8')); } catch { body = null; }
     if (body === null || typeof body !== 'object' || Array.isArray(body)) throw fail(400, 'bad_json', 'Send a JSON object.');
-    // The signing key belongs to one login of the gateway. A different phone of the same login is not this phone.
-    if (body.deviceId !== device.gatewayId) return { ok: true };
+    if (body.deviceId !== device.gatewayId) {
+      // The token names our record of the phone, and the signature shows that the sender has its key.
+      // If this login of the gateway has only this one phone in the pool, the phone got a new id at the
+      // gateway (the app was set up again): take the new id, so that sending works too.
+      // With several phones on one login, the key is the same for all of them: the id must match.
+      const alone = typeof body.deviceId === 'string' && DEVICE_ID.test(body.deviceId) && pool.countOfLogin(device.login) === 1;
+      if (!alone) {
+        pool.refused(device.id, 'device');
+        return { ok: true };
+      }
+      pool.setGatewayId(device.id, body.deviceId);
+      log.warn('a phone of the pool reported a different device id than the stored one; the new id was stored');
+    }
 
     // Every valid webhook says that the phone is alive.
     if (pool.seen(device.id)) tellHolders(device.id);
@@ -111,4 +140,12 @@ export function registerOwnPhone(app, ph, hooks, pool) {
   app.every('ownphone-unsent', 60, async () => {
     ph.failStaleTexts(nowSec() - (Math.max(5, settings.textTtlSeconds) + NO_REPORT_GRACE_SECONDS));
   });
+
+  // Development only: run the two jobs now. They run each minute by themselves; a test does not wait for that.
+  if (config.dev) {
+    http.post('/api/dev/ownphone-jobs', { auth: true }, async () => {
+      await app.runJobs('ownphone-online');
+      await app.runJobs('ownphone-unsent');
+    });
+  }
 }

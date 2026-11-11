@@ -1,4 +1,4 @@
-// Quick jump: press "/" (or Ctrl+K, Command+K; on a phone the search button in the top bar),
+// Quick jump: press "/" (or Ctrl+K, Command+K, or the Search button of the sidebar or of the phone's top bar),
 // type a few letters, press Enter, and you are there.
 //
 // It finds identities, aliases, numbers, inboxes and pages. Everything is searched in this
@@ -47,17 +47,6 @@ function pages() {
     }));
 }
 
-// Mail shows only the mail of one alias. From another screen, the Mail screen takes the choice when it
-// opens (setMailFilter). When Mail is open on that inbox already, it would not look: then the choice is
-// made in its "Show mail of" list, as the person would do it by hand.
-function showMailOf(mailboxId, aliasId) {
-  const select = location.pathname.split('/')[2] === mailboxId ? document.querySelector('.mail-address-filter select') : null;
-  if (select && [...select.options].some((o) => o.value === aliasId)) {
-    select.value = aliasId;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  } else setMailFilter({ mailboxId, addressId: aliasId });
-}
-
 // Every place to go, from the lists that the app holds open. A label is a name (level 0),
 // an address or a number is level 1, the rest is level 2 (see quickjump/match.js).
 function places() {
@@ -85,7 +74,7 @@ function places() {
     out.push({
       kind: 'alias', title: a.label || a.address, main: a.address, mono: true, icon: 'alias', sub: sub(a.label, a.enabled ? '' : 'Off'),
       // An alias has no screen of its own: the place is its mail, as "Show its mail" in the row menu.
-      href: box ? `/mail/${box.id}` : '/aliases', before: box ? () => showMailOf(box.id, a.id) : null,
+      href: box ? `/mail/${box.id}` : '/aliases', before: box ? () => setMailFilter({ mailboxId: box.id, addressId: a.id }) : null,
       fields: [{ name: 'title', text: a.label, level: 0 }, { name: 'address', text: a.address, level: 1 }, ...rest(a)],
     });
   }
@@ -218,21 +207,12 @@ export function openQuickJump() {
   input.focus();
 }
 
-// "/" opens it. The registry keeps the key quiet while the person types in a field,
-// and while a dialog or a menu is open.
+// "/" opens it. The registry keeps the key quiet while the person types in a field, and while a
+// dialog or a menu is open. The second way is Ctrl+K (Command+K on a Mac): the registry lets
+// such a key work from inside a field too.
 registerGlobalKey('/', () => openQuickJump());
+registerGlobalKey('k', () => openQuickJump(), { mod: true });
 
-// The second way: Ctrl+K, or Command+K on a Mac. The registry takes one key with no Ctrl or
-// Command, so this listens by itself, with the same rules as the registry.
-document.addEventListener('keydown', (e) => {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.defaultPrevented || e.isComposing) return;
-  if (String(e.key).toLowerCase() !== 'k' || store.get('phase') !== 'in') return;
-  const t = e.target;
-  if (t instanceof Element && t.closest('input, textarea, select, [contenteditable], [role="menu"], dialog')) return;
-  if (document.querySelector('dialog[open], .menu')) return;
-  e.preventDefault();
-  openQuickJump();
-});
-
-// A phone has no "/" key in reach: the search button is in its top bar, before the gear.
-registerTopBarAction({ id: 'quick-jump', label: 'Search', icon: 'search', run: () => openQuickJump(), order: 10 });
+// The button: on a phone it is in the top bar, before the gear. On a wide screen it is at the top
+// of the sidebar, with the key next to it.
+registerTopBarAction({ id: 'quick-jump', label: 'Search', icon: 'search', run: () => openQuickJump(), order: 10, key: '/' });

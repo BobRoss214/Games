@@ -19,6 +19,8 @@ const WHY_KEYS = [
   'block-sender', 'auto-delete', 'end-date', 'first-mail-only', 'refused-mail', 'possibly-leaked', 'who-leaked-me',
   'my-stats', 'code-helper', 'newsletter', 'burn', 'export', 'voicemail', 'own-domain', 'quick-jump',
   'username-password', 'identity-look', 'home-warnings', 'recovery-test',
+  // The "own phone" provider: a number is a SIM card in a phone of the operator.
+  'own-phone', 'own-phone-calls',
 ];
 const GROUP_TITLES = ['Basics', 'Mail', 'Numbers', 'Identities', 'Safety'];
 const STEP_IDS = [
@@ -42,7 +44,7 @@ const GLOSSARY = [
 const FORBIDDEN_WORDS = ['invisible', 'anonymous', 'untraceable', '100%', 'guarantee', 'military-grade', 'unhackable', 'completely safe'];
 // Names that the app does not use (docs/UI-GUIDE.md, "The words"). The app says inbox, alias, random
 // identifiers, "used up", paused, and code. "made-up details" is the old name of the random identifiers.
-const FORBIDDEN_NAMES = [/\bmailbox(es)?\b/i, /\bburner\b/i, /\bfake identit/i, /\bmade[- ]up details?\b/i, /\bpersonas?\b/i, /\bone-shot\b/i, /\bsuspended\b/i, /\bOTP\b/i, /\b2FA\b/i];
+const FORBIDDEN_NAMES = [/\bmailbox(es)?\b/i, /\bburner\b/i, /\bfake identit/i, /\bmade[- ]up details?\b/i, /\bpersonas?\b/i, /\bone-shot\b/i, /\bsuspended\b/i, /\bOTP\b/i, /\b2FA\b/i, /\bcredits\b/i, /\btokens?\b/i];
 const PRODUCT_NAME = 'Postern';
 
 // ---- helpers ----
@@ -263,6 +265,7 @@ test('help: the tips cover the subjects that the owner listed', () => {
     'remote images': /remote images are blocked/i,
     'delete what you do not need': /delete old mail/i,
     'lock on a shared computer': /"Lock".*sign out/i,
+    'take a number out of your accounts before you release it': /before you release a number/i,
     // The habits of the later features.
     'block one sender before you turn off an alias': /"Block this sender".*still need the alias/i,
     'stop after the first mail for one code': /"Stop after the first mail".*one code/i,
@@ -346,6 +349,15 @@ test('help: the explanations of the later features say what the owner asked for'
   assert.match(text('identity-look'), /server cannot read it/i);
   assert.match(text('home-warnings'), /next 7 days/i);
   assert.match(text('recovery-test'), /not sent to the server/i);
+  // Own phone: texts only, the words of the app for a phone that is off, and what a person can do about calls.
+  assert.match(text('own-phone'), /texts only/i);
+  assert.match(text('own-phone'), /"Phone offline"/);
+  assert.match(text('own-phone'), /"Waiting for the phone"/);
+  assert.match(text('own-phone'), /you get the credit back/i);
+  assert.match(text('own-phone'), /phone company of the SIM card sees each text/i);
+  assert.match(text('own-phone-calls'), /rings on that phone/i);
+  assert.match(text('own-phone-calls'), /call forwarding on the SIM card/i);
+  assert.match(text('own-phone-calls'), /keeps no record of these calls/i);
   // "leaked" is never said without "possibly" about an alias.
   for (const key of ['possibly-leaked', 'who-leaked-me']) assert.doesNotMatch(text(key).replace(/"Who leaked me"|possibly leaked|"Possibly leaked"/gi, ''), /leaked/i, key);
 });

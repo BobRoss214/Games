@@ -176,22 +176,30 @@ These facts were found later, for the files in `deploy/`. The same limit applies
 3. US local numbers can receive texts without registration. Anonymous users cannot send texts from them.
 4. BTCPay Server works as planned. Run your own server, most of all for Monero.
 5. Run your own mail server at FlokiNET or IncogNET. Ask them to open port 25.
+6. A second way to get numbers is your own Android phone with a SIM card. It gives texts only, and it was tested with a simulated gateway only. See section 8.
 
 ## 8. Your own phone as the phone provider
 
 The question: which open-source Android app can turn a phone with a SIM card into a gateway for texts, with a server that the operator runs?
 
 **The pick: "SMS Gateway for Android" (SMSGate) with its own private server** `[O1][O2]`.
-Reason: it is the only one of the five that the research could read in source form, and it has all the parts that Postern needs: a private server with a documented API, events for incoming texts and delivery reports with a signature, more than one SIM card, and a mode in which the phone holds its own connection to the server, with no push company.
+Reason: it is the only one of the five that the research could read in source form, and it has all the parts that Postern needs.
 Its licence is Apache-2.0, and the app and the server had new versions in October and November 2026 `[O1][O2]`.
+
+The parts that Postern needs, and that the sources show:
+
+- A private server with a documented API for other programs.
+- Events with a signature for incoming texts and for delivery reports.
+- Phones with more than one SIM card.
+- A mode in which the phone holds its own connection to the server, with no push company.
 
 **How the research was done.** The two repositories were read from local copies on 2026-11-11: the app at version 1.78.3 and the server at version 1.52.6.
 The documentation website of the project (`docs.sms-gate.app`) was not reachable. The four other candidates were **not** read in source form: each line about them is UNCONFIRMED.
 
 | Candidate | What the research has | Why it is not the pick |
 |---|---|---|
-| httpSMS | UNCONFIRMED: an open-source app with a server; the licence is reported as AGPL-3.0; to run your own server is reported to need a Firebase project of Google. | A Google account and Google push for each text are a cost for privacy. Not verified. |
-| textbee | UNCONFIRMED: an open-source app with a server; the licence is reported as MIT; the server is reported to use MongoDB and Firebase. | The same Firebase point. Not verified. |
+| httpSMS | UNCONFIRMED: an open-source app with a server. The licence is reported as AGPL-3.0. Your own server is reported to need a Firebase project of Google. | A Google account and Google push for each text are a cost for privacy. Not verified. |
+| textbee | UNCONFIRMED: an open-source app with a server. The licence is reported as MIT. The server is reported to use MongoDB and Firebase. | The same Firebase point. Not verified. |
 | SmsForwarder | UNCONFIRMED: an open-source app that forwards incoming texts to many targets (webhook, mail, chat). To send a text from a server, the server must reach the phone, or a tunnel is necessary. | No server part for a pool of phones. Sending needs a path into the phone. Not verified. |
 | SMSSync and EnvayaSMS | UNCONFIRMED: two early apps of this kind. The research found no sign of current work on them. | Old software on new Android versions is a risk. Not verified. |
 
@@ -204,7 +212,7 @@ Facts about the pick that the setup guide uses (Part I). All are from the two re
 - **Images:** the README names `ghcr.io/android-sms-gateway/server:latest`. The release settings of the project give each image the tag of its version. The setup files of Postern use `v1.52.6`. That this tag exists at the registry is UNCONFIRMED `[O2]`.
 - **How the phone learns that a text waits.** Two ways `[O1][O2]`:
   - The app has a setting "Notification channel" with the values "Auto" and "SSE Only". With "SSE Only" the app does not get a push address from Google. The server then has no push address for the phone, and sends each command through a connection that the phone holds open.
-  - With "Auto" and a push address, a private server sends a wake-up signal to the server of the project (`GATEWAY__UPSTREAM_URL`, by default `https://api.sms-gate.app/upstream/v1`), which passes it to Google. For a new text, the signal has the push address and the kind of event, and no other data.
+  - With "Auto", the phone has a push address. A private server then sends a wake-up signal to the server of the project (`GATEWAY__UPSTREAM_URL`, by default `https://api.sms-gate.app/upstream/v1`). That server passes it to Google. For a new text, the signal has the push address and the kind of event, and no other data.
 - **What the server stores** `[O2]`:
   - A text that waits for the phone is in the database in plain form. After the phone has processed it, the server changes the text and the phone numbers to a hash (`MESSAGES__HASHING_INTERVAL_SECONDS`, by default 60 seconds). A worker deletes old rows (`TASKS__MESSAGES_CLEANUP__MAX_AGE`, by default 720 hours).
   - When a phone is connected to a server, the app also uploads incoming texts to it ("inbox"). The change list of the server calls this upload encrypted. Who can open it is UNCONFIRMED. A worker deletes these rows too (`TASKS__INBOX_CLEANUP__MAX_AGE`, by default 720 hours).
@@ -212,7 +220,7 @@ Facts about the pick that the setup guide uses (Part I). All are from the two re
 - **Events to Postern:** the phone itself sends each event to an `https://` address, with a signature (HMAC-SHA256 with a signing key) `[O1]`.
 - **Limits that the project names:** the README says that the app is not recommended for batch sending, because of possible restrictions of mobile operators. The app has a limit for the number of texts in a period `[O1]`.
 
-Not from the sources, and UNCONFIRMED: the battery settings of each phone brand, the codes for call forwarding at each carrier, and the rules of each country for the sale of SIM cards.
+Three subjects of Part I are not from the sources, and are UNCONFIRMED: the battery settings of each phone brand, the codes for call forwarding at each carrier, and the rules for the sale of SIM cards.
 
 ## Sources
 

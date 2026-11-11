@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { startTestApp, client, newAccount, unb64u } from './helpers.js';
 import { startFakeGateway } from './fake-smsgate.js';
 import { openJson } from '../shared/crypto.js';
-import { contextOf, addPhone, listPhones, addSim, removeSim, removePhone, testText, runCli, parseArgs, maskNumber, ToolError, HELP } from '../server/tools/ownphone.js';
+import { contextOf, addPhone, listPhones, addSim, removeSim, removePhone, testText, runCli, parseArgs, maskNumber, refusalLines, checkNowLines, ToolError, HELP } from '../server/tools/ownphone.js';
 import { createGatewayClient, createOwnPhoneProvider, WEBHOOK_EVENTS } from '../server/phone/providers/ownphone.js';
 import { signWebhook } from '../server/phone/ownphone.js';
 import { countryOfNumber } from '../server/phone/pool.js';
@@ -120,6 +120,8 @@ test('tool: add a phone with two SIM cards; the webhooks and the settings arrive
   assert.equal(listed[0].label, 'Kitchen-drawer-Pixel');
   assert.equal(listed[0].online, false);
   assert.equal(listed[0].lastSeen, null);
+  assert.equal(listed[0].accepted, 0);
+  assert.deepEqual(listed[0].refused, { device: 0, signature: 0, clock: 0, at: null });
   assert.deepEqual(listed[0].sims, [
     { simNumber: 1, number: '+•••••••' + one.numbers[0].slice(-4), country: 'US', inUse: false },
     { simNumber: 2, number: '+•••••••' + one.numbers[1].slice(-4), country: 'US', inUse: false },
@@ -366,6 +368,37 @@ test('texts come in: by SIM slot, by the number of the SIM, on a phone with one 
   // No SIM slot, but the phone knows the number of the SIM (with spaces, as a phone can write it).
   await one.phone.receive({ from, text: remember('by recipient own-in-2'), sim: null, recipient: `${one.numbers[0].slice(0, 2)} ${one.numbers[0].slice(2, 5)} ${one.numbers[0].slice(5)}` });
   assert.deepEqual(await bodies(a, n1), ['by recipient own-in-2']);
+  // The number of the SIM in the national form, as many phones have it: its digits are the end of exactly one number of this phone.
+  const national = (n) => `(${n.slice(2, 5)}) ${n.slice(5, 8)}-${n.slice(8)}`; // "+14155553001" -> "(415) 555-3001"
+  await one.phone.receive({ from, text: remember('national form own-in-24'), sim: null, recipient: national(one.numbers[1]) });
+  assert.deepEqual(await bodies(b, n2), ['national form own-in-24', 'to SIM two own-in-1']);
+  // With a zero in front, and with only the last 7 digits.
+  await one.phone.receive({ from, text: remember('zero in front own-in-25'), sim: null, recipient: `0${one.numbers[0].slice(2)}` });
+  await one.phone.receive({ from, text: remember('seven digits own-in-26'), sim: null, recipient: one.numbers[0].slice(-7) });
+  assert.deepEqual(await bodies(a, n1), ['seven digits own-in-26', 'zero in front own-in-25', 'by recipient own-in-2']);
+  // Two SIM cards of one phone that end in the same 7 digits: the short form names nobody, the longer form names one.
+  const pairUser = gateway.addUser({ devices: [{ name: 'Same ending', sims: [1, 2] }] });
+  remember(pairUser.password);
+  const same = [remember('+14155559001'), remember('+12125559001')];
+  const pair = await addPhone(ctx, { label: 'Same ending', login: pairUser.login, password: pairUser.password, sims: same.map((number, i) => ({ simNumber: i + 1, number })) });
+  remember(pair.webhookUrl.split('/').pop());
+  remember(gateway.users.get(pairUser.login).settings.webhooks.signing_key);
+  const pairPhone = gateway.phone(pairUser.login, pairUser.devices[0].id, app.url);
+  const d = await newAccount(app, { credits: 2000 });
+  const s1 = await getNumber(d, same[0]);
+  const s2 = await getNumber(d, same[1]);
+  let before = total();
+  await pairPhone.receive({ from, text: remember('which of the two own-in-27'), sim: null, recipient: '555-9001' });
+  // Six digits are too few to name a number, also when only one number ends in them.
+  await one.phone.receive({ from, text: remember('six digits own-in-28'), sim: null, recipient: one.numbers[0].slice(-6) });
+  assert.equal(total(), before, 'a text was given to a SIM that the phone did not name');
+  await pairPhone.receive({ from, text: remember('the longer form own-in-29'), sim: null, recipient: '(212) 555-9001' });
+  assert.deepEqual(await bodies(d, s2), ['the longer form own-in-29']);
+  assert.deepEqual(await bodies(d, s1), []);
+  await d.api.del(`/api/numbers/${s1.id}`);
+  await d.api.del(`/api/numbers/${s2.id}`);
+  await removePhone(ctx, { label: 'Same ending' });
+
   // No SIM slot and no number, on a phone with two SIM cards: nobody can say whose text it is. It is dropped.
   let count = total();
   logs.length = 0;
@@ -386,10 +419,11 @@ test('texts come in: by SIM slot, by the number of the SIM, on a phone with one 
   const again = { from, text: remember('only once own-in-8'), sim: 1, messageId: 'a1b2c3d4', receivedAt: '2026-11-11T10:00:00.000+00:00' };
   await one.phone.receive(again);
   await one.phone.receive(again);
-  assert.deepEqual(await bodies(a, n1), ['only once own-in-8', 'by recipient own-in-2']);
+  assert.deepEqual((await bodies(a, n1)).slice(0, 2), ['only once own-in-8', 'seven digits own-in-26']);
+  assert.equal((await bodies(a, n1)).length, 4);
   // The short id of the phone with a different time is a different text.
   await one.phone.receive({ ...again, text: remember('same id later own-in-9'), receivedAt: '2026-11-11T10:05:00.000+00:00' });
-  assert.equal((await bodies(a, n1)).length, 3);
+  assert.equal((await bodies(a, n1)).length, 5);
 
   // A sender that is a name, a very long text, and a text that is not a string.
   await one.phone.receive({ from: 'MapleShop', text: 'x'.repeat(5000), sim: 1 });
@@ -415,49 +449,132 @@ test('texts come in: by SIM slot, by the number of the SIM, on a phone with one 
   await c.api.del(`/api/numbers/${n3.id}`);
 });
 
-test('the webhook: a wrong token is 404; a wrong signature or an old time is 403; nothing of that marks the phone as seen', async () => {
-  const seen = () => rows('SELECT last_seen FROM own_devices WHERE gateway_id = ?', two.device.id)[0].last_seen;
-  app.db.run('UPDATE own_devices SET last_seen = NULL, online = 0 WHERE gateway_id = ?', two.device.id);
+test('the webhook: a wrong token is 404; a wrong signature or an old time is 403 and is counted; nothing of that marks the phone as seen', async () => {
+  const row = () => rows('SELECT * FROM own_devices WHERE id = ?', two.res.id)[0];
+  const seen = () => row().last_seen;
+  const counts = () => { const r = row(); return [r.accepted, r.refused_device, r.refused_signature, r.refused_clock]; };
+  app.db.run('UPDATE own_devices SET last_seen = NULL, online = 0, accepted = 0 WHERE id = ?', two.res.id);
+  assert.deepEqual(counts(), [0, 0, 0, 0]);
+  assert.equal(row().refused_at, null);
   const ping = (opt) => two.phone.ping(opt);
   const goodUrl = gateway.users.get(two.user.login).webhooks.values().next().value.url;
 
+  // An unknown token is not a phone of the pool: 404, and nothing is counted anywhere.
   assert.equal((await ping({ url: goodUrl.replace(/[^/]+$/, 'A'.repeat(43)) })).status, 404);
   assert.equal((await ping({ url: goodUrl.replace(/[^/]+$/, 'short') })).status, 404);
-  // the token of a different phone with the key of this one
+  assert.deepEqual(counts(), [0, 0, 0, 0]);
+  // The token of a different phone with the key of this one: refused there, counted there.
+  const oneBefore = rows('SELECT refused_signature AS n FROM own_devices WHERE id = ?', one.res.id)[0].n;
   assert.equal((await ping({ url: gateway.users.get(one.user.login).webhooks.values().next().value.url })).status, 403);
+  assert.equal(rows('SELECT refused_signature AS n FROM own_devices WHERE id = ?', one.res.id)[0].n, oneBefore + 1);
+
+  // Wrong or absent signatures: 5 of them.
   assert.equal((await ping({ signature: 'ab'.repeat(32) })).status, 403);
   assert.equal((await ping({ signature: 'not hex' })).status, 403);
   assert.equal((await ping({ key: 'a-different-signing-key' })).status, 403);
   assert.equal((await ping({ key: '' })).status, 403, 'a request with no signature was accepted');
+  assert.equal((await ping({ timestamp: 'abc' })).status, 403);
+  assert.deepEqual(counts(), [0, 0, 5, 0]);
+  // Signed well, but the time is off: 2 of them. The reason is counted apart: the clock of the phone.
   assert.equal((await ping({ timestamp: now() - 301 })).status, 403, 'a request that is 5 minutes old was accepted');
   assert.equal((await ping({ timestamp: now() + 301 })).status, 403);
-  assert.equal((await ping({ timestamp: 'abc' })).status, 403);
+  assert.deepEqual(counts(), [0, 0, 5, 2]);
+  assert.ok(Math.abs(row().refused_at - now()) <= 2);
+
   // The signature must cover the body: a changed body with the old signature is refused.
   const stamp = String(now());
   const key = gateway.users.get(two.user.login).settings.webhooks.signing_key;
-  const signed = signWebhook(key, '{"event":"system:ping"}', stamp);
+  const pingBody = JSON.stringify({ id: 'x', webhookId: 'y', deviceId: two.device.id, event: 'system:ping', payload: { health: { status: 'pass' } } });
+  const signed = signWebhook(key, pingBody, stamp);
   const target = app.url + new URL(goodUrl).pathname;
   const raw = (body, headers) => fetch(target, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body });
-  assert.equal((await raw('{"event":"sms:received"}', { 'x-timestamp': stamp, 'x-signature': signed })).status, 403);
+  assert.equal((await raw(pingBody.replace('system:ping', 'sms:received'), { 'x-timestamp': stamp, 'x-signature': signed })).status, 403);
+  assert.deepEqual(counts(), [0, 0, 6, 2]);
   assert.equal(seen(), null);
-  // The same value in capital letters is the same signature. A body that is not JSON is 400.
-  assert.equal((await raw('{"event":"system:ping"}', { 'x-timestamp': stamp, 'x-signature': signed.toUpperCase() })).status, 200);
+  // A body that is not JSON is 400 (signed well, so it is not counted as refused, and not as accepted).
   assert.equal((await raw('not json', { 'x-timestamp': stamp, 'x-signature': signWebhook(key, 'not json', stamp) })).status, 400);
   assert.equal((await client(app).get(new URL(goodUrl).pathname)).status, 405);
-  // (the JSON above had no deviceId: it was signed well, but it is not this phone, so the phone is still not "seen")
+  assert.deepEqual(counts(), [0, 0, 6, 2]);
   assert.equal(seen(), null);
 
-  // Signed well, but the body names a different phone of the gateway: ignored.
-  const total = rows('SELECT COUNT(*) AS n FROM texts')[0].n;
-  assert.equal((await two.phone.receive({ from: outsider(), text: 'other device', sim: 1 }, { deviceId: 'AnotherDeviceOfThatLogin' })).status, 200);
-  assert.equal(seen(), null);
-  assert.equal(rows('SELECT COUNT(*) AS n FROM texts')[0].n, total);
+  // The operator's list says it in words, with what to do.
+  const listed = listPhones(ctx).find((p) => p.label === 'Second phone');
+  assert.deepEqual([listed.accepted, listed.refused.device, listed.refused.signature, listed.refused.clock], [0, 0, 6, 2]);
+  assert.deepEqual(refusalLines(listed.refused), [
+    '6 webhooks were refused: the signature was wrong. Open the app on the phone one time so that it loads the signing key. If that does not help, remove this phone and add it again.',
+    '2 webhooks were refused: the time was more than 5 minutes off. The clock of the phone may be wrong. Set the phone to automatic date and time.',
+  ]);
+  assert.deepEqual(refusalLines({ device: 1, signature: 0, clock: 0, at: 1 }), ['1 webhook was refused: the device id did not match. Remove this phone and add it again.']);
+  assert.deepEqual(refusalLines({ device: 0, signature: 0, clock: 0, at: null }), []);
 
-  // A good request: 200, and the phone is seen now. Times up to 5 minutes off are fine.
-  assert.equal((await ping({ timestamp: now() - 290 })).status, 200);
+  // A good request: 200, the phone is seen now, and it is counted. The same signature in capital letters is the same.
+  assert.equal((await raw(pingBody, { 'x-timestamp': stamp, 'x-signature': signed.toUpperCase() })).status, 200);
   assert.ok(Math.abs(seen() - now()) <= 2);
+  // Times up to 5 minutes off are fine.
+  assert.equal((await ping({ timestamp: now() - 290 })).status, 200);
   // An event that this server does not use is answered with 200, so that the phone does not try again.
   assert.equal((await two.phone.post('sms:data-received', { messageId: 'x' }, { url: goodUrl })).status, 200);
+  assert.deepEqual(counts(), [3, 0, 6, 2]);
+});
+
+test('the device id: a phone that is alone on its login may come back with a new id; with several phones on one login the id must match', async () => {
+  // ---- alone on its login: the new id is taken, and sending uses it ----
+  const a = await newAccount(app, { credits: 2000 });
+  const num = await getNumber(a, two.numbers[0]);
+  const stored = () => rows('SELECT gateway_id AS id, accepted, refused_device AS refused, last_seen FROM own_devices WHERE id = ?', two.res.id)[0];
+  const before = stored();
+  assert.equal(before.id, two.device.id);
+  // The app was set up again: the gateway knows the phone under a new id now.
+  const newId = 'NewIdAfterReinstall01';
+  gateway.users.get(two.user.login).devices[0].id = newId;
+  for (const hook of gateway.users.get(two.user.login).webhooks.values()) hook.deviceId = newId;
+  const again = gateway.phone(two.user.login, newId, app.url);
+  logs.length = 0;
+  const from = outsider();
+  assert.equal((await again.receive({ from, text: remember('after the reinstall own-in-21'), sim: 1 })).status, 200);
+  assert.deepEqual([stored().id, stored().accepted, stored().refused], [newId, before.accepted + 1, 0]);
+  assert.deepEqual(logs, ['a phone of the pool reported a different device id than the stored one; the new id was stored']);
+  assert.equal((await openText(a, (await texts(a, num))[0])).body, 'after the reinstall own-in-21');
+  // A text goes out with the new id, so the gateway takes it.
+  const res = await sendText(a, num, from, 'answer after the reinstall ownphone-out-15');
+  assert.equal(res.status, 201);
+  assert.equal(gateway.lastMessage(two.user.login).request.deviceId, newId);
+  assert.equal(listPhones(ctx).find((p) => p.label === 'Second phone').gatewayId, newId);
+  // A device id that is not a plain id is never stored.
+  assert.equal((await again.ping({ deviceId: 'bad id with spaces' })).status, 200);
+  assert.deepEqual([stored().id, stored().refused], [newId, 1]);
+  await a.api.del(`/api/numbers/${num.id}`);
+  two.device.id = newId;
+  two.phone = again;
+
+  // ---- two phones on one login: the same signing key, so the id decides ----
+  const twin = gateway.addUser({ devices: [{ name: 'Pair A', sims: [1] }, { name: 'Pair B', sims: [1] }] });
+  remember(twin.password);
+  const pA = await addPhone(ctx, { label: 'Pair A', login: twin.login, password: twin.password, deviceId: twin.devices[0].id, sims: [{ simNumber: 1, number: poolNumber() }] });
+  const pB = await addPhone(ctx, { label: 'Pair B', login: twin.login, password: twin.password, deviceId: twin.devices[1].id, sims: [{ simNumber: 1, number: poolNumber() }] });
+  remember(gateway.users.get(twin.login).settings.webhooks.signing_key);
+  remember(pA.webhookUrl.split('/').pop());
+  remember(pB.webhookUrl.split('/').pop());
+  const b = await newAccount(app, { credits: 2000 });
+  const nA = await getNumber(b, pA.sims[0].number);
+  const phoneA = gateway.phone(twin.login, twin.devices[0].id, app.url);
+  const pair = () => rows('SELECT gateway_id AS id, accepted, refused_device AS refused, refused_at, last_seen FROM own_devices WHERE id = ?', pA.id)[0];
+  const total = rows('SELECT COUNT(*) AS n FROM texts')[0].n;
+  // Phone A's address gets a request that names phone B (or an unknown phone): signed well, but not taken.
+  for (const wrong of [twin.devices[1].id, 'SomeOtherDeviceId0001']) {
+    assert.equal((await phoneA.receive({ from, text: remember('named the wrong phone own-in-22'), sim: 1 }, { deviceId: wrong })).status, 200);
+  }
+  assert.deepEqual([pair().id, pair().accepted, pair().refused, pair().last_seen], [twin.devices[0].id, 0, 2, null]);
+  assert.ok(Math.abs(pair().refused_at - now()) <= 2);
+  assert.equal(rows('SELECT COUNT(*) AS n FROM texts')[0].n, total);
+  assert.deepEqual(refusalLines(listPhones(ctx).find((p) => p.label === 'Pair A').refused), ['2 webhooks were refused: the device id did not match. Remove this phone and add it again.']);
+  // With its own id it works.
+  assert.equal((await phoneA.receive({ from, text: remember('named the right phone own-in-23'), sim: 1 })).status, 200);
+  assert.equal((await openText(b, (await texts(b, nA))[0])).body, 'named the right phone own-in-23');
+  assert.deepEqual([pair().accepted, pair().refused], [1, 2]);
+  await b.api.del(`/api/numbers/${nA.id}`);
+  await removePhone(ctx, { label: 'Pair A' });
+  await removePhone(ctx, { label: 'Pair B' });
 });
 
 test('online and offline: a ping makes the phone online, silence makes it offline, the number shows it, and the holders are told', async () => {
@@ -793,7 +910,10 @@ test('tool: the command line works in its own process, on the same database, and
   assert.ok(!added.out.includes(n1), 'the tool printed a full number');
   assert.ok(!added.out.includes(user.password), 'the tool printed the password');
   assert.ok(!/Warning: PUBLIC_URL/.test(added.out));
-  assert.match(added.out, /Check on the phone:/);
+  assert.ok(added.out.includes(checkNowLines(contextOf(app)).slice(0, 2).join('\n').replace('http://localhost:8080', 'https://postern.example')), 'the words "What to check now" are not at the end');
+  assert.match(added.out, /What to check now:\n {2}Run "list" in about 6 minutes\. The phone must show "online" and at least 1 accepted webhook \(it reports every 300 seconds\)\./);
+  assert.match(added.out, /three most likely causes are:\n {2}1\. The app did not load the new settings\..*\n {2}2\. The phone cannot reach https:\/\/postern\.example over https\..*\n {2}3\. Android stopped the app to save the battery\./);
+  assert.ok(added.out.trimEnd().endsWith('If "list" shows refused webhooks, it says why.'));
   const hooks = [...gateway.users.get(user.login).webhooks.values()];
   assert.equal(hooks.length, 5);
   assert.match(hooks[0].url, /^https:\/\/postern\.example\/api\/hooks\/ownphone\/[A-Za-z0-9_-]{43}$/);
@@ -816,7 +936,12 @@ test('tool: the command line works in its own process, on the same database, and
   assert.ok((await a.api.get('/api/numbers/search')).data.numbers.some((n) => n.number === n2));
   const list = await cli(['list']);
   assert.equal(list.code, 0);
-  assert.match(list.out, /CLI phone {3}online, last seen a moment ago/);
+  assert.match(list.out, /CLI phone {3}online, last seen a moment ago {3}1 webhook accepted {3}added \d{4}-\d\d-\d\d/);
+  // A phone that was never seen, and the refused webhooks of a phone, in words.
+  assert.match(list.out, /Second phone {3}online, last seen a moment ago {3}\d+ webhooks accepted/);
+  assert.ok(list.out.includes('  6 webhooks were refused: the signature was wrong.') && list.out.includes('  2 webhooks were refused: the time was more than 5 minutes off. The clock of the phone may be wrong.'));
+  assert.ok(list.out.includes('  1 webhook was refused: the device id did not match. Remove this phone and add it again.'));
+  assert.match(list.out, / {2}The last refused webhook was (a moment ago|\d+ minutes ago)\./);
   assert.match(list.out, /Kitchen-drawer-Pixel {3}/);
   assert.ok(list.out.includes(`SIM 1: ${maskNumber(n1)} (US)   in use`) && list.out.includes(`SIM 2: ${maskNumber(n2)} (US)   free`));
   for (const s of secrets) if (!labels.has(s)) assert.ok(!list.out.includes(s), 'the list shows something that it must hide');

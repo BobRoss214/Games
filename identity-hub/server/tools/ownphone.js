@@ -165,9 +165,11 @@ export async function addPhone(ctx, { label, login, password, sims, deviceId = '
 }
 
 // Every phone with its SIM cards. show: true gives the full numbers, else only the last 4 digits.
+// accepted: valid webhooks since the phone was added. refused: { device, signature, clock, at } (see refusalLines).
 export function listPhones(ctx, { show = false } = {}) {
   return ctx.pool.devices().map((d) => ({
     id: d.id, label: d.label, gatewayId: d.gatewayId, online: d.online, lastSeen: d.lastSeen, createdDay: d.createdDay,
+    accepted: d.accepted, refused: d.refused,
     sims: ctx.pool.sims(d.id).map((s) => ({ simNumber: s.simNumber, number: show ? s.number : maskNumber(s.number), country: s.country, inUse: s.inUse })),
   }));
 }
@@ -222,6 +224,32 @@ export async function testText(ctx, { label, to, simNumber = 0, text = '' }) {
   return { id, simNumber: sim.simNumber, online: device.online };
 }
 
+// What the refused webhooks of a phone mean, in words, with what to do. refused: { device, signature, clock, at }.
+export function refusalLines(refused) {
+  const many = (n) => `${n} ${n === 1 ? 'webhook was' : 'webhooks were'} refused`;
+  const lines = [];
+  if (refused.device) lines.push(`${many(refused.device)}: the device id did not match. Remove this phone and add it again.`);
+  if (refused.signature) lines.push(`${many(refused.signature)}: the signature was wrong. Open the app on the phone one time so that it loads the signing key. If that does not help, remove this phone and add it again.`);
+  if (refused.clock) lines.push(`${many(refused.clock)}: the time was more than 5 minutes off. The clock of the phone may be wrong. Set the phone to automatic date and time.`);
+  return lines;
+}
+
+// The last words of "add": how the person sees that it works, and what to look at if it does not.
+export function checkNowLines(ctx) {
+  const ping = Math.max(1, ctx.config.phone.ownphone.pingSeconds);
+  const minutes = Math.ceil(ping / 60) + 1;
+  return [
+    'What to check now:',
+    `  Run "list" in about ${minutes} minutes. The phone must show "online" and at least 1 accepted webhook (it reports every ${ping} seconds).`,
+    '  Then run "test" to send one text.',
+    '  If the phone stays offline, the three most likely causes are:',
+    '  1. The app did not load the new settings. Open the app on the phone, stop the service and start it again.',
+    `  2. The phone cannot reach ${ctx.config.publicUrl} over https. Open that address in the browser of the phone. The app sends nothing to an address that does not start with https://.`,
+    '  3. Android stopped the app to save the battery. Turn off battery optimization for the app, and let it start by itself.',
+    '  If "list" shows refused webhooks, it says why.',
+  ];
+}
+
 // ---------- the command line ----------
 
 export const HELP = `Own phone: the pool of phones and SIM cards.
@@ -265,14 +293,15 @@ const simPair = (text) => {
   if (!m) stop('Write a SIM as <slot>=<number>, for example --sim 1=+15551234567');
   return { simNumber: Number(m[1]), number: m[2] };
 };
-function ago(lastSeen) {
-  if (!lastSeen) return 'never seen';
-  const s = Math.max(0, nowSec() - lastSeen);
-  if (s < 120) return 'last seen a moment ago';
-  if (s < 2 * 3600) return `last seen ${Math.round(s / 60)} minutes ago`;
-  if (s < 2 * 86400) return `last seen ${Math.round(s / 3600)} hours ago`;
-  return `last seen ${Math.round(s / 86400)} days ago`;
+// "a moment ago", "12 minutes ago", ...
+function since(at) {
+  const s = Math.max(0, nowSec() - at);
+  if (s < 120) return 'a moment ago';
+  if (s < 2 * 3600) return `${Math.round(s / 60)} minutes ago`;
+  if (s < 2 * 86400) return `${Math.round(s / 3600)} hours ago`;
+  return `${Math.round(s / 86400)} days ago`;
 }
+const ago = (lastSeen) => (lastSeen ? `last seen ${since(lastSeen)}` : 'never seen');
 
 // Runs one command. io: { env, out(line), readStdin() → Promise<string>, open() → context }. Returns the exit code.
 export async function runCli(argv, io = {}) {
@@ -298,19 +327,18 @@ export async function runCli(argv, io = {}) {
       out('Done at the gateway:');
       out(`  - 5 webhooks for this phone (texts in, sent, delivered, failed, ping). They point at ${ctx.config.publicUrl}/api/hooks/ownphone/<secret token>.`);
       out(`  - the signing key for webhooks, and a ping every ${res.pingSeconds} seconds.`);
-      out('Check on the phone:');
-      out('  1. The app is open one time after this command, so that it loads the new settings (pull down on the home screen, or stop and start the service).');
-      out('  2. Settings, Webhooks: a signing key is set. Settings, Ping: the interval is set.');
-      out('  3. Battery optimization is off for the app, and the app may start by itself after a restart of the phone.');
-      out('  4. Run "list" after a few minutes: the phone must be online. Then run "test" to send one text.');
       for (const w of res.warnings) out(`Warning: ${w}`);
+      for (const line of checkNowLines(ctx)) out(line);
     } else if (command === 'list') {
       const phones = listPhones(ctx, { show: !!opts.show });
       if (!phones.length) out('The pool has no phone. Add one with "add".');
       for (const p of phones) {
-        out(`${p.label}   ${p.online ? 'online' : 'OFFLINE'}, ${ago(p.lastSeen)}   added ${p.createdDay}   device id ${p.gatewayId}`);
+        out(`${p.label}   ${p.online ? 'online' : 'OFFLINE'}, ${ago(p.lastSeen)}   ${p.accepted} ${p.accepted === 1 ? 'webhook' : 'webhooks'} accepted   added ${p.createdDay}   device id ${p.gatewayId}`);
         for (const s of p.sims) out(`  SIM ${s.simNumber}: ${s.number} (${s.country})   ${s.inUse ? 'in use' : 'free'}`);
         if (!p.sims.length) out('  no SIM card');
+        const refused = refusalLines(p.refused);
+        for (const line of refused) out(`  ${line}`);
+        if (refused.length && p.refused.at) out(`  The last refused webhook was ${since(p.refused.at)}.`);
       }
     } else if (command === 'add-sim') {
       if (sims.length !== 1) stop('Name one SIM: --sim 2=+15557654321');

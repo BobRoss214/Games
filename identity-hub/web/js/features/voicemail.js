@@ -38,6 +38,8 @@ function voicemailSetting({ number, scope }) {
   const config = store.get('config') || {};
   const features = config.features || {};
   if (!features.phone) return null;
+  // A provider with no calls (own phone): no section at all. The Calls tab of the number explains calls there.
+  if (features.voice === false) return null;
   if (!number.voice) return h('p', { class: 'muted read', dataset: { vm: 'no-voice' } }, 'This number cannot make or get calls, so it has no voicemail.');
   const price = (config.prices && config.prices.voicemail) || 0;
   const maxSeconds = config.voicemailMaxSeconds || 120;

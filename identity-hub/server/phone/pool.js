@@ -29,7 +29,12 @@ CREATE TABLE IF NOT EXISTS own_devices (
   signing_key BLOB NOT NULL,          -- keys.srvEncrypt(webhook signing key, 'own-sign')
   last_seen INTEGER,                  -- time of the last valid webhook of this phone; NULL = never
   online INTEGER NOT NULL DEFAULT 0,  -- what the accounts were told last (see the job "ownphone-online")
-  created_day TEXT NOT NULL
+  created_day TEXT NOT NULL,
+  accepted INTEGER NOT NULL DEFAULT 0,          -- valid webhooks of this phone since it was added
+  refused_device INTEGER NOT NULL DEFAULT 0,    -- refused webhooks: the body named a different device id
+  refused_signature INTEGER NOT NULL DEFAULT 0, -- refused webhooks: the signature was wrong or absent
+  refused_clock INTEGER NOT NULL DEFAULT 0,     -- refused webhooks: the time was more than 5 minutes off
+  refused_at INTEGER                            -- time of the last refused webhook; NULL = none
 ) STRICT;
 CREATE TABLE IF NOT EXISTS own_sims (
   id TEXT PRIMARY KEY,
@@ -42,6 +47,17 @@ CREATE TABLE IF NOT EXISTS own_sims (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS own_sims_device ON own_sims(device_id);
 `;
+
+// Columns that a pool table of an older version does not have: [column, type].
+const DEVICE_COLUMNS = [
+  ['accepted', 'INTEGER NOT NULL DEFAULT 0'],
+  ['refused_device', 'INTEGER NOT NULL DEFAULT 0'],
+  ['refused_signature', 'INTEGER NOT NULL DEFAULT 0'],
+  ['refused_clock', 'INTEGER NOT NULL DEFAULT 0'],
+  ['refused_at', 'INTEGER'],
+];
+// Why a webhook of a known phone was refused. The operator tool shows the counts ("list").
+export const REFUSALS = ['device', 'signature', 'clock'];
 
 // Calling codes for the country of a SIM, longest first. "+1" is the United States unless the operator says CA.
 const CALLING_CODES = [
@@ -58,6 +74,8 @@ export function countryOfNumber(number) {
 
 export function createPool({ db, keys, config }) {
   db.exec(TABLES);
+  const have = new Set(db.all('PRAGMA table_info(own_devices)').map((c) => c.name));
+  for (const [column, type] of DEVICE_COLUMNS) if (!have.has(column)) db.exec(`ALTER TABLE own_devices ADD COLUMN ${column} ${type}`);
   const offlineSeconds = () => Math.max(1, config.phone.ownphone.offlineMinutes) * 60;
   const plain = (blob, aad) => keys.srvDecrypt(blob, aad).toString('utf8');
   const hmacOf = (number) => keys.indexHmac('num', number);
@@ -81,6 +99,9 @@ export function createPool({ db, keys, config }) {
       return {
         id: r.id, label: plain(r.label, 'own-label'), login: plain(r.login, 'own-login'), password: plain(r.password, 'own-password'),
         gatewayId: r.gateway_id, signingKey: plain(r.signing_key, 'own-sign'), lastSeen: r.last_seen ?? null, online: isOnline(r.last_seen), createdDay: r.created_day,
+        // Counts for the operator: webhooks that were taken, and webhooks that were refused, by reason.
+        accepted: r.accepted || 0,
+        refused: { device: r.refused_device || 0, signature: r.refused_signature || 0, clock: r.refused_clock || 0, at: r.refused_at ?? null },
       };
     },
     devices() {
@@ -112,8 +133,21 @@ export function createPool({ db, keys, config }) {
     seen(id, now = nowSec()) {
       const r = db.get('SELECT online FROM own_devices WHERE id = ?', id);
       if (!r) return false;
-      db.run('UPDATE own_devices SET last_seen = ?, online = 1 WHERE id = ?', now, id);
+      db.run('UPDATE own_devices SET last_seen = ?, online = 1, accepted = accepted + 1 WHERE id = ?', now, id);
       return r.online !== 1;
+    },
+    // A webhook with the token of this phone was refused. why: one of REFUSALS.
+    refused(id, why, now = nowSec()) {
+      if (!REFUSALS.includes(why)) return;
+      db.run(`UPDATE own_devices SET refused_${why} = refused_${why} + 1, refused_at = ? WHERE id = ?`, now, id);
+    },
+    // The phone has a different id at the gateway than the stored one (the app was set up again).
+    setGatewayId(id, gatewayId) {
+      db.run('UPDATE own_devices SET gateway_id = ? WHERE id = ?', gatewayId, id);
+    },
+    // How many phones of the pool use this login of the gateway.
+    countOfLogin(login) {
+      return pool.devices().filter((d) => d.login === login).length;
     },
     // Phones whose stored state is not what the clock says any more: [{ id, online }]. The new state is stored.
     changedStates(now = nowSec()) {
