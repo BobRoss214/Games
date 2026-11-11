@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { startTestApp, client, newAccount, b64u, unb64u } from './helpers.js';
 import { createApp } from '../server/app.js';
-import { openJson } from '../shared/crypto.js';
+import { openJson, openContentKey, openMeta, openAttachment } from '../shared/crypto.js';
 import { randomBytes } from '../shared/bytes.js';
 import { ProviderError } from '../server/phone/providers/errors.js';
 
@@ -1151,7 +1151,7 @@ test('texts: a code text or a forwarded text that fails later gives its charge b
 });
 
 test('capabilities: a provider with no voice refuses every call with 409 no_voice', async () => {
-  assert.deepEqual(app.services.phone.capabilities, { voice: true, asyncText: false, searchByArea: true });
+  assert.deepEqual(app.services.phone.capabilities, { voice: true, voicemail: true, asyncText: false, searchByArea: true });
   const a = await newAccount(app, { credits: 2000 });
   const num = await buyNumber(a);
   const phone = await linkPhone(a, num);
@@ -1495,6 +1495,494 @@ test('auto-delete: old texts of a number go away when its retention is on; nothi
   assert.equal(app.store.balance(a.id), before + 3);
 });
 
+// ---- voicemail ----
+
+const GREETING = 'The person you called is not available. Please leave a message after the tone.';
+const voicemailActions = (maxSeconds = 120) => [
+  { say: GREETING },
+  { record: { maxSeconds, doneUrl: PUBLIC + '/api/hooks/phone/recording', actionUrl: STATUS_URL } },
+  { hangup: true },
+];
+// What the browser does with a voicemail: open the key, the details, and the audio.
+async function openVoicemail(acct, call) {
+  const key = await openContentKey(acct.keys, unb64u(call.voicemail.sealedKey));
+  const meta = await openMeta(key, unb64u(call.voicemail.encMeta));
+  const res = await acct.api.get(`/api/calls/${call.id}/voicemail`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^application\/octet-stream/);
+  return { meta, encrypted: res.data, audio: Buffer.from(await openAttachment(key, res.data, 1)) };
+}
+// A recording that waits at the provider. Returns its ref and a copy of its bytes.
+function providerRecording(options) {
+  const ref = mock.addRecording(options);
+  return { ref, bytes: Buffer.from(mock.recordings.get(ref).bytes) };
+}
+const vmRows = (accountId) => countRows('voicemails', accountId);
+const deletesOf = (ref) => mock.deletedRecordings.filter((r) => r === ref).length;
+
+test('voicemail: off by default; the switch needs a number and a provider with voice', async () => {
+  assert.deepEqual(app.services.phone.capabilities, { voice: true, voicemail: true, asyncText: false, searchByArea: true });
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  const caller = outsider();
+  const set = (body) => a.api.patch(`/api/numbers/${num.id}`, body);
+
+  // Off by default: a call that is not forwarded gets the old answer, and nothing is recorded.
+  assert.equal(num.voicemail, false);
+  assert.equal(app.db.get('SELECT voicemail FROM numbers WHERE id = ?', num.id).voicemail, 0);
+  assert.deepEqual((await hook('voice', { to: num.plain, from: caller, callId: 'vm-off-1' })).data.actions, NOT_AVAILABLE);
+  let log = await calls(a, num);
+  assert.equal(log[0].voicemail, null);
+  // A recording report for that call is not wanted: nothing is stored, the recording is deleted at the provider.
+  const stray = providerRecording();
+  assert.equal((await hook('recording', { callId: 'vm-off-1', recordingRef: stray.ref, seconds: 5 })).status, 200);
+  assert.equal(vmRows(a.id), 0);
+  assert.ok(!mock.recordings.has(stray.ref));
+  // Off, forwarded, nobody answers: the call ends as before.
+  await set({ forwardPhoneId: phone.id, forwardCalls: true });
+  await hook('voice', { to: num.plain, from: caller, callId: 'vm-off-2' });
+  assert.deepEqual((await hook('status', { callId: 'vm-off-2', status: 'missed', seconds: 0 })).data.actions, [{ hangup: true }]);
+  await set({ forwardCalls: false });
+
+  // Bad values.
+  for (const bad of ['yes', 1, null, {}]) {
+    const res = await set({ voicemail: bad });
+    // null means "no change" for an optional switch.
+    assert.equal(res.status, bad === null ? 200 : 400, JSON.stringify(bad));
+  }
+  // On and off.
+  const on = await set({ voicemail: true });
+  assert.equal(on.status, 200);
+  assert.equal(on.data.number.voicemail, true);
+  assert.equal((await a.api.get('/api/numbers')).data.numbers[0].voicemail, true);
+  assert.equal((await set({ voicemail: false })).data.number.voicemail, false);
+  // A different account cannot switch it.
+  const b = await newAccount(app);
+  assert.equal((await b.api.patch(`/api/numbers/${num.id}`, { voicemail: true })).status, 404);
+
+  // No voice at the provider, or a number with no voice: 409 no_voice. To switch it off always works.
+  mock.capabilities.voice = false;
+  try {
+    const res = await set({ voicemail: true });
+    assert.equal(res.status, 409);
+    assert.equal(res.data.error.code, 'no_voice');
+    assert.equal((await set({ voicemail: false })).status, 200);
+  } finally {
+    mock.capabilities.voice = true;
+  }
+  app.db.run('UPDATE numbers SET voice = 0 WHERE id = ?', num.id);
+  assert.equal((await set({ voicemail: true })).data.error.code, 'no_voice');
+  app.db.run('UPDATE numbers SET voice = 1 WHERE id = ?', num.id);
+  // A provider with calls but with no recording.
+  mock.capabilities.voicemail = false;
+  try {
+    const res = await set({ voicemail: true });
+    assert.equal(res.status, 409);
+    assert.equal(res.data.error.code, 'no_voicemail');
+    // The switch is on in the database from before: the provider cannot record, so no greeting.
+    app.db.run('UPDATE numbers SET voicemail = 1 WHERE id = ?', num.id);
+    assert.deepEqual((await hook('voice', { to: num.plain, from: caller, callId: 'vm-off-3' })).data.actions, NOT_AVAILABLE);
+  } finally {
+    mock.capabilities.voicemail = true;
+  }
+  assert.equal(vmRows(a.id), 0);
+  assert.equal(app.store.balance(a.id), 1000 - 400 - 3);
+});
+
+test('voicemail: a call that is not forwarded; the recording is stored sealed and deleted at the provider', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const b = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  await a.api.patch(`/api/numbers/${num.id}`, { voicemail: true });
+  const caller = outsider();
+
+  // The caller hears the neutral greeting, then a tone. The recording stops after 120 seconds at most.
+  const v = await hook('voice', { to: num.plain, from: caller, callId: 'vm-1' });
+  assert.equal(v.status, 200);
+  assert.deepEqual(v.data.actions, voicemailActions(120));
+  assert.ok(!GREETING.includes(num.plain) && !/postern/i.test(GREETING));
+  // The call is in the log as a missed call. It has no voicemail yet.
+  let log = await calls(a, num);
+  assert.equal(log.length, 1);
+  assert.deepEqual({ direction: log[0].direction, status: log[0].status, seconds: log[0].seconds, voicemail: log[0].voicemail }, { direction: 'in', status: 'missed', seconds: 0, voicemail: null });
+  assert.equal((await a.api.get(`/api/calls/${log[0].id}/voicemail`)).status, 404);
+  assert.equal(app.store.balance(a.id), 100);
+
+  // The provider has the recording and reports it.
+  const rec = providerRecording();
+  assert.equal(rec.bytes.subarray(0, 4).toString(), 'RIFF');
+  // A report with a bad signature: 403. Nothing is fetched, stored, or deleted.
+  for (const sig of ['AAAA', null]) {
+    assert.equal((await hook('recording', { callId: 'vm-1', recordingRef: rec.ref, seconds: 7 }, sig)).status, 403);
+  }
+  assert.equal(vmRows(a.id), 0);
+  assert.ok(mock.recordings.has(rec.ref));
+  assert.equal(deletesOf(rec.ref), 0);
+
+  // Watch the order: the provider copy is deleted after our copy is stored.
+  const realDelete = mock.deleteRecording;
+  const realFetch = mock.fetchRecording;
+  const seen = { storedAtDelete: [], fetches: 0 };
+  mock.deleteRecording = async (ref) => { seen.storedAtDelete.push(vmRows(a.id)); return realDelete(ref); };
+  mock.fetchRecording = async (...args) => { seen.fetches++; return realFetch(...args); };
+  try {
+    const ok = await hook('recording', { callId: 'vm-1', recordingRef: rec.ref, seconds: 7, url: 'mock://recordings/' + rec.ref });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(seen, { storedAtDelete: [1], fetches: 1 });
+    assert.ok(!mock.recordings.has(rec.ref));
+    assert.equal(deletesOf(rec.ref), 1);
+
+    // The call has the voicemail now.
+    log = await calls(a, num);
+    assert.equal(log.length, 1);
+    assert.equal(log[0].status, 'missed');
+    assert.deepEqual(Object.keys(log[0].voicemail).sort(), ['encMeta', 'sealedKey', 'seconds', 'size']);
+    assert.equal(log[0].voicemail.seconds, 7);
+
+    // The browser opens it with the account keys. The audio is exactly what the provider had.
+    const opened = await openVoicemail(a, log[0]);
+    assert.deepEqual(opened.meta, { peer: caller, seconds: 7, contentType: 'audio/wav' });
+    assert.ok(opened.audio.equals(rec.bytes));
+    assert.equal(log[0].voicemail.size, opened.encrypted.length);
+    assert.equal(opened.encrypted.length, rec.bytes.length + 29);
+    // The stored form is encrypted. A different account cannot open it.
+    assert.ok(!opened.encrypted.includes(rec.bytes.subarray(0, 44)));
+    await assert.rejects(openContentKey(b.keys, unb64u(log[0].voicemail.sealedKey)));
+    const row = app.db.get('SELECT * FROM voicemails WHERE call_id = ?', log[0].id);
+    assert.ok(!Buffer.from(row.audio).includes(rec.bytes.subarray(0, 44)));
+    assert.ok(!Buffer.from(row.enc_meta).includes(caller));
+
+    // The charge.
+    assert.equal(app.store.balance(a.id), 95);
+    assert.equal(ledger(a)[0], 'voicemail:-5');
+
+    // The provider reports the same recording again: nothing happens.
+    assert.equal((await hook('recording', { callId: 'vm-1', recordingRef: rec.ref, seconds: 7 })).status, 200);
+    assert.deepEqual(seen, { storedAtDelete: [1], fetches: 1 });
+    assert.equal(app.store.balance(a.id), 95);
+    assert.equal(vmRows(a.id), 1);
+    // A second, different recording for the same call: not stored, deleted at the provider.
+    const extra = providerRecording();
+    await hook('recording', { callId: 'vm-1', recordingRef: extra.ref, seconds: 3 });
+    assert.ok(!mock.recordings.has(extra.ref));
+    assert.equal(seen.fetches, 1);
+    assert.equal(vmRows(a.id), 1);
+    assert.equal(app.store.balance(a.id), 95);
+    assert.ok((await openVoicemail(a, (await calls(a, num))[0])).audio.equals(rec.bytes));
+  } finally {
+    mock.deleteRecording = realDelete;
+    mock.fetchRecording = realFetch;
+  }
+
+  // The plain audio is not in the database file.
+  app.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  const file = readFileSync(join(app.config.dataDir, 'accounts.db'));
+  assert.ok(!file.includes(rec.bytes.subarray(0, 44)));
+  assert.ok(!file.includes(rec.ref));
+
+  // Only the owner gets the audio.
+  const id = log[0].id;
+  assert.equal((await b.api.get(`/api/calls/${id}/voicemail`)).status, 404);
+  assert.equal((await client(app).get(`/api/calls/${id}/voicemail`)).status, 401);
+  assert.equal((await a.api.get('/api/calls/nope/voicemail')).status, 404);
+  assert.equal((await b.api.get(`/api/numbers/${num.id}/calls`)).status, 404);
+
+  // A call that is deleted takes its voicemail with it.
+  assert.equal((await b.api.del(`/api/calls/${id}`)).status, 404);
+  assert.equal(vmRows(a.id), 1);
+  assert.equal((await a.api.del(`/api/calls/${id}`)).status, 204);
+  assert.equal(vmRows(a.id), 0);
+  assert.equal((await a.api.get(`/api/calls/${id}/voicemail`)).status, 404);
+});
+
+test('voicemail: a forwarded call that nobody answers; an answered call records nothing', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardCalls: true, voicemail: true });
+  const caller = outsider();
+  const dial = [{ dial: { number: phone.plain, callerId: caller, timeout: 25, timeLimit: 11940, actionUrl: STATUS_URL } }];
+
+  // The real phone rings first, as with no voicemail.
+  assert.deepEqual((await hook('voice', { to: num.plain, from: caller, callId: 'vm-fwd-1' })).data.actions, dial);
+  assert.equal((await calls(a, num)).length, 0);
+  // Nobody answers. The provider asks what to do next: the greeting and the recording.
+  const next = await hook('status', { callId: 'vm-fwd-1', status: 'missed', seconds: 0 });
+  assert.deepEqual(next.data.actions, voicemailActions(120));
+  let log = await calls(a, num);
+  assert.deepEqual({ status: log[0].status, voicemail: log[0].voicemail }, { status: 'missed', voicemail: null });
+  // The same report again does not start a second recording.
+  assert.deepEqual((await hook('status', { callId: 'vm-fwd-1', status: 'missed', seconds: 0 })).data.actions, [{ hangup: true }]);
+  // After the recording the provider asks again what to do: end the call.
+  assert.deepEqual((await hook('status', { callId: 'vm-fwd-1', status: 'answered', seconds: 9 })).data.actions, [{ hangup: true }]);
+
+  const rec = providerRecording();
+  assert.equal((await hook('recording', { callId: 'vm-fwd-1', recordingRef: rec.ref, seconds: 9 })).status, 200);
+  log = await calls(a, num);
+  assert.equal(log.length, 1);
+  const opened = await openVoicemail(a, log[0]);
+  assert.deepEqual(opened.meta, { peer: caller, seconds: 9, contentType: 'audio/wav' });
+  assert.ok(opened.audio.equals(rec.bytes));
+  assert.ok(!mock.recordings.has(rec.ref));
+  // No call minutes (nobody talked), one voicemail.
+  assert.equal(app.store.balance(a.id), 1000 - 400 - 3 - 5);
+  assert.equal(ledger(a)[0], 'voicemail:-5');
+
+  // The forwarded call fails (busy line, network): also voicemail, logged as a missed call.
+  await hook('voice', { to: num.plain, from: caller, callId: 'vm-fwd-2' });
+  assert.deepEqual((await hook('status', { callId: 'vm-fwd-2', status: 'failed', seconds: 0 })).data.actions, voicemailActions(120));
+  assert.equal((await calls(a, num))[0].status, 'missed');
+
+  // An answered call: no greeting, no recording. A recording report for it is not accepted.
+  await hook('voice', { to: num.plain, from: caller, callId: 'vm-fwd-3' });
+  assert.deepEqual((await hook('status', { callId: 'vm-fwd-3', status: 'answered', seconds: 30 })).data.actions, [{ hangup: true }]);
+  const unwanted = providerRecording();
+  await hook('recording', { callId: 'vm-fwd-3', recordingRef: unwanted.ref, seconds: 4 });
+  log = await calls(a, num);
+  assert.deepEqual({ status: log[0].status, seconds: log[0].seconds, voicemail: log[0].voicemail }, { status: 'answered', seconds: 30, voicemail: null });
+  assert.ok(!mock.recordings.has(unwanted.ref));
+  assert.equal(vmRows(a.id), 1);
+
+  // The whole flow with the mock helper: nobody answers and the caller speaks for 12 seconds.
+  const left = await mock.simulateCall({ to: num.plain, from: caller, seconds: 12, voicemail: true });
+  assert.equal(left.forwarded, true);
+  assert.ok(left.recordingRef);
+  log = await calls(a, num);
+  assert.equal(log[0].voicemail.seconds, 12);
+  assert.equal((await openVoicemail(a, log[0])).meta.peer, caller);
+  // The phone answers: no voicemail.
+  const talked = await mock.simulateCall({ to: num.plain, from: caller, seconds: 20 });
+  assert.equal(talked.recordingRef, null);
+  assert.equal((await calls(a, num))[0].voicemail, null);
+  assert.equal(vmRows(a.id), 2);
+  // A click-to-call that the destination does not answer never goes to voicemail.
+  await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to: caller });
+  const out = await mock.answerCall(mock.outbox.calls.at(-1).ref, { peerAnswered: false });
+  assert.equal(out.bridged, true);
+  assert.equal((await calls(a, num))[0].direction, 'out');
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM calls WHERE account_id = ? AND direction = ? AND vm_until IS NOT NULL', a.id, 'out').n, 0);
+});
+
+test('voicemail: balance, length and size limits; errors at the provider', async () => {
+  const a = await newAccount(app, { credits: 400 + 4 });
+  const num = await buyNumber(a);
+  await a.api.patch(`/api/numbers/${num.id}`, { voicemail: true });
+  const caller = outsider();
+  let n = 0;
+  // A call that got the greeting. Returns its call id.
+  const greeted = async (max = 120) => {
+    const callId = `vm-lim-${++n}`;
+    assert.deepEqual((await hook('voice', { to: num.plain, from: caller, callId })).data.actions, voicemailActions(max));
+    return callId;
+  };
+  const lastCall = async () => (await calls(a, num))[0];
+
+  // 4 credits are less than the price of one voicemail (5): the old answer, and no recording is accepted.
+  assert.deepEqual((await hook('voice', { to: num.plain, from: caller, callId: 'vm-poor' })).data.actions, NOT_AVAILABLE);
+  const poor = providerRecording();
+  await hook('recording', { callId: 'vm-poor', recordingRef: poor.ref, seconds: 5 });
+  assert.equal(vmRows(a.id), 0);
+  assert.ok(!mock.recordings.has(poor.ref));
+  app.store.credit(a.id, 96, 'topup');
+
+  // The longest message comes from the configuration.
+  const savedMax = app.config.phone.voicemailMaxSeconds;
+  app.config.phone.voicemailMaxSeconds = 45;
+  try {
+    // A recording that is longer than the limit (plus a small margin) is refused.
+    const long = providerRecording();
+    await hook('recording', { callId: await greeted(45), recordingRef: long.ref, seconds: 51 });
+    assert.equal((await lastCall()).voicemail, null);
+    assert.ok(!mock.recordings.has(long.ref));
+    const edge = providerRecording();
+    await hook('recording', { callId: await greeted(45), recordingRef: edge.ref, seconds: 46 });
+    assert.equal((await lastCall()).voicemail.seconds, 46);
+    // An empty recording is not a voicemail.
+    const empty = providerRecording();
+    await hook('recording', { callId: await greeted(45), recordingRef: empty.ref, seconds: 0 });
+    assert.equal((await lastCall()).voicemail, null);
+    assert.ok(!mock.recordings.has(empty.ref));
+  } finally {
+    app.config.phone.voicemailMaxSeconds = savedMax;
+  }
+  assert.equal(app.store.balance(a.id), 95);
+
+  // A recording of more than 5 MB is refused, and still deleted at the provider.
+  const big = providerRecording({ bytes: Buffer.alloc(5 * 1024 * 1024 + 1, 1) });
+  await hook('recording', { callId: await greeted(), recordingRef: big.ref, seconds: 60 });
+  assert.equal((await lastCall()).voicemail, null);
+  assert.ok(!mock.recordings.has(big.ref));
+  assert.equal(deletesOf(big.ref), 1);
+  assert.equal(app.store.balance(a.id), 95);
+  // Exactly 5 MB is accepted.
+  const most = providerRecording({ bytes: Buffer.alloc(5 * 1024 * 1024, 1) });
+  await hook('recording', { callId: await greeted(), recordingRef: most.ref, seconds: 60 });
+  assert.equal((await lastCall()).voicemail.size, 5 * 1024 * 1024 + 29);
+  assert.equal(app.store.balance(a.id), 90);
+
+  // A report that is not "the recording is complete" changes nothing.
+  const early = providerRecording();
+  const earlyCall = await greeted();
+  await hook('recording', { callId: earlyCall, recordingRef: early.ref, seconds: 5, ready: false });
+  assert.equal((await lastCall()).voicemail, null);
+  assert.ok(mock.recordings.has(early.ref));
+  // The time to wait for a recording is over: not stored, deleted at the provider.
+  app.db.run('UPDATE calls SET vm_until = ? WHERE vm_until IS NOT NULL AND account_id = ? AND id = ?', now() - 1, a.id, (await lastCall()).id);
+  await hook('recording', { callId: earlyCall, recordingRef: early.ref, seconds: 5 });
+  assert.equal((await lastCall()).voicemail, null);
+  assert.ok(!mock.recordings.has(early.ref));
+  // A report for a call that the server does not know.
+  const nobody = providerRecording();
+  await hook('recording', { callId: 'vm-nobody', recordingRef: nobody.ref, seconds: 5 });
+  assert.ok(!mock.recordings.has(nobody.ref));
+  assert.equal((await hook('recording', {})).status, 200);
+  assert.equal(app.store.balance(a.id), 90);
+
+  // The balance went down between the greeting and the recording: the voicemail is kept, with no charge.
+  const lateCall = await greeted();
+  app.store.charge(a.id, 88, 'text');
+  const kept = providerRecording();
+  await hook('recording', { callId: lateCall, recordingRef: kept.ref, seconds: 5 });
+  assert.ok((await lastCall()).voicemail);
+  assert.equal(app.store.balance(a.id), 2);
+  assert.ok(!ledger(a).slice(0, 1).includes('voicemail:-5'));
+  app.store.credit(a.id, 98, 'topup');
+
+  // The download fails two times and works the third time.
+  const shaky = providerRecording();
+  const shakyCall = await greeted();
+  mock.failNext('fetchRecording');
+  mock.failNext('fetchRecording');
+  await hook('recording', { callId: shakyCall, recordingRef: shaky.ref, seconds: 5 });
+  assert.ok((await openVoicemail(a, await lastCall())).audio.equals(shaky.bytes));
+  assert.equal(app.store.balance(a.id), 95);
+  // The download fails every time: no voicemail, no charge, and the recording does not stay at the provider.
+  const lost = providerRecording();
+  const lostCall = await greeted();
+  for (let i = 0; i < 3; i++) mock.failNext('fetchRecording');
+  await hook('recording', { callId: lostCall, recordingRef: lost.ref, seconds: 5 });
+  assert.equal((await lastCall()).voicemail, null);
+  assert.ok(!mock.recordings.has(lost.ref));
+  assert.equal(app.store.balance(a.id), 95);
+
+  // The provider cannot delete the recording now: the voicemail is stored, and a job tries again.
+  const sticky = providerRecording();
+  const stickyCall = await greeted();
+  mock.failNext('deleteRecording');
+  await hook('recording', { callId: stickyCall, recordingRef: sticky.ref, seconds: 5 });
+  assert.ok((await lastCall()).voicemail);
+  assert.ok(mock.recordings.has(sticky.ref));
+  const waiting = app.db.all("SELECT * FROM release_later WHERE kind = 'recording'");
+  assert.equal(waiting.length, 1);
+  // The list has no account and no plain reference.
+  assert.deepEqual(Object.keys(waiting[0]).sort(), ['id', 'kind', 'provider_ref', 'since']);
+  assert.ok(!Buffer.from(waiting[0].provider_ref).includes(sticky.ref));
+  // The job fails one more time, then it works.
+  mock.failNext('deleteRecording');
+  await app.runJobs('phone-cleanup');
+  assert.ok(mock.recordings.has(sticky.ref));
+  assert.equal(app.db.get("SELECT COUNT(*) AS n FROM release_later WHERE kind = 'recording'").n, 1);
+  await app.runJobs('phone-cleanup');
+  assert.ok(!mock.recordings.has(sticky.ref));
+  assert.equal(app.db.get("SELECT COUNT(*) AS n FROM release_later WHERE kind = 'recording'").n, 0);
+  assert.ok((await openVoicemail(a, await lastCall())).audio.equals(sticky.bytes));
+  // Nothing of this test is left at the provider.
+  for (const r of [poor, big, most, early, nobody, kept, shaky, lost, sticky]) assert.ok(!mock.recordings.has(r.ref));
+});
+
+test('voicemail: deleted calls, numbers and accounts leave no voicemail here and no recording at the provider', async () => {
+  const a = await newAccount(app, { credits: 2000 });
+  const n1 = await buyNumber(a);
+  const n2 = await buyNumber(a);
+  for (const n of [n1, n2]) await a.api.patch(`/api/numbers/${n.id}`, { voicemail: true });
+  const caller = outsider();
+  const leave = async (num) => (await mock.simulateCall({ to: num.plain, from: caller, seconds: 6, voicemail: true })).recordingRef;
+
+  assert.ok(await leave(n1));
+  assert.ok(await leave(n1));
+  assert.ok(await leave(n2));
+  assert.equal(vmRows(a.id), 3);
+  assert.equal(mock.recordings.size, 0);
+  // A caller of the first number is at the tone right now: the greeting was played, the recording is not here yet.
+  assert.deepEqual((await hook('voice', { to: n1.plain, from: caller, callId: 'vm-del-1' })).data.actions, voicemailActions());
+
+  // The number is deleted. Its voicemails go with its calls.
+  assert.equal((await a.api.del(`/api/numbers/${n1.id}`)).status, 204);
+  assert.equal(vmRows(a.id), 1);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM voicemails WHERE call_id NOT IN (SELECT id FROM calls)').n, 0);
+  // The recording of the caller at the tone arrives late: it is not stored, and it is deleted at the provider.
+  const late = providerRecording();
+  assert.equal((await hook('recording', { callId: 'vm-del-1', recordingRef: late.ref, seconds: 6 })).status, 200);
+  assert.ok(!mock.recordings.has(late.ref));
+  assert.equal(vmRows(a.id), 1);
+
+  // The same for an account.
+  assert.deepEqual((await hook('voice', { to: n2.plain, from: caller, callId: 'vm-del-2' })).data.actions, voicemailActions());
+  await app.deleteAccount(a.id);
+  assert.equal(vmRows(a.id), 0);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM calls WHERE account_id = ?', a.id).n, 0);
+  const late2 = providerRecording();
+  await hook('recording', { callId: 'vm-del-2', recordingRef: late2.ref, seconds: 6 });
+  assert.ok(!mock.recordings.has(late2.ref));
+  assert.equal(mock.recordings.size, 0);
+
+  // Expiry of an unpaid number removes its voicemails too.
+  const c = await newAccount(app, { credits: 500 });
+  const n3 = await buyNumber(c);
+  await c.api.patch(`/api/numbers/${n3.id}`, { voicemail: true });
+  assert.ok((await mock.simulateCall({ to: n3.plain, from: caller, seconds: 6, voicemail: true })).recordingRef);
+  assert.equal(vmRows(c.id), 1);
+  app.db.run("UPDATE numbers SET status = 'suspended', paid_until = ? WHERE id = ?", now() - app.config.graceDays * 86400 - 3600, n3.id);
+  app.store.charge(c.id, app.store.balance(c.id), 'text');
+  // A suspended number gets no calls, so no voicemail.
+  assert.deepEqual((await hook('voice', { to: n3.plain, from: caller, callId: 'vm-del-3' })).data.actions, NOT_AVAILABLE);
+  await app.runJobs('renew');
+  assert.equal(vmRows(c.id), 0);
+  assert.equal(countRows('numbers', c.id), 0);
+});
+
+test('voicemail: the development route leaves a message that can be played', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const from = outsider();
+  const body = { numberId: num.id, number: num.plain, from, voicemail: true, seconds: 8 };
+  // Voicemail is off: the simulated caller cannot leave a message.
+  assert.equal((await a.api.post('/api/dev/inbound-call', body)).status, 204);
+  assert.equal((await calls(a, num))[0].voicemail, null);
+  assert.equal((await a.api.post('/api/dev/inbound-call', { ...body, voicemail: 'yes' })).status, 400);
+
+  await a.api.patch(`/api/numbers/${num.id}`, { voicemail: true });
+  assert.equal((await a.api.post('/api/dev/inbound-call', body)).status, 204);
+  const call = (await calls(a, num))[0];
+  assert.equal(call.status, 'missed');
+  assert.equal(call.voicemail.seconds, 8);
+  const { meta, audio } = await openVoicemail(a, call);
+  assert.deepEqual(meta, { peer: from, seconds: 8, contentType: 'audio/wav' });
+  // A real WAV file: 8 kHz, one channel, 16 bit, about one second of sound.
+  assert.equal(audio.subarray(0, 4).toString(), 'RIFF');
+  assert.equal(audio.readUInt32LE(4), audio.length - 8);
+  assert.equal(audio.subarray(8, 16).toString(), 'WAVEfmt ');
+  assert.deepEqual([audio.readUInt16LE(20), audio.readUInt16LE(22), audio.readUInt32LE(24), audio.readUInt16LE(34)], [1, 1, 8000, 16]);
+  assert.equal(audio.subarray(36, 40).toString(), 'data');
+  assert.equal(audio.readUInt32LE(40), audio.length - 44);
+  assert.equal(audio.length, 44 + 16000);
+  let loud = 0;
+  for (let i = 44; i < audio.length; i += 2) loud = Math.max(loud, Math.abs(audio.readInt16LE(i)));
+  assert.ok(loud > 5000 && loud < 20000);
+  // A message cannot be longer than the limit.
+  await a.api.post('/api/dev/inbound-call', { ...body, seconds: 4000 });
+  assert.equal((await calls(a, num))[0].voicemail.seconds, 120);
+  // With forwarding on, "voicemail: true" means that the phone does not answer.
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardCalls: true });
+  await a.api.post('/api/dev/inbound-call', body);
+  assert.equal((await calls(a, num))[0].voicemail.seconds, 8);
+  await a.api.post('/api/dev/inbound-call', { numberId: num.id, number: num.plain, from });
+  const answered = (await calls(a, num))[0];
+  assert.deepEqual({ status: answered.status, voicemail: answered.voicemail }, { status: 'answered', voicemail: null });
+});
+
 test('migration: an older database gets the new columns, and old sent texts get a status', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'postern-phone-'));
   const opts = { dataDir, port: 0, host: '127.0.0.1', logLevel: 'silent', rateLimits: false, mail: { smtpPort: 0, smtpHost: '127.0.0.1', relayUrl: '' }, phone: { provider: 'mock', mockAutoAnswer: false }, pay: { provider: 'off' } };
@@ -1514,9 +2002,13 @@ test('migration: an older database gets the new columns, and old sent texts get 
     const raw = new DatabaseSync(join(dataDir, 'accounts.db'));
     raw.exec('DROP INDEX texts_msg; DROP INDEX calls_call; DROP TABLE text_sends;');
     raw.exec('ALTER TABLE texts DROP COLUMN status; ALTER TABLE texts DROP COLUMN msg_hmac; ALTER TABLE calls DROP COLUMN call_hmac;');
-    raw.exec('ALTER TABLE numbers DROP COLUMN retention_days;');
+    raw.exec('ALTER TABLE numbers DROP COLUMN retention_days; ALTER TABLE numbers DROP COLUMN voicemail;');
+    raw.exec('ALTER TABLE calls DROP COLUMN vm_until; ALTER TABLE release_later DROP COLUMN kind; DROP TABLE voicemails;');
     const columns = (table) => raw.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
     assert.ok(!columns('numbers').includes('retention_days'));
+    assert.ok(!columns('numbers').includes('voicemail'));
+    assert.ok(!columns('calls').includes('vm_until'));
+    assert.ok(!columns('release_later').includes('kind'));
     assert.ok(!columns('texts').includes('status'));
     assert.ok(!columns('texts').includes('msg_hmac'));
     assert.ok(!columns('calls').includes('call_hmac'));
@@ -1530,10 +2022,20 @@ test('migration: an older database gets the new columns, and old sent texts get 
       assert.ok(cols('texts').includes('msg_hmac'));
       assert.ok(cols('calls').includes('call_hmac'));
       assert.ok(cols('numbers').includes('retention_days'));
+      assert.ok(cols('numbers').includes('voicemail'));
+      assert.ok(cols('calls').includes('vm_until'));
+      assert.ok(cols('release_later').includes('kind'));
       const api = client(two);
       api.setCookie(`postern=${a.session.token}`);
       // The old number has no auto-delete, and the setting works on the old database.
       assert.equal((await api.get('/api/numbers')).data.numbers[0].retentionDays, null);
+      assert.equal((await api.get('/api/numbers')).data.numbers[0].voicemail, false);
+      // Voicemail works on the old database, and the old call has none.
+      assert.equal((await api.patch(`/api/numbers/${num.id}`, { voicemail: true })).data.number.voicemail, true);
+      assert.ok((await two.services.phone.simulateCall({ to: num.plain, from: '+13055550111', seconds: 5, voicemail: true })).recordingRef);
+      const callLog = (await api.get(`/api/numbers/${num.id}/calls`)).data.calls;
+      assert.deepEqual(callLog.map((k) => Boolean(k.voicemail)), [true, false]);
+      assert.equal((await api.del(`/api/calls/${callLog[0].id}`)).status, 204);
       await two.runJobs('phone-retention');
       assert.equal((await api.patch(`/api/numbers/${num.id}`, { retentionDays: 30 })).data.number.retentionDays, 30);
       await two.runJobs('phone-retention');

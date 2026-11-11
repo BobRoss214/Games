@@ -629,8 +629,8 @@ test('end to end: a text is forwarded to the real phone through Twilio', async (
 
 test('adapter: status callback for texts, and what the adapter can do', async () => {
   const twilio = createTwilioProvider({ accountSid: SID, authToken: TOKEN, baseUrl: fake.url });
-  assert.deepEqual(twilio.capabilities, { voice: true, asyncText: true, searchByArea: true });
-  assert.deepEqual(app.services.phone.capabilities, { voice: true, asyncText: true, searchByArea: true });
+  assert.deepEqual(twilio.capabilities, { voice: true, voicemail: true, asyncText: true, searchByArea: true });
+  assert.deepEqual(app.services.phone.capabilities, { voice: true, voicemail: true, asyncText: true, searchByArea: true });
 
   // The address for status reports goes to Twilio with the message. A new message is "queued".
   const sent = await twilio.sendText({ from: '+12125551000', to: '+13055550100', body: 'Hi', statusUrl: PUBLIC + HOOK.textStatus });
