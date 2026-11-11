@@ -98,7 +98,7 @@ export default async function (t) {
   // Delete the call: the voicemail goes with it, on the server too.
   const callId = await line.getAttribute('data-vm');
   await page.locator('.call-row', { has: page.locator('.f-vm') }).getByRole('button', { name: 'Call actions' }).click();
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('.call-row').length === 2 && !document.querySelector('.f-vm'), null, { timeout: 10_000 });
   s.allow(/status of 404 .*\/api\/calls\/[^/]+\/voicemail/); // asked on purpose, after the delete
   const gone = await page.evaluate((id) => fetch(`/api/calls/${id}/voicemail`).then((r) => r.status), callId);

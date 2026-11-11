@@ -11,7 +11,7 @@ import { setIdentityExtra } from '../lib/identities.js';
 import {
   registerRoute, registerNavItem, registerRowAction, registerRowBadge, registerMessageAction, registerMessagePanel,
   registerTextAddon, registerCallAddon, registerSettingsSection, registerHomeSection, registerNumberTab,
-  registerNumberSetting, registerGlobalKey,
+  registerNumberSetting, registerGlobalKey, registerWelcomeLink, registerTopBarAction,
 } from '../lib/registry.js';
 
 // screens: one that needs an account (with a part that changes), one that everybody may open
@@ -49,3 +49,7 @@ registerNumberSetting({ id: 'e2e', title: 'Test setting', lede: 'From the test f
 
 // a key
 registerGlobalKey('j', () => navigate('/e2e/key'));
+
+// a link on the start page, and a button in the top bar of a phone
+registerWelcomeLink({ id: 'e2e', label: 'Test link', path: '/e2e-open', order: 99 });
+registerTopBarAction({ id: 'e2e', label: 'Test search', icon: 'search', run: () => toast('Test search opened') });

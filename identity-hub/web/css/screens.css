@@ -584,3 +584,6 @@ a.item-value:hover { color: var(--accent); text-decoration: underline; }
 .history-list li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: var(--s-3); }
 .history-day { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 @media (max-width: 720px) { .colour-option label { min-height: var(--touch); } }
+
+/* links of feature files on the start page (registerWelcomeLink) */
+.welcome-links { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); }

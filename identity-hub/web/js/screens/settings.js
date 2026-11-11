@@ -118,25 +118,32 @@ export function settingsScreen({ scope }) {
 
   // ---- what the server sees ----
   // These two lists follow docs/SECURITY.md, section 1. Change them together.
+  // Texts, numbers and voicemail are named only where this server has them.
+  const feat = (store.get('config') || {}).features || {};
+  const phoneOn = !!feat.phone;
+  const voicemailOn = phoneOn && !!feat.voicemail;
+  const arrive = ['mail', phoneOn ? 'texts' : null, voicemailOn ? 'voicemail' : null].filter(Boolean);
+  const stored = ['mail', phoneOn ? 'texts' : null, phoneOn ? 'call history' : null, voicemailOn ? 'voicemail' : null].filter(Boolean);
+  const words = (list) => (list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}` : list[0]);
   const can = [
     'That an account exists, and its credit balance.',
-    'Which inboxes, aliases and numbers belong to one account. It needs this to deliver.',
-    'New mail, texts and voicemail for a moment when they arrive. It encrypts them for you, then forgets the readable form.',
-    'Mail and texts that you send, for the moment that it sends them.',
+    phoneOn ? 'Which inboxes, aliases and numbers belong to one account. It needs this to deliver.' : 'Which inboxes and aliases belong to one account. It needs this to deliver.',
+    `New ${words(arrive)} for a moment when ${arrive.length > 1 ? 'they arrive' : 'it arrives'}. It encrypts ${arrive.length > 1 ? 'them' : 'it'} for you, then forgets the readable form.`,
+    phoneOn ? 'Mail and texts that you send, for the moment that it sends them.' : 'Mail that you send, for the moment that it sends it.',
     'The size and the time of each message.',
-    'Your settings for each item: on or off, forwarding, voicemail, automatic deletion, an end date, "stop after the first mail".',
+    `Your settings for each item: on or off, ${phoneOn ? 'forwarding, ' : ''}${voicemailOn ? 'voicemail, ' : ''}automatic deletion, an end date, "stop after the first mail".`,
     'Two numbers for each address: how many mails it received, and how many it refused.',
-    'Your real phone number, if you link one. It needs it to forward. The phone company sees it too.',
+    phoneOn ? 'Your real phone number, if you link one. It needs it to forward. The phone company sees it too.' : null,
     'Your IP address while you are connected. It is kept in memory only, not in logs.',
-  ];
+  ].filter(Boolean);
   const cannot = [
     'Your name or who you are. It never asks.',
     'Your recovery key and your account key.',
-    'Stored mail, texts, call history and voicemail.',
+    `Stored ${words(stored)}.`,
     'Your labels and notes.',
     'Your identities: their names, their notes, and what is in them.',
     'Your random identifiers and usernames. A password that the app makes is saved nowhere.',
-    'A readable list of your addresses and numbers in the database.',
+    phoneOn ? 'A readable list of your addresses and numbers in the database.' : 'A readable list of your addresses in the database.',
     'The senders that you block, in readable form.',
     'Which payment added credit to your account.',
   ];
@@ -174,7 +181,7 @@ export function settingsScreen({ scope }) {
           h('div', { class: 'sheet sheet-pad' }, h('h3', { class: 'see-title' }, 'The server can see'), seeList(can, 'yes')),
           h('div', { class: 'sheet sheet-pad see-no' }, h('h3', { class: 'see-title' }, 'The server cannot see'), seeList(cannot, 'no')),
         ),
-        callout('info', 'Know the limits', h('p', null, 'Email and the phone network are not end-to-end encrypted. The phone provider sees texts and calls on its side. Use numbers for convenience, not for secrets.')),
+        callout('info', 'Know the limits', h('p', null, phoneOn ? 'Email and the phone network are not end-to-end encrypted. The phone provider sees texts and calls on its side. Use numbers for convenience, not for secrets.' : 'Email is not end-to-end encrypted on its way to this server. The server sees each new message for a moment.')),
       ) },
       { order: 90, make: () => section({ title: 'This browser' },
         h('div', { class: 'row row-wrap' },

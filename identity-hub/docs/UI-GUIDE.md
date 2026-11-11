@@ -50,6 +50,8 @@ Register at the top level of the file, not later. Keep heavy code in files that 
 | Icons | `icon('mail', { size: 18, label: 'Email' })`. The names are in `ui/icons.js`. Ask the owner for a new one. | `ui/icons.js` |
 | "Why?" | `why('alias-off')`: a small button that opens a short explanation in place (no request, nothing saved). The words are `WHY` in `help/content.js`. `whyParts(key)` gives `{ button, panel }` to place apart; `whyGroup([[key], [key]])` puts buttons on one line. | `ui/why.js` |
 | A code with "Copy" | `codeIn(text, subject)` gives the "Code 482913 · Copy" chip or `null`; `codeChip(found)` | `ui/code.js` |
+| Show an email body | `mailBody({ body: { text, html }, attachments, getAttachment, scope })`: the one viewer (cleaned HTML in a closed frame, remote images blocked). Never build a second one. | `ui/mailbody.js` |
+| Words for a recovery-key error | `recoveryMessage(err)` | `screens/signin.js` |
 | The product name | `appName()`, never the word "Postern" in a string: the person who runs the server can change the name | `lib/store.js` |
 | Open a shared dialog or place | `openAddPasskey()` gives `{ unlocks }` or `undefined` (`ui/passkeys.js`); `openAddFunds()` goes to Funds at "Add funds" (`screens/funds.js`); `openNewAlias()`, `openNewInbox()`, `openGetNumber()` (`ui/items.js`); `openNewIdentity()` (`ui/identity.js`) | see left |
 | Is a screen there? | `hasRoute('/stats')`: true for the app's own screens and for screens of feature files | `lib/registry.js` |
@@ -89,6 +91,9 @@ Do not write to `label`, `note`, `persona`, `identityId`: they have their own fu
 Writes to one item run one after the other in a tab, so two features that save different fields at the same moment both keep their change.
 Check what you read (`typeof`, length): another version of the app may have written it. Small one-word preferences: `setPref(key, value)`, read `store.get('prefs')`.
 Other helpers: `findAlias(id)`, `findNumber(id)`, `findMailbox(id)`, `findIdentity(id)`, `membersOf(identityId)`, `listMessages({ addressIds })`, `getMessage(id)`, `listTexts(numberId)`, `listCalls(numberId)`.
+The store lists carry every field of the server lists, so do not load a list a second time: an alias has `enabled`, `oneShot`, `usedUp`, `received`, `refused`, `expiresAt`, `blocks`;
+an inbox has `status`, `paidUntil`, `unread`, `refused`, `blocks`, `retentionDays`; a number has `status`, `paidUntil`, `sms`, `voice`, `voicemail`, `retentionDays`, `forwardPhoneId`, `forwardTexts`, `forwardCalls`;
+a call has `voicemail`. Change them with `updateAlias(id, { enabled, oneShot, mailboxId, label })` and `updateNumber(id, { voicemail, retentionDays, … })`.
 
 ## 3. Extension points (`lib/registry.js`)
 
@@ -135,6 +140,11 @@ registerHomeSection({ id: 'warnings', order: 15, render: ({ scope }) => region(s
 // (Label 10, Forwarding 20, Identity 30, Random identifiers 40, Old texts 50, Renewal 80, Release 100).
 registerNumberTab({ id: 'voicemail', label: 'Voicemail', order: 30, render: ({ number, scope }) => voicemailList(number, scope) });
 registerNumberSetting({ id: 'voicemail', title: 'Voicemail', order: 25, render: ({ number }) => voicemailSwitch(number) });
+
+// A link on the start page for people without an account, under the buttons (the route needs signedOut: true).
+registerWelcomeLink({ id: 'open-export', label: 'Open an export file', path: '/open-export', order: 60 });
+// An icon button in the top bar of the phone layout, before the gear. Room for two. Give the same action a key for wide screens.
+registerTopBarAction({ id: 'jump', label: 'Search', icon: 'search', run: () => openQuickJump() });
 
 // One key for the whole app. It does nothing in a field, with a dialog or a menu open, or with Ctrl, Alt, Command.
 // Options: signedOut: true = also without an account. Each key can be taken one time: tell the owner which one you take.

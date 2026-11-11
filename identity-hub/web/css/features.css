@@ -149,6 +149,8 @@
 .f-export-items .item-label { white-space: normal; overflow-wrap: anywhere; }
 .f-export-items .item-sub { flex-wrap: wrap; }
 .f-export-when { padding-right: var(--s-2); }
+/* a link to /settings#download-my-data stops with the title of the section in sight */
+#download-my-data { scroll-margin-top: 9rem; }
 /* --- end export --- */
 
 /* ---- insights: start (features/insights.js, features/insights/) ---- */
@@ -164,3 +166,20 @@
 .f-burn-list { display: flex; flex-direction: column; gap: var(--s-3); }
 .f-burn-list li { display: flex; flex-direction: column; gap: 0.125rem; padding-left: var(--s-3); border-left: 2px solid var(--line-2); }
 /* ---- burn: end ---- */
+
+/* --- quick jump (web/js/features/quickjump.js): the search dialog --- */
+.f-quickjump-list { display: flex; flex-direction: column; gap: 1px; max-height: min(24rem, 50dvh); margin: 0 calc(var(--s-2) * -1); overflow-y: auto; overscroll-behavior: contain; }
+.f-quickjump-list:empty { display: none; }
+.f-quickjump-row { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: center; column-gap: var(--s-3); min-height: var(--touch); padding: var(--s-1) var(--s-2); border-radius: var(--r-md); color: var(--ink); text-decoration: none; }
+.f-quickjump-row:hover { color: var(--ink); }
+.f-quickjump-icon { display: grid; place-items: center; color: var(--accent); }
+.f-quickjump-main { display: flex; flex-direction: column; min-width: 0; }
+.f-quickjump-value { font-size: var(--fs-md); font-weight: 500; }
+.f-quickjump-row[aria-selected="true"] { background: var(--accent-wash); box-shadow: inset 2px 0 0 var(--accent); }
+@media (max-width: 720px) {
+  /* on a phone the sheet sits at the top, so that the keyboard does not cover the field and the list */
+  .dialog.f-quickjump { margin: 0 0 auto; border-radius: 0 0 var(--r-lg) var(--r-lg); border-width: 0 0 1px; padding-bottom: 0; }
+  .f-quickjump-list { max-height: 38dvh; }
+  .f-quickjump-hint { display: none; }
+}
+/* --- end quick jump --- */

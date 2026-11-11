@@ -222,7 +222,7 @@ export default async function (t) {
   t.ok('message deleted');
   await page.goto(t.base + '/aliases');
   await page.locator('.item-row').first().getByRole('button', { name: /More actions for/ }).click();
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await dlg.getByRole('button', { name: 'Delete alias' }).click();
   await page.getByText('Alias deleted').waitFor();
   t.ok('alias deleted');
@@ -239,7 +239,7 @@ export default async function (t) {
   t.ok('number released');
   await page.goto(t.base + '/');
   await page.locator('.item-row[data-kind="inbox"]').getByRole('button', { name: /More actions/ }).click();
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await dlg.getByRole('button', { name: 'Delete inbox' }).click();
   await page.getByText('Inbox deleted').waitFor();
   t.ok('inbox deleted');

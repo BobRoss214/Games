@@ -16,6 +16,7 @@ import { emailOk } from '../lib/format.js';
 import { button, callout, runBusy } from '../ui/components.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
+import { aliasFacts } from './common/facts.js';
 
 const DEFAULT_SUBJECT = 'unsubscribe';
 // Messages that got an unsubscribe mail in this tab. Memory only: nothing about it is saved.
@@ -42,6 +43,9 @@ registerMessagePanel((message, alias) => {
   const title = 'This looks like a newsletter';
   const wrap = (...lines) => h('div', { dataset: { newsletter: '' } }, callout('info', title, ...lines));
   if (alias && !alias.enabled) return wrap(h('p', null, 'This alias is off. Mail to it is refused.'));
+  // An alias past its end date refuses mail too, and it cannot send.
+  const end = alias ? aliasFacts(alias.id).expiresAt : null;
+  if (end && end <= Date.now() / 1000) return wrap(h('p', null, 'This alias is past its end date. Mail to it is refused.'));
 
   const target = targetOf(message);
   const from = senderOf(message, alias);

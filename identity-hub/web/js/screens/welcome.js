@@ -37,6 +37,7 @@ export function welcomeScreen({ scope }) {
   const domain = (config.mailDomains && config.mailDomains[0]) || 'postern.example';
   const errorBox = h('p', { class: 'form-error', role: 'alert', hidden: true });
   const help = registered.navItems().find((n) => n.id === 'help') || null;
+  const links = registered.welcomeLinks(); // links of feature files (registerWelcomeLink)
 
   const passkeyBtn = button('Sign in with a passkey', { iconName: 'passkey', size: 'lg', block: true, onClick: (e, btn) => runBusy(btn, async () => {
     errorBox.hidden = true;
@@ -61,7 +62,7 @@ export function welcomeScreen({ scope }) {
     h('header', { class: 'welcome-head' },
       h('span', { class: 'brand' }, logoMark({ size: 30 }), h('span', { class: 'brand-name' }, appName())),
       // Help is a feature file. Its pages are open to people without an account.
-      help ? h('a', { class: 'btn btn-quiet welcome-help', href: help.path, 'data-link': true }, icon('info', { size: 18 }), h('span', null, 'Help')) : null,
+      help && !links.some((l) => l.path === help.path) ? h('a', { class: 'btn btn-quiet welcome-help', href: help.path, 'data-link': true }, icon('info', { size: 18 }), h('span', null, 'Help')) : null,
     ),
     h('main', { class: 'welcome-main', id: 'main', tabIndex: -1 },
       h('div', { class: 'welcome-copy' },
@@ -73,6 +74,7 @@ export function welcomeScreen({ scope }) {
           h('li', null, icon('check', { size: 18 }), 'No phone number.'),
         ),
         actions,
+        links.length ? h('nav', { class: 'welcome-links', 'aria-label': 'More' }, links.map((l) => h('a', { class: 'btn btn-quiet', href: l.path, 'data-link': true, dataset: { welcomeLink: l.id } }, l.label))) : null,
         h('p', { class: 'welcome-fine' }, 'You pay with Bitcoin or Monero. The server cannot link a payment to your account.'),
       ),
       doorFigure(domain),

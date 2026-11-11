@@ -45,6 +45,8 @@ export async function loadMailboxes() {
       id: m.id, addressId: m.addressId, address: sealed ? sealed.address : '', label: e.label, note: e.note, extra: e.extra,
       status: m.status, paidUntil: m.paidUntil, createdDay: m.createdDay, unread: m.unread || 0, total: m.total || 0,
       refused: m.refused || 0, // how many mails the address of the inbox refused (a number only)
+      blocks: m.blocks === undefined ? 0 : m.blocks, // blocked senders of the inbox address, as the server gives them
+      retentionDays: Number.isInteger(m.retentionDays) ? m.retentionDays : null, // old mail is deleted after this many days; null = never
     };
   }));
   if (!isUnlocked()) return [];
@@ -63,6 +65,8 @@ export async function loadAliases() {
       // oneShot: the alias stops after the first mail. usedUp: it is off because that mail came.
       // refused: how many mails the alias refused (a number only).
       oneShot: !!a.oneShot, usedUp: !!a.usedUp, refused: a.refused || 0,
+      expiresAt: Number.isFinite(a.expiresAt) && a.expiresAt > 0 ? a.expiresAt : null, // the alias stops at this time (Unix seconds); null = no end
+      blocks: a.blocks === undefined ? 0 : a.blocks, // blocked senders of the alias, as the server gives them
     };
   }));
   if (!isUnlocked()) return [];
@@ -81,6 +85,7 @@ export async function loadNumbers() {
       country: n.country, sms: !!n.sms, voice: !!n.voice, status: n.status, paidUntil: n.paidUntil, createdDay: n.createdDay,
       forwardPhoneId: n.forwardPhoneId || null, forwardTexts: !!n.forwardTexts, forwardCalls: !!n.forwardCalls, unread: n.unread || 0,
       retentionDays: Number.isInteger(n.retentionDays) ? n.retentionDays : null, // old texts are deleted after this many days; null = never
+      voicemail: !!n.voicemail, // callers can leave a message
     };
   }));
   if (!isUnlocked()) return [];
@@ -304,13 +309,14 @@ export async function buyNumber({ number, label, identityId }) {
   await Promise.allSettled([loadNumbers(), loadBalance()]);
   return res;
 }
-export async function updateNumber(id, { label, forwardPhoneId, forwardTexts, forwardCalls, retentionDays }) {
+export async function updateNumber(id, { label, forwardPhoneId, forwardTexts, forwardCalls, retentionDays, voicemail }) {
   const body = {};
   if (label !== undefined) await writeEnc('number', id, (e) => { e.label = label; });
   if (forwardPhoneId !== undefined) body.forwardPhoneId = forwardPhoneId;
   if (forwardTexts !== undefined) body.forwardTexts = forwardTexts;
   if (forwardCalls !== undefined) body.forwardCalls = forwardCalls;
   if (retentionDays !== undefined) body.retentionDays = retentionDays;
+  if (voicemail !== undefined) body.voicemail = !!voicemail;
   if (Object.keys(body).length) await api.patch(`/api/numbers/${id}`, body);
   await loadNumbers();
 }

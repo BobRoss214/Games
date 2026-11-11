@@ -117,7 +117,7 @@ export default async function (t) {
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await row.getByRole('button', { name: /More actions/ }).click();
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'What happens when I delete?' }).click();
   await page.getByRole('dialog').getByText('A deleted alias leaves its mail in your inbox.').waitFor();
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();

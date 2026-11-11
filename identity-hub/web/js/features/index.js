@@ -16,3 +16,4 @@ import './blocks.js';
 import './autodelete.js';
 import './unsubscribe.js';
 import './burn.js';
+import './quickjump.js';

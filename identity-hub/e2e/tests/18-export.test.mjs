@@ -203,8 +203,11 @@ export default async function (t) {
     // ---------- the viewer, signed out, in a fresh browser ----------
     const v = await t.open();
     const vp = v.page;
-    await vp.goto(t.base + '/open-export');
+    // The start page for people without an account has a link to the viewer.
+    await vp.goto(t.base + '/');
+    await vp.getByRole('link', { name: 'Open an export file' }).click();
     await vp.getByRole('heading', { name: 'Open an export file', level: 1 }).waitFor();
+    assert(new URL(vp.url()).pathname === '/open-export', 'the link on the start page does not open the viewer');
     await vp.waitForLoadState('networkidle');
     await vp.waitForTimeout(500);
     // From here on the page must ask no server for anything.

@@ -20,6 +20,8 @@ const homeSections = [];
 const numberTabs = [];
 const numberSettings = [];
 const globalKeys = new Map();
+const welcomeLinks = [];
+const topBarActions = [];
 
 function need(ok, message) { if (!ok) throw new TypeError(`registry: ${message}`); }
 const isFn = (v) => typeof v === 'function';
@@ -141,6 +143,24 @@ export function registerNumberSetting({ id, title, lede = '', order = 60, render
   addUnique(numberSettings, { id, title, lede, order, render }, 'number setting');
 }
 
+// ---------- the start page and the top bar of a phone ----------
+
+// A link on the start page for people who are not signed in, under the buttons.
+// The path must be a route with signedOut: true.
+export function registerWelcomeLink({ id, label, path, order = 50 } = {}) {
+  need(isText(label), `welcome link "${id}" needs a label`);
+  need(typeof path === 'string' && path.startsWith('/'), `welcome link "${id}" needs a path`);
+  addUnique(welcomeLinks, { id, label, path, order }, 'welcome link');
+}
+
+// An icon button in the top bar of the phone layout, before the gear (a search button, for example).
+// The bar has room for two. On a wide screen there is no top bar: give the same action a key (registerGlobalKey).
+export function registerTopBarAction({ id, label, icon = 'dot', run, order = 50 } = {}) {
+  need(isText(label), `top bar action "${id}" needs a label`);
+  need(isFn(run), `top bar action "${id}" needs a function`);
+  addUnique(topBarActions, { id, label, icon, run, order }, 'top bar action');
+}
+
 // ---------- keys ----------
 
 // One key for the whole app, for example '/'. It does nothing while the person types in a
@@ -166,6 +186,8 @@ export const registered = {
   homeSections: () => byOrder(homeSections),
   numberTabs: () => byOrder(numberTabs),
   numberSettings: () => byOrder(numberSettings),
+  welcomeLinks: () => byOrder(welcomeLinks),
+  topBarActions: () => byOrder(topBarActions).slice(0, 2).map((a) => ({ ...a, run: () => safe(a.run) })),
 };
 
 // Runs a render function of a feature. Gives back an element or null.

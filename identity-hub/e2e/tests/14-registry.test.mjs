@@ -31,9 +31,12 @@ export default async function (t) {
   assert(await page.locator('.sidebar').count() === 0, 'a signed-out feature screen shows the shell');
   await page.getByRole('link', { name: 'Sign in' }).waitFor();
   assert(await page.title() === 'Open test place · Postern', 'the title of a feature screen is wrong: ' + await page.title());
-  // the start page has a link to Help (a feature file with pages for everybody)
+  // the start page has the links of feature files under its buttons, and a link to Help
   await page.goto(t.base + '/');
-  await page.locator('.welcome-head').getByRole('link', { name: 'Help' }).click();
+  await page.locator('.welcome-links').getByRole('link', { name: 'Test link' }).click();
+  await page.getByRole('heading', { name: 'Test place', level: 1 }).waitFor();
+  await page.goto(t.base + '/');
+  await page.locator('.welcome').getByRole('link', { name: 'Help', exact: true }).first().click();
   await page.waitForFunction(() => location.pathname.startsWith('/help'));
   await page.goto(t.base + '/e2e/apple');
   await page.getByRole('heading', { name: 'Sign in', level: 1 }).waitFor();
@@ -284,6 +287,12 @@ export default async function (t) {
   await p.page.getByRole('heading', { name: 'Loaded already', level: 1 }).waitFor();
   const overflow = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert(overflow <= 0, 'the phone screen scrolls sideways with the More place');
+  // a button of a feature file in the top bar
+  const topButton = p.page.locator('.topbar').getByRole('button', { name: 'Test search' });
+  const size = await topButton.boundingBox();
+  assert(size.width >= 44 && size.height >= 44, 'the top bar button is too small for a finger');
+  await topButton.click();
+  await p.page.getByText('Test search opened').waitFor();
   t.ok('phone: four places and "More"; the list opens above the bar, works with the keyboard, marks the open place');
   await p.close();
 

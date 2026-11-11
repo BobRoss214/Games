@@ -8,7 +8,7 @@
 //   export/viewer.js   the page that reads a file. It asks the server for nothing.
 import { h } from '../lib/dom.js';
 import { store } from '../lib/store.js';
-import { registerRoute, registerSettingsSection } from '../lib/registry.js';
+import { registerRoute, registerSettingsSection, registerWelcomeLink } from '../lib/registry.js';
 import { button, linkButton, runBusy } from '../ui/components.js';
 import { LARGE_EXPORT_BYTES } from '../lib/exportfile.js';
 
@@ -22,13 +22,16 @@ export const NEVER_INCLUDED = Object.freeze([
 const megabytes = (bytes) => Math.round(bytes / 1024 / 1024);
 
 registerRoute(VIEWER_PATH, () => import('./export/viewer.js'), { signedOut: true, title: 'Open an export file', nav: 'settings' });
+// People without an account (or signed out) find the page on the start page.
+registerWelcomeLink({ id: 'open-export', label: 'Open an export file', path: VIEWER_PATH, order: 60 });
 
 function exportSection() {
   const config = store.get('config') || {};
   const app = config.appName || 'Postern';
   const phone = !!(config.features && config.features.phone);
   const list = (title, items) => h('div', { class: 'prose' }, h('h3', null, title), h('ul', null, items.filter(Boolean).map((t) => h('li', null, t))));
-  return h('div', { class: 'sheet sheet-pad stack', dataset: { export: 'section' } },
+  // The id is for links to this part of Settings: /settings#download-my-data
+  return h('div', { class: 'sheet sheet-pad stack', id: 'download-my-data', dataset: { export: 'section' } },
     h('div', { class: 'grid-2' },
       list('In the file', [
         'Your inboxes, aliases and numbers, with their labels and notes',

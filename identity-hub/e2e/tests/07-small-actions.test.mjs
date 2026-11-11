@@ -124,7 +124,7 @@ export default async function (t) {
   await page.locator('.thread').filter({ hasText: '415 555 0111' }).click();
   await page.locator('.bubble-row').filter({ hasText: 'one' }).hover();
   await page.locator('.bubble-row').filter({ hasText: 'one' }).getByRole('button', { name: 'Text actions' }).click();
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await page.locator('.bubble-row').filter({ hasText: 'one' }).waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Conversation actions' }).click();
   await page.getByRole('menuitem', { name: 'Delete conversation' }).click();
@@ -143,7 +143,7 @@ export default async function (t) {
   t.ok('delete a text and a conversation; a new conversation; Ctrl+Enter sends');
   await page.getByRole('tab', { name: 'Calls' }).click();
   await page.locator('.call-row').first().getByRole('button', { name: 'Call actions' }).click();
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   await page.getByText('No calls yet').waitFor();
   await page.getByRole('button', { name: 'Call', exact: true }).click();
   await page.getByRole('heading', { name: 'Link a real phone to call' }).waitFor();

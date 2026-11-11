@@ -9,34 +9,13 @@ import { menuButton } from '../ui/menu.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
 import { listMessages, getMessage, getAttachment, setSeen, deleteMessage, personShort, personText, downloadBlob, takeMailFilter } from '../lib/mail.js';
-import { sanitizeEmail, inlineImageUrl, cidKey, htmlToText, INLINE_IMAGE_MAX } from '../lib/sanitize.js';
+import { mailBody } from '../ui/mailbody.js';
 import { loadMailboxes, updateAlias, findMailbox } from '../lib/data.js';
 import { openNewInbox } from '../ui/items.js';
 import { openCompose } from './compose.js';
 import { openTestTools } from './testtools.js';
 import { registered } from '../lib/registry.js';
 import { why, whyParts, whyGroup } from '../ui/why.js';
-
-// Plain text with links for http(s) addresses. Everything is added as text nodes.
-function textWithLinks(text) {
-  const out = document.createDocumentFragment();
-  const re = /https?:\/\/[^\s<>"')\]]+/g;
-  let last = 0;
-  let m;
-  const value = String(text || '');
-  while ((m = re.exec(value))) {
-    if (m.index > last) out.appendChild(document.createTextNode(value.slice(last, m.index)));
-    const raw = m[0].replace(/[.,;:!?]+$/, '');
-    re.lastIndex = m.index + raw.length;
-    let href = '';
-    try { href = new URL(raw).href; } catch { href = ''; }
-    if (href) out.appendChild(h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, raw));
-    else out.appendChild(document.createTextNode(raw));
-    last = re.lastIndex;
-  }
-  if (last < value.length) out.appendChild(document.createTextNode(value.slice(last)));
-  return out;
-}
 
 export function mailScreen({ params, scope }) {
   let mailboxId = null;
@@ -225,49 +204,8 @@ export function mailScreen({ params, scope }) {
     return h('div', { class: 'head-line' }, h('dt', null, label), h('dd', { class: 'break' }, people.map(personText).filter(Boolean).join(', ')));
   }
 
-  function renderBody(msg) {
-    const body = msg.body;
-    const wrap = h('div', { class: 'mail-body' });
-    const text = body.text || (body.html ? htmlToText(body.html) : '');
-    const plain = () => h('pre', { class: 'mail-text' }, text ? textWithLinks(text) : h('span', { class: 'faint' }, 'This message has no text.'));
-    if (!body.html) { append(wrap, plain()); return wrap; }
-
-    let mode = 'html';
-    const inline = new Map();
-    const slot = h('div', { class: 'mail-body-slot' });
-    const whyImages = whyParts('remote-images', { text: 'Why?' });
-    const note = h('p', { class: 'mail-note', hidden: true }, icon('eyeOff', { size: 14 }), h('span', null, 'Remote images are blocked to stop tracking.'), whyImages.button);
-    const paint = () => {
-      if (mode === 'text') { note.hidden = true; whyImages.panel.hidden = true; whyImages.button.setAttribute('aria-expanded', 'false'); replace(slot, plain()); return; }
-      const clean = sanitizeEmail(body.html, inline);
-      note.hidden = !clean.blockedRemote;
-      // The frame has no scripts and no access to this page. Links open in a new tab.
-      const frame = h('iframe', { class: 'mail-frame', sandbox: 'allow-popups allow-popups-to-escape-sandbox', referrerpolicy: 'no-referrer', title: 'Message text', srcdoc: clean.srcdoc });
-      replace(slot, h('div', { class: 'mail-frame-wrap' }, frame));
-      return clean;
-    };
-    const first = paint();
-    append(wrap,
-      h('div', { class: 'mail-body-bar' },
-        segmented({ label: 'Show the message as', value: mode, options: [{ value: 'html', label: 'Formatted' }, { value: 'text', label: 'Plain text' }], onChange: (v) => { mode = v; paint(); } }),
-        note,
-      ),
-      whyImages.panel,
-      slot,
-    );
-
-    // Images inside the message ("cid:") come from decrypted attachments.
-    const atts = msg.meta.attachments || [];
-    const wanted = (first && first.wantedCids) || [];
-    const jobs = [];
-    atts.forEach((a, i) => {
-      const key = cidKey(a.cid);
-      if (!key || !wanted.includes(key) || (a.size || 0) > INLINE_IMAGE_MAX) return;
-      jobs.push(getAttachment(msg, i + 1).then((bytes) => { const url = inlineImageUrl(bytes, a.contentType); if (url) inline.set(key, url); }).catch(() => {}));
-    });
-    if (jobs.length) Promise.all(jobs).then(() => { if (!scope.disposed && wrap.isConnected && inline.size && mode === 'html') paint(); });
-    return wrap;
-  }
+  // The text of the message. The viewer is shared (ui/mailbody.js): cleaned HTML in a closed frame.
+  const renderBody = (msg) => mailBody({ body: msg.body, attachments: msg.meta.attachments || [], getAttachment: (index) => getAttachment(msg, index), scope });
 
   function aliasOf(msg) {
     const aliases = store.get('aliases') || [];

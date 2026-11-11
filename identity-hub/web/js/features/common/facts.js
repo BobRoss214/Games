@@ -7,7 +7,7 @@
 // - A row mark must show a fact that arrives later, or that changes without a change of the
 //   store. liveMark() gives a mark that paints itself again when the facts change.
 import { h, replace } from '../../lib/dom.js';
-import { createStore, store, bus } from '../../lib/store.js';
+import { createStore, store } from '../../lib/store.js';
 import { api } from '../../lib/api.js';
 import { onForget, isUnlocked } from '../../lib/session.js';
 
@@ -40,8 +40,11 @@ export function refreshFacts() {
 }
 
 // ---- when to ask ----
-// 1. The lists of the app are loaded, or an item was made or deleted (new mail alone changes no fact).
-// 2. The server says that an alias or an inbox changed (a block and an end date send these events).
+// - The lists of the app are loaded, or an item was made or deleted (new mail alone changes no fact).
+// - One of the dialogs of the two features opens or saves (they call refreshFacts()).
+// Not on every change that the server reports: a second request after each change of an alias
+// would double the requests of other parts of the app. So a change that was made on a different
+// device shows here after the next start of the app, or when one of the dialogs opens.
 let known = '';
 function onLists(state) {
   if (state.phase !== 'in' || state.aliases === null || state.mailboxes === null) return;
@@ -51,8 +54,6 @@ function onLists(state) {
   refreshFacts();
 }
 store.subscribe(['phase', 'aliases', 'mailboxes'], onLists);
-bus.on('aliases', () => refreshFacts());
-bus.on('mailbox', () => refreshFacts());
 onForget(() => { epoch++; known = ''; facts.set({ aliases: new Map(), inboxes: new Map(), loaded: false }); });
 onLists(store.get());
 

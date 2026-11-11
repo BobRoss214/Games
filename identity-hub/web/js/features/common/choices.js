@@ -7,11 +7,13 @@ import { h, uid } from '../../lib/dom.js';
 export function choiceList({ legend, options, value, onChange = null }) {
   const name = uid('choice');
   let current = value;
-  const el = h('fieldset', { class: 'stack stack-2' },
-    h('legend', { class: 'label' }, legend),
+  const legendId = uid('choice-l');
+  const el = h('div', { class: 'stack stack-2', role: 'radiogroup', 'aria-labelledby': legendId },
+    h('p', { class: 'label', id: legendId }, legend),
     h('div', { class: 'radio-list' }, options.map((o) => {
       const id = uid('choice-o');
-      const input = h('input', { type: 'radio', class: 'radio-input', name, id, value: o.value, checked: o.value === current });
+      // The dialog opens with the focus on the choice that is picked now. The arrow keys move from there.
+      const input = h('input', { type: 'radio', class: 'radio-input', name, id, value: o.value, checked: o.value === current, autofocus: o.value === current });
       input.addEventListener('change', () => { if (input.checked) { current = o.value; if (onChange) onChange(current); } });
       return h('div', { class: 'radio' }, input, h('label', { for: id },
         h('span', { class: 'radio-label' }, o.label),

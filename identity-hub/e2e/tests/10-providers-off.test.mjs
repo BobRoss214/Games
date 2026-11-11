@@ -24,6 +24,11 @@ export default async function (t) {
     await page.goto(t.base + '/funds');
     await page.getByText('Payments are turned off on this server.').waitFor();
     await page.goto(t.base + '/settings');
+    // "What the server can and cannot see" does not name texts, numbers or voicemail on a server without phones
+    await page.locator('.see-list').first().waitFor();
+    const see = (await page.locator('.see-list li').allTextContents()).join(' | ');
+    assert(!/texts|voicemail|numbers belong|call history|real phone|forwarding/.test(see), 'the privacy lists name phone things on a server without phones: ' + see);
+    assert(see.includes('New mail for a moment when it arrives.') && see.includes('Stored mail.'), 'the privacy lists are wrong without phones: ' + see);
     await page.getByRole('button', { name: 'Open test tools' }).click();
     assert((await dlg.getByRole('tab').allTextContents()).join() === 'Mail in,Outboxes', 'test tools show phone tabs');
     t.ok(`phone and payments off (${size.width}px)`);

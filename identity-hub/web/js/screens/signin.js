@@ -20,7 +20,7 @@ export function recoveryInput(id) {
   });
 }
 
-function recoveryMessage(err) {
+export function recoveryMessage(err) {
   if (err && err.code === 'bad_checksum') return 'This key has a typing error. Check each group of four characters.';
   if (err && err.code === 'bad_format') return 'A recovery key has 36 letters and numbers, in 9 groups of 4.';
   if (err && err.code === 'bad_login') return 'No account matches this recovery key.';

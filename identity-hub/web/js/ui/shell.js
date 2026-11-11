@@ -4,7 +4,7 @@ import { h, replace } from '../lib/dom.js';
 import { store, appName } from '../lib/store.js';
 import { money } from '../lib/format.js';
 import { icon, logoMark } from './icons.js';
-import { button } from './components.js';
+import { button, iconButton } from './components.js';
 import { confirmDialog } from './dialog.js';
 import { signOut, lock } from '../lib/session.js';
 import { navigate } from '../lib/router.js';
@@ -114,6 +114,8 @@ function build() {
     brand(),
     h('div', { class: 'topbar-actions' },
       topBalance,
+      // buttons of feature files (registerTopBarAction), for example a search button
+      registered.topBarActions().map((a) => iconButton(a.icon, a.label, { size: 20, onClick: () => a.run(), attrs: { dataset: { topAction: a.id } } })),
       h('a', { class: 'icon-btn', href: '/settings', 'data-link': true, 'aria-label': 'Settings', dataset: { nav: 'settings' } }, icon('settings', { size: 20 })),
     ),
   );

@@ -17,7 +17,7 @@ const METHOD_NOTE = {
   'XMR-CHAIN': 'The most private coin. Takes about 20 minutes.',
   'BTC-CHAIN': 'Slow, with a network fee. Use it for larger amounts.',
 };
-const ledgerText = (kind) => ({ topup: 'Funds added', mailbox: `Inbox, ${renewDays()} days`, number: `Number, ${renewDays()} days`, text: 'Text sent', call: 'Call', refund: 'Refund' }[kind] || kind);
+const ledgerText = (kind) => ({ topup: 'Funds added', mailbox: `Inbox, ${renewDays()} days`, number: `Number, ${renewDays()} days`, text: 'Text sent', call: 'Call', voicemail: 'Voicemail', refund: 'Refund' }[kind] || kind);
 
 // Opens Funds at the "Add funds" part, from any screen.
 export function openAddFunds() { navigate('/funds#add-funds'); }

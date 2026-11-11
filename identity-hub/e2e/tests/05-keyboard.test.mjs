@@ -1,14 +1,13 @@
 // The app with the keyboard only: skip link, focus rings, dialogs, menus, switches, tabs.
 // Also: one h1 and one main on each page, and every control has a name.
-import { signUp, signIn, seedAccount, assert } from '../lib.mjs';
+import { signUp, signIn, signOut, seedAccount, assert } from '../lib.mjs';
 
 export default async function (t) {
   const s = await t.open();
   const { page } = s;
   const key = await signUp(page, t.base);
   const ids = await seedAccount(page);
-  await page.getByRole('button', { name: 'Sign out' }).first().click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Sign out' }).click();
+  await signOut(page); // waits until the start page shows: the session is really over
 
   // sign in with the keyboard
   await page.goto(t.base + '/sign-in');

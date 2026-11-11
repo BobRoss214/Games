@@ -10,7 +10,7 @@ import { button, field, tag, runBusy, reportError, emptyState, skeletonRows, loa
 import { openDialog, formDialog } from '../../ui/dialog.js';
 import { toast } from '../../ui/toast.js';
 import { choiceList } from '../common/choices.js';
-import { refreshFacts } from '../common/facts.js';
+import { facts, aliasFacts, refreshFacts } from '../common/facts.js';
 
 const thing = (target) => (target.kind === 'inbox' ? 'inbox' : 'alias');
 const path = (target) => `/api/addresses/${target.addressId}/blocks`;
@@ -23,6 +23,12 @@ async function block(target, kind, value) {
 async function unblock(target, blockId) {
   await api.del(`${path(target)}/${blockId}`);
   refreshFacts();
+}
+// How many senders the address blocks now, as far as this tab knows.
+function blocksOf(target) {
+  if (target.kind === 'alias') return aliasFacts(target.addressId).blocks;
+  for (const box of facts.get('inboxes').values()) if (box.addressId === target.addressId) return box.blocks;
+  return 0;
 }
 // What was blocked, in words: "news@shop.example" or "all addresses at shop.example".
 const named = (kind, value) => (kind === 'domain' ? `all addresses at ${value}` : value);
@@ -46,14 +52,20 @@ export async function openBlockSender(fromAddress, target) {
     onSubmit: async () => {
       const kind = choice.value;
       const value = kind === 'domain' ? domain : address;
-      return { kind, value, block: await block(target, kind, value) };
+      // The server answers the same for a sender that was blocked before. The count tells the two apart.
+      await refreshFacts();
+      const before = blocksOf(target);
+      const made = await block(target, kind, value);
+      await refreshFacts();
+      return { kind, value, block: made, isNew: blocksOf(target) > before };
     },
   });
   if (!made || !made.block) return;
   const what = named(made.kind, made.value);
+  // "Undo" takes away a block that this dialog made, never one that was there before.
   toast(`Blocked ${what}. Mail from ${made.kind === 'domain' ? 'them' : 'it'} to this ${thing(target)} is refused.`, {
     kind: 'ok', timeout: 8000,
-    action: { label: 'Undo', onClick: () => unblock(target, made.block.id).then(() => toast(`Unblocked ${what}`, { kind: 'ok', timeout: 2600 })).catch(reportError) },
+    action: made.isNew ? { label: 'Undo', onClick: () => unblock(target, made.block.id).then(() => toast(`Unblocked ${what}`, { kind: 'ok', timeout: 2600 })).catch(reportError) } : null,
   });
 }
 

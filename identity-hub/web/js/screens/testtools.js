@@ -59,6 +59,7 @@ export function openTestTools(startTab = 'mail') {
     const from = field({ label: 'From', type: 'tel', mono: true, value: '+14155550142', hint: 'Start with + and the country code.' });
     const body = field({ label: 'Text', rows: 2, value: 'Hi, is the bike still for sale?' });
     const seconds = field({ label: 'Length in seconds', value: '45', inputmode: 'numeric', mono: true, hint: 'The call is answered only when call forwarding is on. If not, it is a missed call.' });
+    const leaves = f.voicemail ? checkbox('The caller leaves a voicemail') : null; // only where the server has voicemail
     const send = button(kind === 'text' ? 'Simulate incoming text' : 'Simulate incoming call', { kind: 'primary', type: 'submit' });
     return h('form', { class: 'stack', novalidate: true, onSubmit: (e) => {
       e.preventDefault();
@@ -71,11 +72,11 @@ export function openTestTools(startTab = 'mail') {
           toast('Test text delivered', { kind: 'ok' });
         } else {
           const secs = Math.max(0, Math.min(86400, Number.parseInt(seconds.value, 10) || 0));
-          await api.post('/api/dev/inbound-call', { numberId: number.id, number: number.number, from: clean, seconds: secs });
+          await api.post('/api/dev/inbound-call', { numberId: number.id, number: number.number, from: clean, seconds: secs, ...(leaves && leaves.checked ? { voicemail: true } : {}) });
           toast('Test call done', { kind: 'ok' });
         }
       });
-    } }, to.el, from.el, kind === 'text' ? body.el : seconds.el, h('div', { class: 'dialog-actions' }, send));
+    } }, to.el, from.el, kind === 'text' ? body.el : seconds.el, kind === 'call' && leaves ? leaves.el : null, h('div', { class: 'dialog-actions' }, send));
   }
 
   // ---- outboxes ----

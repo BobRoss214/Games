@@ -37,7 +37,7 @@ export async function listCalls(numberId, { before, limit = 100 } = {}) {
   const res = await api.get(`/api/numbers/${numberId}/calls` + query({ before, limit }));
   const calls = await Promise.all((res.calls || []).map(async (c) => {
     const open = await openSealed(c.sealed, 'call');
-    return { id: c.id, direction: c.direction, at: c.at, seconds: c.seconds || 0, status: c.status, peer: open ? String(open.peer || '') : '' };
+    return { id: c.id, direction: c.direction, at: c.at, seconds: c.seconds || 0, status: c.status, peer: open ? String(open.peer || '') : '', voicemail: c.voicemail || null };
   }));
   return { calls, more: !!res.more };
 }
