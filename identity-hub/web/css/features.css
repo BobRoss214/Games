@@ -158,3 +158,9 @@
 .f-insights-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-4); padding: var(--s-3) 0; border-top: 1px solid var(--line); }
 .f-insights-hint:last-child { border-bottom: 1px solid var(--line); }
 /* ---- insights: end ---- */
+
+/* ---- burn (web/js/features/burn.js and burn/): start ---- */
+/* the list of what a burn destroys: one block for each thing, with a line on its left */
+.f-burn-list { display: flex; flex-direction: column; gap: var(--s-3); }
+.f-burn-list li { display: flex; flex-direction: column; gap: 0.125rem; padding-left: var(--s-3); border-left: 2px solid var(--line-2); }
+/* ---- burn: end ---- */

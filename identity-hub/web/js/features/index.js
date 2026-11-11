@@ -12,3 +12,7 @@ import './leak-hint.js';
 import './tutorial.js';
 import './recovery-test.js';
 import './insights.js';
+import './blocks.js';
+import './autodelete.js';
+import './unsubscribe.js';
+import './burn.js';
