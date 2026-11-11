@@ -50,6 +50,7 @@ export async function loadNumbers() {
       id: n.id, number: sealed ? sealed.number : '', label: label.label || '', note: label.note || '',
       country: n.country, sms: !!n.sms, voice: !!n.voice, status: n.status, paidUntil: n.paidUntil, createdDay: n.createdDay,
       forwardPhoneId: n.forwardPhoneId || null, forwardTexts: !!n.forwardTexts, forwardCalls: !!n.forwardCalls, unread: n.unread || 0,
+      retentionDays: Number.isInteger(n.retentionDays) ? n.retentionDays : null, // old texts are deleted after this many days; null = never
     };
   }));
   if (!isUnlocked()) return [];
@@ -196,7 +197,7 @@ export async function buyNumber({ number, label }) {
   await Promise.allSettled([loadNumbers(), loadBalance()]);
   return res;
 }
-export async function updateNumber(id, { label, forwardPhoneId, forwardTexts, forwardCalls }) {
+export async function updateNumber(id, { label, forwardPhoneId, forwardTexts, forwardCalls, retentionDays }) {
   const body = {};
   if (label !== undefined) {
     const n = findNumber(id);
@@ -205,6 +206,7 @@ export async function updateNumber(id, { label, forwardPhoneId, forwardTexts, fo
   if (forwardPhoneId !== undefined) body.forwardPhoneId = forwardPhoneId;
   if (forwardTexts !== undefined) body.forwardTexts = forwardTexts;
   if (forwardCalls !== undefined) body.forwardCalls = forwardCalls;
+  if (retentionDays !== undefined) body.retentionDays = retentionDays;
   await api.patch(`/api/numbers/${id}`, body);
   await loadNumbers();
 }

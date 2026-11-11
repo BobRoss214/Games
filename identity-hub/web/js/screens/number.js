@@ -357,6 +357,26 @@ export function numberScreen({ params, scope }) {
       } catch (err) { reportError(err); paintSettings(); }
     });
     const hasTarget = !!current;
+
+    // Automatic deletion of old texts.
+    const KEEP = [1, 7, 30, 90, 365];
+    const days = number.retentionDays;
+    const keepOptions = [{ value: '', label: 'Keep all texts' }, ...KEEP.map((d) => ({ value: String(d), label: d === 1 ? 'Delete texts after 1 day' : d === 365 ? 'Delete texts after 1 year' : `Delete texts after ${d} days` }))];
+    if (days && !KEEP.includes(days)) keepOptions.push({ value: String(days), label: `Delete texts after ${days} days` });
+    const keep = selectField({ label: 'Delete old texts', value: days ? String(days) : '', options: keepOptions });
+    keep.input.addEventListener('change', async () => {
+      const next = keep.value ? Number(keep.value) : null;
+      if (next) {
+        const ok = await confirmDialog({ title: 'Delete old texts?', danger: true, confirmLabel: 'Turn on', message: `Texts of this number that are older than ${next === 1 ? '1 day' : next === 365 ? '1 year' : `${next} days`} are deleted from the server, now and from now on. You cannot get them back.` });
+        if (!ok) { paintSettings(); return; }
+      }
+      keep.input.disabled = true;
+      try {
+        await updateNumber(id, { retentionDays: next });
+        toast(next ? 'Old texts are deleted from now on' : 'All texts are kept from now on', { kind: 'ok', timeout: 2600 });
+      } catch (err) { reportError(err); }
+      if (!scope.disposed) paintSettings();
+    });
     const forwardRow = (title, textValue, key, on) => h('div', { class: 'switch-row' },
       h('div', { class: 'grow' }, h('p', { class: 'strong' }, title), h('p', { class: 'small muted' }, textValue)),
       toggle({ checked: on && hasTarget, label: title, disabled: !hasTarget, withText: true, onChange: (v) => updateNumber(id, { [key]: v }) }),
@@ -380,12 +400,19 @@ export function numberScreen({ params, scope }) {
           ),
       ),
       h('section', { class: 'stack stack-3' },
+        h('div', null,
+          h('h2', { class: 'section-title' }, 'Old texts'),
+          h('p', { class: 'section-lede' }, 'The server can delete old texts of this number by itself. It checks each hour, also when this app is closed. Deleted texts cannot come back. Calls are not deleted.'),
+        ),
+        h('div', { class: 'sheet sheet-pad' }, keep.el),
+      ),
+      h('section', { class: 'stack stack-3' },
         h('h2', { class: 'section-title' }, 'Renewal'),
         h('dl', { class: 'kv kv-left sheet sheet-pad' },
           h('dt', null, 'Status'), h('dd', null, number.status === 'active' ? 'Active' : h('span', null, 'Paused. Add funds to turn it on again. ', releaseNote(number))),
           h('dt', null, 'Price'), h('dd', { class: 'mono' }, prices.numberMonth ? `${money(prices.numberMonth)} / ${renewDays()} days` : 'Free'),
           h('dt', null, number.status === 'active' ? 'Renews on' : 'Paid until'), h('dd', null, number.paidUntil ? dayText(new Date(number.paidUntil * 1000).toISOString().slice(0, 10)) : '–'),
-          h('dt', null, 'Can do'), h('dd', null, [number.sms && 'Texts', number.voice && 'Calls'].filter(Boolean).join(' and ') || '–'),
+          h('dt', null, 'Can do'), h('dd', null, (number.sms && number.voice ? 'Texts and calls' : number.sms ? 'Texts' : number.voice ? 'Calls' : '–')),
         ),
       ),
       h('section', { class: 'danger-zone stack stack-3' },

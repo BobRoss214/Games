@@ -103,6 +103,32 @@ test('US data: name lists', () => {
   }
 });
 
+test('US data: the two name lists cannot give the name of a very famous person', () => {
+  // First and last names are picked independently, so a name is left out of a list when it would
+  // complete one of these pairs. This list is a guard for later changes. It cannot be complete:
+  // every usual name belongs to some real people.
+  const famous = [
+    'George Washington', 'John Adams', 'Thomas Jefferson', 'James Madison', 'James Monroe', 'Andrew Jackson', 'John Tyler', 'Zachary Taylor',
+    'William Harrison', 'Benjamin Harrison', 'John Kennedy', 'Robert Kennedy', 'Richard Nixon', 'James Carter', 'Ronald Reagan', 'George Bush',
+    'William Clinton', 'Donald Trump', 'Joseph Biden', 'Benjamin Franklin', 'Alexander Hamilton', 'Samuel Adams', 'Joseph Smith', 'William Wallace',
+    'Michael Jordan', 'Michael Jackson', 'Janet Jackson', 'Samuel Jackson', 'Elizabeth Taylor', 'James Taylor', 'Stephen King', 'Larry King',
+    'Henry Ford', 'Ronald McDonald', 'Patrick Stewart', 'James Stewart', 'Julie Andrews', 'Diego Rivera', 'Betty White', 'Pamela Anderson',
+    'Anita Hill', 'Naomi Campbell', 'Emma Watson', 'Emma Stone', 'Sharon Stone', 'Jennifer Lopez', 'Kevin Hart', 'Ryan Reynolds', 'Matthew Perry',
+    'Anthony Hopkins', 'Megan Fox', 'Michael Fox', 'Grace Kelly', 'Grace Jones', 'Paul Simon', 'Paul Newman', 'Paul Walker', 'Jack Black', 'Jack White',
+    'Jack Daniels', 'Peter Parker', 'Larry Page', 'Jessica Simpson', 'Lisa Simpson', 'Owen Wilson', 'Stephen Curry', 'Elizabeth Warren',
+    'Elizabeth Holmes', 'Barbara Walters', 'Michael Douglas', 'Michael Moore', 'Michael Scott', 'Michael Myers', 'James Brown', 'Charles Brown',
+    'Rachel Green', 'Angela Davis', 'Gary Cooper', 'Kathleen Turner', 'Richard Simmons', 'Richard Wagner', 'James Patterson', 'James Woods',
+    'James Cook', 'Timothy Cook', 'James Mason', 'Robert Palmer', 'Robert Burns', 'William Morris', 'Kenneth Cole', 'Eric Schmidt', 'Sarah Ferguson',
+    'Liam Payne', 'Andrew Yang', 'Juan Soto', 'Jamal Murray', 'Aaron Rogers', 'Ashley Olson', 'George Martin', 'Stephen Miller', 'Nora Jones',
+    'Zachary Snyder', 'Stephanie Meyer', 'Christina Aguilar', 'Christopher Wallace', 'Tyler Perry', 'Steven Tyler', 'Amy Adams', 'Laura Bush',
+    'Nancy Reagan', 'Cynthia Nixon',
+  ];
+  const first = new Set(US.FIRST_NAMES);
+  const last = new Set(US.LAST_NAMES);
+  const possible = famous.filter((name) => { const [f, l] = name.split(' '); return first.has(f) && last.has(l); });
+  assert.deepEqual(possible, []);
+});
+
 test('US data: words for invented streets', () => {
   for (const [label, list] of [['first words', US.STREET_FIRST], ['second words', US.STREET_SECOND]]) {
     assert.ok(list.length >= 60, `${label}: ${list.length}`);
