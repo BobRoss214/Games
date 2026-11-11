@@ -133,10 +133,24 @@ export function createHttp({ config, store, log }) {
     return out;
   }
 
+  // Preview mode only: behind an https proxy the page can be inside a frame of a different site.
+  // The browser sends the cookie there only with these attributes.
+  function previewCookie(req) {
+    if (!config.devPreview) return '';
+    const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    return proto === 'https' ? 'SameSite=None; Secure; Partitioned' : '';
+  }
+  function sameHost(origin, req) {
+    try {
+      const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+      return !!origin && new URL(origin).host === host;
+    } catch { return false; }
+  }
+
   function securityHeaders(res) {
-    res.setHeader('Content-Security-Policy', CSP);
+    res.setHeader('Content-Security-Policy', config.devPreview ? CSP.replace("frame-ancestors 'none'", 'frame-ancestors *') : CSP);
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
+    if (!config.devPreview) res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
@@ -188,12 +202,12 @@ export function createHttp({ config, store, log }) {
       req, res, method: req.method, path: url.pathname, params, query: Object.fromEntries(url.searchParams),
       headers: req.headers, account: null, session: null, body: undefined, raw: undefined,
       setSession(session) {
-        const attrs = [`${cookieName}=${session.token}`, 'Path=/', 'HttpOnly', 'SameSite=Strict', `Max-Age=${config.sessionDays * 86400}`];
+        const attrs = [`${cookieName}=${session.token}`, 'Path=/', 'HttpOnly', previewCookie(req) || 'SameSite=Strict', `Max-Age=${config.sessionDays * 86400}`];
         if (config.secureCookies) attrs.push('Secure');
         res.setHeader('Set-Cookie', attrs.join('; '));
       },
       clearSession() {
-        res.setHeader('Set-Cookie', `${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${config.secureCookies ? '; Secure' : ''}`);
+        res.setHeader('Set-Cookie', `${cookieName}=; Path=/; HttpOnly; ${previewCookie(req) || 'SameSite=Strict'}; Max-Age=0${config.secureCookies ? '; Secure' : ''}`);
       },
       // Extra rate limit from inside a handler. Throws 429 when over the limit.
       limit(name, max, perSec, who) {
@@ -218,7 +232,8 @@ export function createHttp({ config, store, log }) {
     if (c.account && req.method !== 'GET' && req.method !== 'HEAD') {
       const origin = req.headers.origin;
       const site = req.headers['sec-fetch-site'];
-      if ((origin && origin !== config.origin) || (site && site !== 'same-origin' && site !== 'none')) {
+      const previewOk = config.devPreview && (site === 'same-origin' || sameHost(origin, req));
+      if ((origin && origin !== config.origin && !previewOk) || (site && site !== 'same-origin' && site !== 'none')) {
         throw fail(403, 'bad_origin', 'This request came from a different website.');
       }
     }

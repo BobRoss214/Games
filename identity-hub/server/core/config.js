@@ -49,6 +49,9 @@ export function loadConfig(env = process.env, overrides = {}) {
     graceDays: int(env.GRACE_DAYS, 7),
     logLevel: env.LOG_LEVEL || (production ? 'warn' : 'info'),
     rateLimits: bool(env.RATE_LIMITS, true),
+    // Preview mode, for a try-out behind a preview proxy or inside a frame. Never in production.
+    // It allows the page in a frame and accepts the address that the proxy gives the page.
+    devPreview: !production && bool(env.DEV_PREVIEW, false),
 
     mail: {
       domains: list(env.MAIL_DOMAINS, ['postern.test']),
