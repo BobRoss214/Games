@@ -148,7 +148,7 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 15. **With the "own phone" provider, three more places see your texts.** This provider uses an Android phone of the operator, an app on it, and a gateway program on the server. Texts only, no calls.
     - **The carrier of the SIM card** sees each text, in the two directions, with the two numbers. It knows who bought the SIM card, if it asked.
     - **The phone** has each text in plain form, as each phone has. A person who holds the phone can read them.
-    - **The gateway program on the server** stores a text that waits for the phone in plain form. After the phone has sent it, the gateway changes it to a hash. The app also uploads a copy of each incoming text to the gateway. The gateway deletes these rows after 24 hours with the settings of the setup guide. Postern itself stores texts only in the form that is encrypted for you.
+    - **The gateway program on the server** stores a text that waits for the phone in plain form. After the phone has sent it, the gateway changes it to a hash. The app also uploads a copy of each incoming text to the gateway. The gateway deletes these rows after 24 hours with the settings of the setup guide. The backup script also saves the gateway database, so each backup keeps these rows until that backup is deleted (7 days by default). Postern itself stores texts only in the form that is encrypted for you.
     - **A push company, only if the operator selects it.** With the setting "Auto" in the app, the server of the app project and Google get a wake-up signal for each text that waits. The signal has no text and no number. They learn that something waits, when, and for which phone. With "SSE Only", which the setup guide uses, no signal goes to them.
     - **A number from the pool had an earlier holder.** It can get texts that are for that person.
     - **The phone is one device.** If it is off, texts wait. A text that the phone does not send in 1 hour fails.
@@ -164,7 +164,7 @@ The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The 
 | Watches the network | Nothing useful with HTTPS; SMTP between mail servers uses opportunistic TLS | — |
 | Gets a payment processor record | That an invoice was paid | Which account got the credit |
 | Gets the records of the phone company | Numbers, texts, call records; a linked real phone that got forwarded calls or texts, and which numbers forward to it; a voicemail recording until Postern deleted it | Stored mail, labels, your aliases |
-| Gets the phone of the "own phone" provider, or the records of its SIM carrier | Each text of the numbers on that phone, with the two numbers. From the gateway database on the server: texts that wait, and hashes of sent texts, for 24 hours. | Mail, labels, your aliases, which account holds a number |
+| Gets the phone of the "own phone" provider, or the records of its SIM carrier | Each text of the numbers on that phone, with the two numbers. From the gateway database on the server: texts that wait, and hashes of sent texts, for 24 hours (longer in backups). | Mail, labels, your aliases, which account holds a number |
 | Gets two export files, without the recovery key | That the two files come from the same account; their sizes and days | The contents |
 | Websites that compare their lists | That aliases on a domain of one person belong together | Aliases on a domain that many people share |
 

@@ -1481,6 +1481,7 @@ docker compose exec app node --disable-warning=ExperimentalWarning server/tools/
 | Add a second SIM card of a phone | `TOOL add-sim --label "Phone 1" --sim 2=+15557654321` |
 | Take a SIM card out of the pool | `TOOL remove-sim --label "Phone 1" --sim 2` |
 | Take a phone out of the pool | `TOOL remove --label "Phone 1"` |
+| Give a phone a new login after it had to register again (J8) | `TOOL relogin --label "Phone 1" --login NEW-USERNAME --password-stdin` |
 | See the help of the tool | `TOOL help` |
 
 - **A second phone:** do Parts I4 to I8 again. Use "Sign Up" on the new phone, and a new label such as `"Phone 2"`. Each phone then has its own username and password.
@@ -1590,7 +1591,7 @@ Do Part I8 completely before you give a number to a person. If a step of this pa
 | The `.env` file | `/opt/postern/deploy/.env` | Offline copy. It contains your provider keys. |
 | The DKIM key of the built-in relay | Docker volumes `postern_relay_rspamd` and `postern_relay_opendkim` | Optional. If you lose it, do Part D1 steps 3 to 6 again. |
 | The certificates of the web address | Docker volume `postern_caddy_data` | Not necessary. Caddy gets new certificates. |
-| The database of the phone gateway (Part I only) | Docker volume `postern_smsgate_db` | `backup.sh` does not copy it. It has the registration of each phone. See the note below the table. |
+| The database of the phone gateway (Part I only) | Docker volume `postern_smsgate_db` | `backup.sh` saves it as the file `smsgate.sql`, if the profile `ownphone` is on. It has the registration of each phone. |
 | The certificate that Postern makes for incoming mail (`smtp-selfsigned.key`, `smtp-selfsigned.crt`) | Docker volume `postern_data` | Not necessary. `backup.sh` does not copy the two files. Postern makes them again at the next start. |
 
 If `SECRET_KEY` is empty in your `.env` file, the server secret is the file `secret.key` in the data volume. This command shows it:
@@ -1599,15 +1600,9 @@ If `SECRET_KEY` is empty in your `.env` file, the server secret is the file `sec
 docker compose exec app cat /data/secret.key
 ```
 
-**The database of the phone gateway (Part I only).** If you lose it, the gateway does not know your phones, and the username and password that Postern has for each phone are not valid.
-Then you must take each phone out of the pool with `remove --force` (Part I9) and do Parts I5 to I8 again. Your users lose these numbers and the texts of these numbers.
-To prevent this, keep a copy of the gateway database. Run this command in `/opt/postern/deploy`. It writes the copy to the file `smsgate-backup.sql`:
-
-```
-docker compose exec -T smsgate-db sh -c 'mariadb-dump -uroot -p"$MYSQL_ROOT_PASSWORD" sms' > smsgate-backup.sql
-```
-
-**Check this:** the authors did not run this command. The file can contain texts of the last 24 hours. Keep it private, and copy it with your other backups (J4).
+**The database of the phone gateway (Part I only).** `backup.sh` looks at `COMPOSE_PROFILES` in the `.env` file. If the profile `ownphone` is on, it also saves the gateway database.
+The file `smsgate.sql` can contain texts of the last 24 hours. Keep it private, as your other backups.
+If you lose this database and have no copy, your users keep their numbers. But each phone must register again: see J8.
 
 ### J2. Make a backup
 
@@ -1622,7 +1617,14 @@ docker compose exec -T smsgate-db sh -c 'mariadb-dump -uroot -p"$MYSQL_ROOT_PASS
 
 **Check:** the last lines show `Backup complete` and the name of a new folder in `/opt/postern/deploy/backups`.
 
+**Check (Part I only):** the output has the line `smsgate.sql: copy made and checked`, and the new folder has the file `smsgate.sql`.
+
 The backup program copies the databases safely while Postern runs. It keeps the 7 newest backups.
+
+If the output shows `BACKUP INCOMPLETE`, the two databases of Postern are saved, but the gateway database is not. See Part K.
+After such a backup, the program deletes no old backup. An older backup can be the newest one with a `smsgate.sql` file.
+
+**Check this:** the authors tested the gateway part of `backup.sh` with stand-in programs, not with a real database.
 
 ### J3. Make a backup each night
 
@@ -1677,6 +1679,35 @@ A credit token that a user spent after the backup can be spent a second time.
 
 **Check this:** the authors did not test the restore command.
 
+**The database of the phone gateway (Part I only).** Do these steps only if the gateway database is lost or damaged, and the backup folder has a `smsgate.sql` file.
+
+1. Go to the settings folder:
+   ```
+   cd /opt/postern/deploy
+   ```
+2. Make sure that the gateway database runs. The line of `smsgate-db` must show `healthy`.
+   ```
+   docker compose up -d smsgate-db && docker compose ps smsgate-db
+   ```
+3. Stop the two gateway programs:
+   ```
+   docker compose stop smsgate smsgate-worker
+   ```
+4. Put the backup into the database. Replace `20261111-033000` with the name of your backup folder.
+   ```
+   docker compose exec -T smsgate-db sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mariadb --user=root "$MYSQL_DATABASE"' < backups/20261111-033000/smsgate.sql
+   ```
+5. Start the two gateway programs:
+   ```
+   docker compose start smsgate smsgate-worker
+   ```
+6. On each phone, open the app. Select "Stop Service", then select "Start Service".
+
+**Check:** after 6 minutes, the tool shows each phone as `online` (Part I8, step 2).
+
+**Check this:** the authors did not test these steps. If a phone does not come online, do J8.
+A text that waited for a phone at the time of the backup can be sent a second time.
+
 ### J6. Updates
 
 Do these steps one time each month.
@@ -1724,6 +1755,7 @@ But each backup that you made before the deletion still contains the data.
 - `backup.sh` keeps the 7 newest backups. It deletes older backups.
 - With one backup each night (J3), deleted data stays in the backups on the server for 7 days.
 - Each copy on your own computer (J4) contains the data until you delete that copy.
+- The file `smsgate.sql` (Part I only) follows the same rule. It has the gateway rows of the last 24 hours: texts that waited for a phone, and hashes of sent texts.
 
 To keep fewer backups on the server:
 
@@ -1741,6 +1773,57 @@ ls /opt/postern/deploy/backups
 ```
 
 Fewer backups also give you fewer days to repair a fault. Select a number that is correct for your service.
+
+### J8. If the database of the phone gateway is lost (Part I only)
+
+Use this sub-part if the gateway database is gone and you have no `smsgate.sql` file to put back (J5).
+The gateway then starts with an empty database. It does not know your phones, and the username and password of each phone are not valid.
+
+**Your users keep their numbers and their texts.** These are in the database of Postern, not in the gateway database. Each phone only gets a new login.
+
+Do these steps for each phone:
+
+1. On the phone, open the app.
+2. Select "Stop Service".
+3. Open "SETTINGS", then "Cloud server…".
+4. Select "Unregister device".
+5. Open the tab "Home", and select "Start Service".
+6. Select "Sign Up", then select "Continue".
+7. Write down the new "Username" and the new "Password" from the part "Cloud server".
+8. On the server, go to the settings folder:
+   ```
+   cd /opt/postern/deploy
+   ```
+9. Give the new password to the terminal. This command shows nothing while you type:
+   ```
+   read -rs PHONE_PASS
+   ```
+10. Type the new "Password". Then press Enter.
+11. Give the phone its new login in Postern. Use the label of the phone, and replace `NEW-USERNAME`:
+    ```
+    printf '%s' "$PHONE_PASS" | docker compose exec -T app node --disable-warning=ExperimentalWarning server/tools/ownphone.js relogin --label "Phone 1" --login NEW-USERNAME --password-stdin
+    ```
+12. Make the terminal forget the password:
+    ```
+    unset PHONE_PASS
+    ```
+13. On the phone, select "Stop Service", then select "Start Service". The app then loads its new settings.
+
+**Check:** the tool shows these lines:
+
+```
+The phone "Phone 1" uses its new login at the gateway now.
+Kept as they were: its 1 SIM card(s), and the 1 number(s) that accounts use, with their texts.
+```
+
+**Check:** after 6 minutes, the tool shows the phone as `online` (Part I8, step 2).
+
+Notes:
+
+- `TOOL list` shows the label of each phone (Part I9).
+- The "Private Token" and the "API URL" in the app stay as they are, if you did not change `SMSGATE_PRIVATE_TOKEN` or `SMSGATE_HOST`.
+- A text that waited at the gateway when the database was lost is gone. Postern marks it "Not delivered" after about 1 hour, and the user gets the credit back.
+- **Check this:** the authors tested `relogin` with a simulated gateway only.
 
 ---
 
@@ -1782,6 +1865,7 @@ docker compose logs --tail 50 app
 | **Own phone: "Get a number" shows "No number is free now."** | Each SIM card of the pool is in use. | Add a SIM card or a phone (Part I9), or wait until a user releases a number. |
 | **Own phone: the tool shows "This login has more than one phone at the gateway."** | Two phones use one username at the gateway. | The tool lists the phones. Run the command again with `--device-id` and the id of the phone that you add. |
 | **Own phone: `docker compose up` cannot get the gateway program.** | The version name in `docker-compose.yml` does not exist at the registry. | Set `SMSGATE_VERSION=latest` and apply the change. |
+| **`backup.sh` shows `BACKUP INCOMPLETE`.** | You use your own phone (Part I), and the gateway database did not answer. The container `smsgate-db` does not run, or it starts at this moment. | Run `docker compose ps`. The line of `smsgate-db` must show `healthy`. If it does not, run `docker compose up -d`. Then run `sh backup.sh` again. The two databases of Postern are saved in each case. |
 | **`backup.sh` shows `BACKUP FAILED`.** | The `.env` file is missing. Docker does not run. The disk is full. | Read the lines above the message. Run `df -h` to see the free disk space. |
 
 ---
