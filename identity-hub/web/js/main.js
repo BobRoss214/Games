@@ -3,6 +3,7 @@ import { h, replace } from './lib/dom.js';
 import { store } from './lib/store.js';
 import { api, setSignedOutHandler } from './lib/api.js';
 import { defineRoutes, setOutlet, setResolver, startRouter, render, navigate } from './lib/router.js';
+import { onRoute, runGlobalKey, registered } from './lib/registry.js';
 import { boot, dropLocal } from './lib/session.js';
 import { loadAll, startEvents, stopEvents } from './lib/data.js';
 import { resumePurchases, stopPolling } from './lib/pay.js';
@@ -10,7 +11,7 @@ import { showInShell, destroyShell, setShellHooks, bareLayout } from './ui/shell
 import { closeAllDialogs } from './ui/dialog.js';
 import { closeMenus } from './ui/menu.js';
 import { toast } from './ui/toast.js';
-import { button, reportError } from './ui/components.js';
+import { button, reportError, skeletonRows, loadError } from './ui/components.js';
 import { initTheme } from './lib/theme.js';
 
 import { welcomeScreen } from './screens/welcome.js';
@@ -26,6 +27,8 @@ import { settingsScreen } from './screens/settings.js';
 import { identityScreen } from './screens/identity.js';
 import { noticeUnknownIdentities } from './lib/identities.js';
 import { openTestTools } from './screens/testtools.js';
+// Every feature file registers its parts here (see docs/UI-GUIDE.md).
+import './features/index.js';
 
 const root = document.getElementById('app');
 
@@ -57,16 +60,62 @@ defineRoutes([
   { path: '/not-found', name: 'notfound', title: 'Not found', layout: 'auto', screen: notFoundScreen },
 ]);
 
+// ---- screens of feature files (registerRoute) ----
+// The file of the screen loads when the person opens the path. Signed in, the screen shows in
+// the shell. Signed out (only for routes with signedOut: true), it shows on a plain page.
+function featureScreen(route) {
+  return ({ params, scope }) => {
+    const signedIn = store.get('phase') === 'in';
+    const slot = h('div', { class: 'feature-slot' }, h('div', { class: 'page page-narrow' }, skeletonRows(4)));
+    let inner = null;      // the screen of the feature, when it can update in place
+    let loaded = false;
+    let lastParams = params;
+    const load = () => Promise.resolve().then(() => route.loader()).then((mod) => {
+      if (scope.disposed) return;
+      const fn = typeof mod === 'function' ? mod : (mod && (mod.default || mod.screen));
+      if (typeof fn !== 'function') throw new Error(`The file for ${route.path} has no screen function.`);
+      const result = fn({ params: lastParams, scope });
+      inner = result instanceof Node ? null : result;
+      loaded = true;
+      replace(slot, result instanceof Node ? result : result.el);
+    }).catch((err) => {
+      if (scope.disposed) return;
+      replace(slot, h('div', { class: 'page page-narrow' }, loadError('This page did not load. Check your connection, then try again.', () => { replace(slot, h('div', { class: 'page page-narrow' }, skeletonRows(4))); load(); })));
+      queueMicrotask(() => { throw err; });
+    });
+    load();
+    const head = store.get('phase') === 'locked'
+      ? h('a', { class: 'btn btn-sm', href: '/', 'data-link': true }, 'Unlock')
+      : h('a', { class: 'btn btn-sm', href: '/sign-in', 'data-link': true }, 'Sign in');
+    return {
+      el: signedIn ? slot : bareLayout(slot, { head, page: true }),
+      update(p) {
+        lastParams = p;
+        // Signed in or out since the screen was made, or a screen that cannot update: make it again.
+        if ((store.get('phase') === 'in') !== signedIn || (loaded && !(inner && typeof inner.update === 'function'))) { render({ force: true }); return; }
+        if (inner) inner.update(p);
+      },
+    };
+  };
+}
+function navFor(route) {
+  if (route.nav) return route.nav;
+  const item = registered.navItems().find((n) => n.path === route.path || route.path.startsWith(`${n.path}/`));
+  return item ? item.id : '';
+}
+onRoute((r) => defineRoutes([{ path: r.path, name: `feature:${r.path}`, title: r.title, layout: 'auto', nav: navFor(r), signedOut: r.signedOut, screen: featureScreen(r) }]));
+
 // Which screen may show in which sign-in state.
 setResolver((m) => {
   const phase = store.get('phase');
   const name = m.route.name;
   if (phase === 'out') {
-    if (name === 'home' || name === 'create' || name === 'signin' || name === 'notfound') return m;
+    if (name === 'home' || name === 'create' || name === 'signin' || name === 'notfound' || m.route.signedOut) return m;
     return '/sign-in';
   }
   if (phase === 'locked') {
     if (name === 'create' || name === 'signin') return '/';
+    if (m.route.signedOut) return m;
     return { route: unlockRoute, params: {} };
   }
   if (name === 'signin') return '/';
@@ -118,6 +167,9 @@ setSignedOutHandler(() => {
 });
 
 setShellHooks({ onTestTools: () => openTestTools() });
+
+// Keys of feature files (registerGlobalKey). They do nothing while the person types.
+document.addEventListener('keydown', (e) => { runGlobalKey(e, { signedIn: store.get('phase') === 'in' }); });
 
 window.addEventListener('offline', () => toast('You are offline. Changes do not save until the connection is back.', { kind: 'error' }));
 

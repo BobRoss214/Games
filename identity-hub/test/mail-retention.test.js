@@ -324,7 +324,9 @@ test('a database of the first version gets the new columns at the start', async 
     upgraded = await startTestApp({ dataDir: dir });
     const columns = (table) => upgraded.db.all(`PRAGMA table_info(${table})`).map((c) => c.name);
     assert.ok(columns('mailboxes').includes('retention_days'));
-    assert.ok(columns('addresses').includes('expires_at'));
+    for (const column of ['expires_at', 'one_shot', 'used_up', 'refused']) assert.ok(columns('addresses').includes(column), column);
+    // The row of the old version has the starting values of the new columns.
+    assert.deepEqual({ ...upgraded.db.get("SELECT one_shot, used_up, refused FROM addresses WHERE id = 'oldaddress'") }, { one_shot: 0, used_up: 0, refused: 0 });
     // Rows of the old version are still there, with the settings off.
     assert.equal(upgraded.db.get("SELECT retention_days FROM mailboxes WHERE id = 'oldbox'").retention_days, null);
     assert.equal(upgraded.db.get("SELECT expires_at FROM addresses WHERE id = 'oldaddress'").expires_at, null);

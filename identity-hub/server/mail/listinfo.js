@@ -23,7 +23,7 @@ function subjectOf(query) {
     const eq = part.indexOf('=');
     if (eq < 0 || decode(part.slice(0, eq)).trim().toLowerCase() !== 'subject') continue;
     // No line breaks and no control characters: the text becomes the subject of a message.
-    const subject = decode(part.slice(eq + 1)).replace(/[\u0000-\u001f\u007f-\u009f  ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const subject = decode(part.slice(eq + 1)).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim();
     return subject ? subject.slice(0, MAX_SUBJECT_CHARS) : null;
   }
   return null;
