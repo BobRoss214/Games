@@ -38,7 +38,13 @@ export default async function (t) {
 
   // ---- signed in: menu item, lazy screen, update in place ----
   const key = await signUp(page, t.base);
+  // "First steps" is a part of the app that comes from a feature file (features/first-steps.js).
+  await page.getByRole('heading', { name: 'First steps' }).waitFor();
+  const firstTop = await page.evaluate(() => document.querySelector('.firststeps').getBoundingClientRect().bottom <= document.querySelector('.stats').getBoundingClientRect().top);
+  assert(firstTop, '"First steps" is not above the counts');
   const ids = await seedAccount(page);
+  await page.getByRole('heading', { name: 'First steps' }).waitFor({ state: 'detached' });
+  assert(await page.locator('.home-slot.is-top[data-section="first-steps"]').evaluate((el) => el.getBoundingClientRect().height) === 0, 'a hidden home block still takes space');
   assert(await page.evaluate(() => window.e2eScreenLoads || 0) === 0, 'the screen file loaded before its path was opened');
   const navLink = page.locator('.sidebar .nav-item', { hasText: 'Test place' });
   const order = await page.locator('.sidebar .nav-item').allTextContents();

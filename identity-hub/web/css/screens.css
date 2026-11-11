@@ -511,6 +511,8 @@ a.item-value:hover { color: var(--accent); text-decoration: underline; }
 .identity-side { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
 .identity-delete { padding-top: var(--s-5); }
 @media (max-width: 1180px) { .identity-grid { grid-template-columns: minmax(0, 1fr); } }
+/* Two columns on a middle-size screen: the row is narrow, so the message count gives its room to the inbox name. */
+@media (min-width: 1181px) and (max-width: 1500px) { .identity-main .item-count { display: none; } }
 
 .feed-sheet { overflow: hidden; }
 .feed-list { display: flex; flex-direction: column; }
