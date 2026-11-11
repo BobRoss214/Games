@@ -15,8 +15,9 @@ Read this at the start of every session. Update it when reality changes.
 ### Second project: `identity-hub/` (working name "Postern")
 - Not a game. A privacy-first web app: email aliases, real inboxes, VoIP numbers, crypto payments. It lives here only because this repo was the one available; it can move to its own repo.
 - Stack: Node 22 server (built-in SQLite, no web framework), plain HTML/CSS/JS web app (no build step). It has 4 npm packages (`@simplewebauthn/server`, `smtp-server`, `mailparser`, `nodemailer`); the "no npm dependencies" rule above is for the games only.
-- Run: `cd identity-hub && npm install && npm start` then open `http://localhost:8080` (test mode with simulated providers). Test: `npm test`.
-- Read `identity-hub/README.md` first, then `docs/API.md` (the contract between server and web app) and `docs/SECURITY.md`.
+- Run: `cd identity-hub && npm install && npm start` then open `http://localhost:8080` (test mode with simulated providers). Test: `npm test` (server and logic) and `npm run test:e2e` (browser, needs Playwright; about 5 minutes).
+- Read `identity-hub/README.md` first, then `docs/HANDOFF.md` (state, decisions, the owner's feature list and word rules), `docs/API.md` (the contract between server and web app), `docs/UI-GUIDE.md` (look, word list, plug-in points — read before writing any screen) and `docs/SECURITY.md`.
+- Words are fixed by the owner: "Random identifiers generator", "Identity" (a group), inbox, alias, number. Names must be very simple; longer explanation goes to Help and the tutorial. `test/web-words.test.js` guards this.
 - Rules there: the server must never store a plain alias address or VoIP number, never log user data, and every query is scoped by `account_id`. The payment database must never hold an account id.
 
 ## 2. How to work with me

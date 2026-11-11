@@ -32,7 +32,15 @@ async function atStep(page, id, words, n = numberOf(id), total = TOTAL) {
   const bar = page.getByRole('progressbar', { name: 'Tutorial' });
   assert(await bar.getAttribute('aria-valuenow') === String(n) && await bar.getAttribute('aria-valuemax') === String(total), `the bar does not say step ${n}`);
   assert(await bar.getAttribute('aria-valuetext') === `Step ${n} of ${total}`, 'the bar has no words');
-  const share = await bar.evaluate((el) => el.firstElementChild.getBoundingClientRect().width / el.getBoundingClientRect().width);
+  // The bar can have no width for a moment while the screen repaints. Measure when it has one.
+  let share = NaN;
+  for (let i = 0; i < 40 && !Number.isFinite(share); i++) {
+    share = await bar.evaluate((el) => {
+      const full = el.getBoundingClientRect().width;
+      return full > 0 && el.firstElementChild ? el.firstElementChild.getBoundingClientRect().width / full : NaN;
+    }).catch(() => NaN);
+    if (!Number.isFinite(share)) await page.waitForTimeout(50);
+  }
   assert(Math.abs(share - n / total) < 0.04, `the bar is ${Math.round(share * 100)}% wide at step ${n}`);
   if (words) await card(page, id).getByRole('heading', { name: words(id, 'title'), level: 2 }).waitFor();
   assert(new URL(page.url()).pathname === '/tutorial', 'the address has more than /tutorial: ' + page.url());

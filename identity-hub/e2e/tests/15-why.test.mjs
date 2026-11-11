@@ -146,7 +146,7 @@ export default async function (t) {
   await page.getByRole('button', { name: 'What is credit?' }).click();
   await page.locator('.why-panel[data-why="balance"]').getByText('The server can see your credit.').waitFor();
   await page.getByRole('button', { name: /How does this work/ }).click();
-  await page.getByText('Your browser makes secret credit tokens.').waitFor();
+  await page.getByText('Your browser makes secret values.').waitFor();
   await note();
   await page.goto(`${t.base}/mail/${ids.personal}`);
   await page.locator('.msg-row', { hasText: 'Your order 1042' }).click();

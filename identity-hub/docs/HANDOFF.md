@@ -2,15 +2,12 @@
 
 Read this file first in a new session. It is the working memory of the build.
 
-## State (updated in the fourth work period)
-- `npm test`: 272 pass. `npm run test:e2e`: 34 files, 338 checks pass (run by the lead).
-- ALL planned feature screens are built and verified: website, random identifiers generator, identities, Help, "Why?" buttons, tutorial, recovery key test, home warnings, code helper, "Possibly leaked", "Who leaked me", "My stats", blocked senders, automatic deletion, alias end date, "Stop after the first mail", refused-mail number, export + viewer, voicemail, own-domain warning, Burn, door look, colour dot, history, username and password maker, quick jump, newsletter panel.
-- IN WORK when this note was written (the last round):
-  - Phone agent (a11580da0ffdd9d37): the "own phone" provider on the server (server/phone/providers/ownphone.js, webhook /api/hooks/ownphone/:token, server/tools/ownphone.js, tests with test/fake-smsgate.js).
-  - Documents agent (a170f5620ffc15bb8): final help pass (new WHY keys, tips, tutorial step `more`, SECURITY.md, test/web-words.test.js). NEXT for it: setup guide part + Docker compose profile for own phone (SMSGate private server + MariaDB, separate host name), call forwarding by hand (**21*number#), battery settings, limits.
-  - Web app owner (a26c8a8a4e94020bb): follow-ups (quick jump hooks, ended alias, icons, Why buttons for its features, tidy features.css) and the own-phone screens ("Get a number" from the pool, "Phone online / offline", "Waiting for the phone", calls explanation).
-  - Mail agent (acdfaf31207927c39): dev route for the retention job, smaller facts.js, tutorial step `more`, Why buttons in its features.
-- AFTER that, by the lead: README refresh; final full test run; final report to the user with: what was tested; what was tested with simulated providers only (Twilio, BTCPay); Docker never built; own phone tested with the fake gateway only, never on a real phone.
+## State: the build is COMPLETE (fifth work period)
+- Last full run by the lead: `npm test` 301 pass; `npm run test:e2e` 36 files, 358 checks pass.
+- Every feature in the list below is built, including the "own phone" provider (server, operator tool `server/tools/ownphone.js`, screens, setup guide Part I, Docker profile `ownphone`).
+- NEVER tested with the real thing (first real contact can need small corrections): Twilio, BTCPay Server, the "own phone" app + its private server + a real SIM, a Docker build, mail delivery to large mail companies, browsers other than Chromium, a real phone screen, a screen reader.
+- If the user reports an error from a real service: ask for the exact error text, correct the adapter (server/phone/providers/twilio.js, ownphone.js, server/pay/providers/btcpay.js) and its simulated server in the tests so that both match the real behaviour.
+- Open ideas, not requested: per-account mail domains (decided: not built), SPF/DKIM check of incoming mail, a licence file, an outside security review.
 - LAST: the "own phone" provider (see the second half of this file).
 - Never tested: real Twilio, real BTCPay, Docker build, a real phone.
 - RENAME by the user (later than the notes below): the feature "made-up details" is now called "Random identifiers generator"; its values are "random identifiers". Internal names (`persona`, key `made-up-details`) stay. Where the notes below say "made-up details", read the new name.
