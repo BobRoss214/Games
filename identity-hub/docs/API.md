@@ -53,8 +53,8 @@ plain value and the server checks it against the stored HMAC.
 
 Message envelope (mail):
 - `sealedKey`: content key sealed to the account (`aad "content-key"`).
-- `encMeta` (aad `meta`): `{ from: {name,address}, to: [{name,address}], cc: [...], subject, date (ISO), snippet (max 160 chars), deliveredTo: "alias@domain", attachments: [{ filename, contentType, size, cid? }] }`
-- part 0 (aad `body`): `{ text, html, messageId, inReplyTo, references: [], replyTo: [{name,address}] }`
+- `encMeta` (aad `meta`): `{ from: {name,address}, to: [{name,address}], cc: [...], subject, date (ISO), snippet (max 160 chars), deliveredTo: "alias@domain", attachments: [{ filename, contentType, size, cid? }], bulk: bool }` (`bulk` = newsletter or list mail)
+- part 0 (aad `body`): `{ text, html, messageId, inReplyTo, references: [], replyTo: [{name,address}], unsubscribe: { mailto, subject, hasLink } \| null }`
 - part i ≥ 1 (aad `att:i`): raw attachment bytes, same order as `meta.attachments`.
 
 ## 2. Core (done, in `server/app.js`)
