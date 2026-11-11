@@ -1530,7 +1530,15 @@ Read these points before you use call forwarding:
 
 ### I12. What was tested, and what was not
 
-**Tested with a simulated gateway only:** the provider `ownphone` in Postern, the pool of numbers, texts in the two directions, the reports "sent", "delivered" and "failed", the online and offline state, the signature of the events, and the tool `ownphone.js`.
+**Tested with a simulated gateway only:**
+
+- The provider `ownphone` in Postern, and the pool of numbers.
+- Texts in the two directions.
+- The reports "sent", "delivered" and "failed".
+- The online and offline state of a phone.
+- The signature of the events that the phone sends.
+- The tool `ownphone.js`.
+
 The simulated gateway is a test program that answers like the real gateway. It is not the real gateway.
 
 **Never tried:**
