@@ -387,3 +387,17 @@ test('burn: very many messages', async () => {
   assert.equal((await mailboxOf(a, box.mailbox.id)).total, 5);
   assert.equal(app.db.get("SELECT COUNT(*) AS n FROM message_parts WHERE message_id LIKE 'burnbulk%'").n, 5);
 });
+
+test('burn: at most 30 requests in one minute', async () => {
+  const limited = await startTestApp({ rateLimits: true });
+  try {
+    const { account: a, box } = await setup(limited);
+    const path = `/api/addresses/${box.mailbox.addressId}/messages`;
+    for (let i = 0; i < 30; i++) assert.equal((await a.api.del(path)).status, 200);
+    const res = await a.api.del(path);
+    assert.equal(res.status, 429);
+    assert.equal(errorCode(res), 'rate_limited');
+  } finally {
+    await limited.stop();
+  }
+});

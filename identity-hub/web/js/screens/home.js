@@ -4,15 +4,16 @@ import { h, region, replace, debounce } from '../lib/dom.js';
 import { store, bus } from '../lib/store.js';
 import { money, shortTime, phoneText, plural } from '../lib/format.js';
 import { icon } from '../ui/icons.js';
-import { button, chips, emptyState, skeletonRows, pageHeader, linkButton, copyButton } from '../ui/components.js';
+import { button, chips, emptyState, skeletonRows, pageHeader, copyButton } from '../ui/components.js';
 import { rowItems, itemRows, matchesSearch } from '../ui/rows.js';
 import { openNewChooser, openNewAlias, openNewInbox, openGetNumber } from '../ui/items.js';
 import { openNewIdentity } from '../ui/identity.js';
-import { forwardingOf } from '../lib/identities.js';
+import { forwardingOf, identityItem } from '../lib/identities.js';
 import { fullName } from '../lib/persona/index.js';
 import { listMessages, personShort } from '../lib/mail.js';
 import { listTexts } from '../lib/phone.js';
-import { setPref, mailboxName, findMailbox } from '../lib/data.js';
+import { mailboxName, findMailbox } from '../lib/data.js';
+import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
 
 function statTile({ label, value, note, href, loading }) {
   return h('a', { class: 'stat', href, 'data-link': true },
@@ -48,33 +49,6 @@ function stats(state) {
   );
 }
 
-// First steps: add funds, make an inbox, make an alias, get a number.
-function checklist(state) {
-  if (state.mailboxes === null || state.aliases === null || state.numbers === null) return null;
-  if (state.prefs && state.prefs.hideChecklist) return null;
-  const f = (state.config && state.config.features) || {};
-  const hasBox = state.mailboxes.length > 0;
-  const steps = [
-    f.pay ? { done: state.balance > 0 || hasBox || state.numbers.length > 0, title: 'Add funds', text: 'Pay with Bitcoin or Monero. An inbox and a number cost a little each month.', action: linkButton('Add funds', '/funds', { size: 'sm' }) } : null,
-    { done: hasBox, title: 'Make an inbox', text: 'Its own address. You read and send mail here.', action: button('Make inbox', { size: 'sm', onClick: () => openNewInbox() }) },
-    { done: state.aliases.length > 0, title: 'Make an alias', text: 'An extra address for one shop or one site. Free.', action: button('Make alias', { size: 'sm', onClick: () => openNewAlias() }) },
-    f.phone ? { done: state.numbers.length > 0, title: 'Get a number', text: 'A phone number for texts and calls.', action: button('Get a number', { size: 'sm', onClick: () => openGetNumber() }) } : null,
-  ].filter(Boolean);
-  if (steps.every((s) => s.done)) return null;
-  const next = steps.findIndex((s) => !s.done);
-  return h('section', { class: 'sheet firststeps', 'aria-labelledby': 'firststeps-title' },
-    h('div', { class: 'firststeps-head' },
-      h('div', null, h('h2', { class: 'section-title', id: 'firststeps-title' }, 'First steps'), h('p', { class: 'small muted' }, `${steps.filter((s) => s.done).length} of ${steps.length} done`)),
-      button('Hide', { kind: 'quiet', size: 'sm', onClick: () => setPref('hideChecklist', true) }),
-    ),
-    h('ol', { class: 'firststeps-list' }, steps.map((s, i) => h('li', { class: `firststep ${s.done ? 'is-done' : ''} ${i === next ? 'is-next' : ''}`.trim() },
-      h('span', { class: 'firststep-mark mono', 'aria-hidden': 'true' }, s.done ? icon('check', { size: 14 }) : String(i + 1)),
-      h('div', { class: 'grow' }, h('p', { class: 'firststep-title' }, s.title, s.done ? h('span', { class: 'sr-only' }, ' (done)') : null), h('p', { class: 'small muted firststep-text' }, s.text)),
-      !s.done && i === next ? s.action : null,
-    ))),
-  );
-}
-
 export function homeScreen({ scope }) {
   let filter = 'all';
   let search = '';
@@ -91,6 +65,7 @@ export function homeScreen({ scope }) {
     const numbers = members.filter((m) => m.kind === 'number');
     const unread = members.reduce((n, m) => n + (m.unread || 0), 0);
     const forwards = forwardingOf(numbers.map((m) => m.raw), state);
+    const marks = registered.rowBadges('identity', identityItem(g));
     return h('li', null,
       h('a', { class: 'identity-card', href: `/identities/${g.id}`, 'data-link': true, dataset: { identity: g.id } },
         h('span', { class: 'identity-card-top' },
@@ -100,7 +75,10 @@ export function homeScreen({ scope }) {
         ),
         g.note ? h('span', { class: 'identity-card-note' }, g.note) : null,
         h('span', { class: 'identity-card-count' }, members.length ? `${plural(aliases.length, 'address', 'addresses')}, ${plural(numbers.length, 'number')}` : 'Empty'),
-        forwards.length ? h('span', { class: 'tag tag-warn identity-card-forward' }, icon('phone', { size: 12 }), 'Forwards to real phone') : null,
+        forwards.length || marks.length ? h('span', { class: 'identity-card-marks' },
+          forwards.length ? h('span', { class: 'tag tag-warn identity-card-forward' }, icon('phone', { size: 12 }), 'Forwards to real phone') : null,
+          marks,
+        ) : null,
       ),
     );
   }
@@ -262,23 +240,32 @@ export function homeScreen({ scope }) {
   };
   scope.add(store.subscribe(['mailboxes', 'numbers'], maybeStart));
 
+  // The blocks of Home, with the blocks of feature files between them (registerHomeSection).
+  const blocks = mergeByOrder(
+    [
+      { order: 20, make: () => region(scope, store, ['mailboxes', 'aliases', 'numbers', 'balance', 'identities'], stats) },
+      { order: 30, make: () => h('div', { class: 'home-grid' },
+        h('div', { class: 'home-items' },
+          h('div', { class: 'item-tools' },
+            h('div', { class: 'search-wrap' }, icon('search', { size: 16, cls: 'search-icon' }), searchInput),
+            filterChips,
+          ),
+          listRegion,
+        ),
+        h('section', { class: 'home-recent', 'aria-labelledby': 'recent-title' },
+          h('div', { class: 'section-head' }, h('h2', { class: 'section-title', id: 'recent-title' }, 'Recent')),
+          recentRegion,
+        ),
+      ) },
+    ],
+    registered.homeSections().map((sec) => ({ order: sec.order, make: () => {
+      const node = renderSafe(sec.render, { scope });
+      return node ? h('div', { class: `home-slot ${sec.order < 20 ? 'is-top' : ''}`.trim(), dataset: { section: sec.id } }, node) : null;
+    } })),
+  );
   const el = h('div', { class: 'page' },
     pageHeader({ title: 'Home', actions: button('New', { kind: 'primary', iconName: 'plus', onClick: () => openNewChooser() }) }),
-    region(scope, store, ['mailboxes', 'aliases', 'numbers', 'balance', 'prefs'], checklist),
-    region(scope, store, ['mailboxes', 'aliases', 'numbers', 'balance', 'identities'], stats),
-    h('div', { class: 'home-grid' },
-      h('div', { class: 'home-items' },
-        h('div', { class: 'item-tools' },
-          h('div', { class: 'search-wrap' }, icon('search', { size: 16, cls: 'search-icon' }), searchInput),
-          filterChips,
-        ),
-        listRegion,
-      ),
-      h('section', { class: 'home-recent', 'aria-labelledby': 'recent-title' },
-        h('div', { class: 'section-head' }, h('h2', { class: 'section-title', id: 'recent-title' }, 'Recent')),
-        recentRegion,
-      ),
-    ),
+    blocks.map((b) => b.make()),
   );
   paintList();
   paintRecent();

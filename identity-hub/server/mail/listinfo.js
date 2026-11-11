@@ -41,7 +41,7 @@ export function parseListUnsubscribe(value) {
   if (targets.length === 0) targets = text.split(',');
   for (const raw of targets.slice(0, MAX_TARGETS)) {
     const target = raw.replace(/\s+/g, '');
-    if (/^https?:\/\//i.test(target)) { result.hasLink = true; continue; }
+    if (/^https?:\/\/[^/?#]/i.test(target)) { result.hasLink = true; continue; }
     if (result.mailto !== null || !/^mailto:/i.test(target)) continue;
     const rest = target.slice('mailto:'.length);
     const q = rest.indexOf('?');

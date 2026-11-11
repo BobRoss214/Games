@@ -12,6 +12,7 @@ import { setMailFilter } from '../lib/mail.js';
 import { fullName } from '../lib/persona/index.js';
 import { openPersonaDialog } from './persona.js';
 import { openPutInIdentity, takeOutOfIdentity } from './identity.js';
+import { registered } from '../lib/registry.js';
 
 const KIND_ICON = { inbox: 'inbox', alias: 'alias', number: 'phone' };
 const KIND_NAME = { inbox: 'Inbox', alias: 'Alias', number: 'Number' };
@@ -59,7 +60,8 @@ export function breakable(address) {
 // showIdentity: show the name of the identity that the item is in (not needed on the identity screen itself).
 export function itemRow(item, { showReceived = false, showIdentity = true } = {}) {
   const groupable = item.kind === 'alias' || item.kind === 'number';
-  const menuItems = () => [
+  // Entries of feature files: the usual ones go above the line, the dangerous ones below it.
+  const menuItems = (extra = registered.rowActions(item.kind, item).map((a) => ({ label: a.label, icon: a.icon, danger: a.danger, onSelect: () => a.run(item) }))) => [
     { label: 'Rename', icon: 'edit', onSelect: () => openRename(item) },
     groupable ? { label: 'Made-up details', icon: 'person', onSelect: () => openPersonaDialog(item) } : null,
     groupable ? { label: item.identityId ? 'Move to another identity…' : 'Put in identity…', icon: 'folder', onSelect: () => openPutInIdentity(item) } : null,
@@ -68,7 +70,9 @@ export function itemRow(item, { showReceived = false, showIdentity = true } = {}
     item.kind === 'alias' ? { label: 'Show its mail', icon: 'mail', onSelect: () => { setMailFilter({ mailboxId: item.mailboxId, addressId: item.id }); navigate(item.href); } } : null,
     item.kind === 'inbox' ? { label: 'Open inbox', icon: 'mail', onSelect: () => navigate(item.href) } : null,
     item.kind === 'number' ? { label: 'Open number', icon: 'message', onSelect: () => navigate(item.href) } : null,
+    ...extra.filter((a) => !a.danger),
     'separator',
+    ...extra.filter((a) => a.danger),
     { label: item.kind === 'number' ? 'Release number' : 'Delete', icon: 'trash', danger: true, onSelect: () => confirmDeleteItem(item) },
   ];
 
@@ -92,6 +96,7 @@ export function itemRow(item, { showReceived = false, showIdentity = true } = {}
         item.unread > 0 ? h('span', { class: 'badge', 'aria-label': `${item.unread} unread` }, item.unread > 99 ? '99+' : String(item.unread)) : null,
         showIdentity && item.identityId ? h('a', { class: 'tag tag-link item-group', href: `/identities/${item.identityId}`, 'data-link': true, title: `In the identity ${item.identityName}` }, icon('folder', { size: 12 }), h('span', { class: 'truncate' }, item.identityName)) : null,
         item.persona ? h('button', { class: 'tag tag-link item-persona', type: 'button', title: 'Made-up details', onClick: () => openPersonaDialog(item) }, icon('person', { size: 12 }), h('span', { class: 'truncate' }, fullName(item.persona))) : null,
+        registered.rowBadges(item.kind, item),
       ),
     ),
     h('div', { class: `item-route ${item.route.plain ? 'is-plain' : ''}`.trim() },

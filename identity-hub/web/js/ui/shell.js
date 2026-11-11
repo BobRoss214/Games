@@ -8,15 +8,26 @@ import { button } from './components.js';
 import { confirmDialog } from './dialog.js';
 import { signOut, lock } from '../lib/session.js';
 import { navigate } from '../lib/router.js';
+import { registered } from '../lib/registry.js';
+import { menuButton } from './menu.js';
 
 const NAV = [
-  { id: 'home', label: 'Home', href: '/', icon: 'home' },
-  { id: 'mail', label: 'Mail', href: '/mail', icon: 'mail' },
-  { id: 'aliases', label: 'Aliases', href: '/aliases', icon: 'alias' },
-  { id: 'numbers', label: 'Numbers', href: '/numbers', icon: 'phone', feature: 'phone' },
-  { id: 'funds', label: 'Funds', href: '/funds', icon: 'funds' },
-  { id: 'settings', label: 'Settings', href: '/settings', icon: 'settings' },
+  { id: 'home', label: 'Home', href: '/', icon: 'home', order: 10 },
+  { id: 'mail', label: 'Mail', href: '/mail', icon: 'mail', order: 20 },
+  { id: 'aliases', label: 'Aliases', href: '/aliases', icon: 'alias', order: 30 },
+  { id: 'numbers', label: 'Numbers', href: '/numbers', icon: 'phone', feature: 'phone', order: 40 },
+  { id: 'funds', label: 'Funds', href: '/funds', icon: 'funds', order: 50 },
+  { id: 'settings', label: 'Settings', href: '/settings', icon: 'settings', order: 90 },
 ];
+// The bottom bar of a phone has room for this many places.
+const TAB_PLACES = 5;
+
+// The places of the app plus the ones that feature files registered, in order.
+function navItems(config) {
+  const own = NAV.filter((n) => !n.feature || config.features[n.feature]);
+  const extra = registered.navItems().filter((n) => !NAV.some((b) => b.id === n.id)).map((n) => ({ id: n.id, label: n.label, href: n.path, icon: n.icon, order: n.order }));
+  return [...own, ...extra].sort((a, b) => a.order - b.order);
+}
 
 let shellEl = null;
 let mainEl = null;
@@ -69,7 +80,7 @@ function doLock() {
 
 function build() {
   const config = store.get('config') || { features: {} };
-  const items = NAV.filter((n) => !n.feature || config.features[n.feature]);
+  const items = navItems(config);
 
   const navLinks = new Map();
   const tabLinks = new Map();
@@ -101,14 +112,24 @@ function build() {
     ),
   );
 
+  // Phone: Settings is the gear in the top bar. When there are more places than the bar can
+  // hold, the last place is "More" and it lists the rest.
   const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Main' });
   const tabItems = items.filter((n) => n.id !== 'settings');
-  tabbar.style.gridTemplateColumns = `repeat(${tabItems.length}, 1fr)`;
-  for (const n of tabItems) {
+  const onBar = tabItems.length > TAB_PLACES ? tabItems.slice(0, TAB_PLACES - 1) : tabItems;
+  const inMore = tabItems.slice(onBar.length);
+  tabbar.style.gridTemplateColumns = `repeat(${onBar.length + (inMore.length ? 1 : 0)}, 1fr)`;
+  for (const n of onBar) {
     const a = h('a', { class: 'tab-link', href: n.href, 'data-link': true }, icon(n.icon, { size: 22 }), h('span', null, n.label));
     tabLinks.set(n.id, a);
     tabbar.appendChild(a);
   }
+  const moreTab = inMore.length ? menuButton({
+    label: 'More places', cls: 'tab-link tab-more',
+    content: [icon('more', { size: 22 }), h('span', null, 'More')],
+    items: () => inMore.map((n) => ({ label: n.label, icon: n.icon, onSelect: () => navigate(n.href) })),
+  }) : null;
+  if (moreTab) tabbar.appendChild(moreTab);
 
   const bannerSlot = h('div', null, testBanner());
   mainEl = h('main', { class: 'main', id: 'main', tabIndex: -1 });
@@ -122,6 +143,11 @@ function build() {
       const n = unreadFor(id, state);
       if (n > 0) a.appendChild(h('span', { class: 'badge', 'aria-label': `${n} unread` }, n > 99 ? '99+' : String(n)));
     }
+    if (moreTab) {
+      moreTab.querySelector('.badge')?.remove();
+      const n = inMore.reduce((sum, it) => sum + unreadFor(it.id, state), 0);
+      if (n > 0) moreTab.appendChild(h('span', { class: 'badge', 'aria-label': `${n} unread` }, n > 99 ? '99+' : String(n)));
+    }
   };
   paintCounts(store.get());
   unsub.push(store.subscribe(['balance', 'mailboxes', 'numbers'], paintCounts));
@@ -131,6 +157,7 @@ function build() {
     for (const [nid, a] of [...navLinks, ...tabLinks]) {
       if (nid === id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     }
+    if (moreTab) { if (inMore.some((n) => n.id === id)) moreTab.setAttribute('aria-current', 'page'); else moreTab.removeAttribute('aria-current'); }
     const gear = topbar.querySelector('[data-nav="settings"]');
     if (gear) { if (id === 'settings') gear.setAttribute('aria-current', 'page'); else gear.removeAttribute('aria-current'); }
   };

@@ -7,13 +7,15 @@ let closeOpen = null;
 // items: array or function returning an array of
 // { label, icon?, onSelect, danger?, disabled?, hint? } or 'separator'
 // text: show a normal button with this text (and a small arrow) in place of the "…" icon.
-export function menuButton({ label, items, iconName = 'more', cls = '', text = '' }) {
+// content: own children for the button (it then gets only the classes in cls). They must hold visible text.
+export function menuButton({ label, items, iconName = 'more', cls = '', text = '', content = null }) {
   const id = uid('menu');
+  const named = !!(text || content);
   const btn = h('button', {
-    class: `${text ? 'btn' : 'icon-btn'} ${cls}`.trim(), type: 'button', 'aria-label': text ? null : label, title: text ? null : label, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': id,
+    class: `${content ? '' : text ? 'btn' : 'icon-btn'} ${cls}`.trim(), type: 'button', 'aria-label': named ? null : label, title: named ? null : label, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': id,
     onClick: (e) => { e.stopPropagation(); if (btn.getAttribute('aria-expanded') === 'true') closeOpen?.(); else open(); },
-    onKeydown: (e) => { if (e.key === 'ArrowDown') { e.preventDefault(); open(); } },
-  }, text ? [iconName !== 'more' ? icon(iconName, { size: 18 }) : null, h('span', { class: 'btn-label' }, text), icon('chevronDown', { size: 16 })] : icon(iconName, { size: 18 }));
+    onKeydown: (e) => { if (e.key === 'ArrowDown' || (content && e.key === 'ArrowUp')) { e.preventDefault(); open(); } },
+  }, content || (text ? [iconName !== 'more' ? icon(iconName, { size: 18 }) : null, h('span', { class: 'btn-label' }, text), icon('chevronDown', { size: 16 })] : icon(iconName, { size: 18 })));
 
   function open() {
     closeOpen?.();
