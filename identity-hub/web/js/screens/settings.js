@@ -13,11 +13,9 @@ import { setTheme } from '../lib/theme.js';
 import { decLabel, encLabel, saveKeyForPasskey, dropLocal, signOut } from '../lib/session.js';
 import { passkeysSupported, registerPasskey, passkeyPrf } from '../lib/webauthn.js';
 import { guessDeviceName } from './create.js';
-import { openTestTools } from './testtools.js';
+import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
 
 export function settingsScreen({ scope }) {
-  const config = store.get('config');
-
   // ---- passkeys ----
   const passkeySlot = h('div', { class: 'sheet item-sheet' });
   let passkeys = null;
@@ -169,41 +167,44 @@ export function settingsScreen({ scope }) {
     } catch (err) { reportError(err); }
   }
 
+  // The sections of Settings, with the sections of feature files between them (registerSettingsSection).
+  const parts = mergeByOrder(
+    [
+      { order: 10, make: () => section({ title: 'Passkeys', lede: 'Sign in with your fingerprint, your face or your device PIN. Keep your recovery key too.', actions: passkeysSupported() ? button('Add a passkey', { size: 'sm', iconName: 'plus', onClick: addPasskey }) : null }, passkeySlot) },
+      { order: 20, make: () => section({ title: 'Sessions', lede: 'Browsers and devices that are signed in to this account. The server keeps the day of sign-in, and nothing about the device.', actions: othersBtn }, sessionSlot) },
+      { order: 30, make: () => section({ title: 'Theme' },
+        segmented({ label: 'Theme', value: store.get('theme'), options: [{ value: 'system', label: 'System', icon: 'system' }, { value: 'light', label: 'Light', icon: 'sun' }, { value: 'dark', label: 'Dark', icon: 'moon' }], onChange: (v) => setTheme(v) }),
+        h('p', { class: 'hint theme-hint' }, 'The theme is saved in this browser only.'),
+      ) },
+      { order: 40, make: () => section({ title: 'What the server can and cannot see', lede: 'Your data is encrypted with keys that stay in your browser. Some things the server must know to do its work.' },
+        h('div', { class: 'see-grid' },
+          h('div', { class: 'sheet sheet-pad' }, h('h3', { class: 'see-title' }, 'The server can see'), seeList(can, 'yes')),
+          h('div', { class: 'sheet sheet-pad see-no' }, h('h3', { class: 'see-title' }, 'The server cannot see'), seeList(cannot, 'no')),
+        ),
+        callout('info', 'Know the limits', h('p', null, 'Email and the phone network are not end-to-end encrypted. The phone provider sees texts and calls on its side. Use numbers for convenience, not for secrets.')),
+      ) },
+      { order: 90, make: () => section({ title: 'This browser' },
+        h('div', { class: 'row row-wrap' },
+          button('Sign out', { iconName: 'signOut', onClick: async () => { await signOut(); navigate('/', { replace: true }); } }),
+          h('span', { class: 'hint' }, `Account made on ${dayText(store.get('account')?.createdDay)}.`),
+        ),
+      ) },
+      { order: 100, make: () => section({ title: 'Delete account', cls: 'danger-zone' },
+        h('p', { class: 'muted read' }, 'Deletes the account and everything in it from the server. Nobody can undo this.'),
+        h('div', { class: 'danger-action' }, button('Delete account', { kind: 'danger', iconName: 'trash', onClick: deleteAccount })),
+      ) },
+    ],
+    registered.settingsSections().map((sec) => ({ order: sec.order, make: () => {
+      const node = renderSafe(sec.render, { scope });
+      if (!node) return null;
+      const el2 = section({ title: sec.title, lede: sec.lede }, node);
+      el2.dataset.section = sec.id;
+      return el2;
+    } })),
+  );
   const el = h('div', { class: 'page page-narrow' },
     pageHeader({ title: 'Settings' }),
-
-    section({ title: 'Passkeys', lede: 'Sign in with your fingerprint, your face or your device PIN. Keep your recovery key too.', actions: passkeysSupported() ? button('Add a passkey', { size: 'sm', iconName: 'plus', onClick: addPasskey }) : null }, passkeySlot),
-
-    section({ title: 'Sessions', lede: 'Browsers and devices that are signed in to this account. The server keeps the day of sign-in, and nothing about the device.', actions: othersBtn }, sessionSlot),
-
-    section({ title: 'Theme' },
-      segmented({ label: 'Theme', value: store.get('theme'), options: [{ value: 'system', label: 'System', icon: 'system' }, { value: 'light', label: 'Light', icon: 'sun' }, { value: 'dark', label: 'Dark', icon: 'moon' }], onChange: (v) => setTheme(v) }),
-      h('p', { class: 'hint theme-hint' }, 'The theme is saved in this browser only.'),
-    ),
-
-    section({ title: 'What the server can and cannot see', lede: 'Your data is encrypted with keys that stay in your browser. Some things the server must know to do its work.' },
-      h('div', { class: 'see-grid' },
-        h('div', { class: 'sheet sheet-pad' }, h('h3', { class: 'see-title' }, 'The server can see'), seeList(can, 'yes')),
-        h('div', { class: 'sheet sheet-pad see-no' }, h('h3', { class: 'see-title' }, 'The server cannot see'), seeList(cannot, 'no')),
-      ),
-      callout('info', 'Know the limits', h('p', null, 'Email and the phone network are not end-to-end encrypted. The phone provider sees texts and calls on its side. Use numbers for convenience, not for secrets.')),
-    ),
-
-    config.dev ? section({ title: 'Test tools', lede: 'This server runs in test mode. Simulate incoming mail, texts and calls, and look at what the app sent.' },
-      h('div', null, button('Open test tools', { iconName: 'tools', onClick: () => openTestTools() })),
-    ) : null,
-
-    section({ title: 'This browser' },
-      h('div', { class: 'row row-wrap' },
-        button('Sign out', { iconName: 'signOut', onClick: async () => { await signOut(); navigate('/', { replace: true }); } }),
-        h('span', { class: 'hint' }, `Account made on ${dayText(store.get('account')?.createdDay)}.`),
-      ),
-    ),
-
-    section({ title: 'Delete account', cls: 'danger-zone' },
-      h('p', { class: 'muted read' }, 'Deletes the account and everything in it from the server. Nobody can undo this.'),
-      h('div', { class: 'danger-action' }, button('Delete account', { kind: 'danger', iconName: 'trash', onClick: deleteAccount })),
-    ),
+    parts.map((p) => p.make()),
   );
 
   paintPasskeys();

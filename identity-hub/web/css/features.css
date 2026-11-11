@@ -1,0 +1,52 @@
+/* Styles for the parts that feature files add (see docs/UI-GUIDE.md).
+   Owner: the web app owner. Feature files do not get their own CSS file.
+   1. The places that the shared screens give to feature parts.
+   2. A few shared helpers for feature screens.
+   3. One block for each feature that needs a style of its own: classes start with "f-<feature id>-".
+   Only tokens from tokens.css. No new colours, no new font sizes. */
+
+/* ---------- 1. places ---------- */
+
+/* a screen of a feature file (registerRoute) */
+.feature-slot { min-width: 0; }
+
+/* Home (registerHomeSection). A block that paints nothing takes no space. */
+.home-slot { margin-top: var(--s-6); min-width: 0; }
+.home-slot.is-top { margin: 0 0 var(--s-5); }
+.home-slot:empty, .home-slot:has(> :only-child:empty) { display: none; }
+.home-slot .section { margin-top: 0; }
+
+/* an open email (registerMessagePanel) */
+.message-panels { display: flex; flex-direction: column; gap: var(--s-3); margin: 0 0 var(--s-4); }
+
+/* under one text or one call (registerTextAddon, registerCallAddon) */
+.addons { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-2); }
+.bubble-addons { font-size: var(--fs-sm); }
+
+/* marks on an identity (registerRowBadge with the kind 'identity') */
+.identity-card-marks { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2); }
+.identity-count { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); }
+
+/* ---------- 2. helpers ---------- */
+
+/* Long text to read (help pages). Lists get their marks back. */
+.prose { max-width: 62ch; line-height: var(--lh-read); }
+.prose > * + * { margin-top: var(--s-3); }
+.prose h2, .prose h3 { margin-top: var(--s-6); }
+.prose > :first-child { margin-top: 0; }
+.prose ul, .prose ol { padding-left: 1.25rem; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li + li { margin-top: var(--s-1); }
+
+/* A grid of cards: as many columns as fit, one column on a phone. Use with "sheet sheet-pad" children. */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--s-4); }
+.cards > * { min-width: 0; }
+
+/* Two columns that become one on a phone. */
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-4); }
+@media (max-width: 720px) {
+  .grid-2, .cards { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- 3. features ---------- */

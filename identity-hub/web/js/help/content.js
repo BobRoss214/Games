@@ -104,14 +104,14 @@ export const TIPS = [
     title: 'Nobody can reset a lost recovery key',
     doThis: 'Keep a second copy of your recovery key in a different safe place.',
     why: 'The server never gets your recovery key, so the server cannot give it back. This is the price of data that the server cannot read.',
-    limit: 'If you lose the recovery key and all your passkeys, your account and its data are lost. Nobody can reset them.',
+    limit: 'If you lose the recovery key and all passkeys that can unlock your data, your data is lost. Nobody can reset it.',
   },
   {
     id: 'add-passkey',
     title: 'Add a passkey',
     doThis: 'Add a passkey in "Settings".',
     why: 'A passkey signs you in with your fingerprint, your face or your device PIN. It works only on the real website of {app}, not on a copy.',
-    limit: 'Some passkeys cannot unlock your data alone. Then {app} asks for your recovery key one time in each new browser session.',
+    limit: 'Some passkeys cannot unlock your data alone. With such a passkey, you still need your recovery key to read your data.',
   },
   {
     id: 'not-secret-on-the-way-in',
@@ -172,7 +172,7 @@ export const TIPS = [
     id: 'sent-mail-is-visible',
     title: 'Mail that you send is visible on the way out',
     doThis: 'Write only what the recipient and their mail company can read.',
-    why: 'When you send mail, the mail relay and the mail company of the recipient can read it. This is how email works. The recipient sees the address that you send from.',
+    why: 'When you send mail, the server, the mail relay and the mail company of the recipient can read it. This is how email works. The recipient sees the address that you send from.',
   },
   {
     id: 'trust-the-server',
@@ -200,7 +200,7 @@ export const WHY = {
     paragraphs: [
       'A passkey signs you in with your fingerprint, your face or your device PIN. Your device or your password manager keeps it. The server never gets it.',
       'A passkey works only on the real website of {app}. A copy of the website cannot use it.',
-      'Some passkeys cannot unlock your data alone. Then {app} asks for your recovery key one time in each new browser session. Keep your recovery key too.',
+      'Some passkeys cannot unlock your data alone. Then {app} asks for your recovery key one time in each new browser session. Without the recovery key, such a passkey cannot open your data.',
     ],
   },
   'inbox-vs-alias': {

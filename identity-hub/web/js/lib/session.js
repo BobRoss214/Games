@@ -269,6 +269,18 @@ export async function vaultPut(key, value) {
   if (vaultKeyList && !vaultKeyList.includes(key)) vaultKeyList.push(key);
   return blob.length;
 }
+// Read the newest value, change it, write it: change(current) gets the stored value (or null)
+// and returns the new one. Changes to one key in this tab run one after the other.
+const vaultChains = new Map();
+export function vaultChange(key, change) {
+  const run = (vaultChains.get(key) || Promise.resolve()).then(async () => {
+    const next = await change(await vaultGet(key, { fresh: true }));
+    await vaultPut(key, next);
+    return next;
+  });
+  vaultChains.set(key, run.catch(() => {}));
+  return run;
+}
 export async function vaultDelete(key) {
   if (!(await vaultHas(key, true))) return;
   try { await api.del(`/api/vault/${key}`); } catch (err) { if (err.status !== 404) throw err; }

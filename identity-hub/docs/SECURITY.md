@@ -3,23 +3,49 @@
 This document tells you what Postern protects, how it does it, and where the limits are.
 It is written in plain words. Read the "Limits" section before you trust the service with important data.
 
+One word has one meaning here: an **identity** is a named group of aliases and numbers, for example "Facebook". It never means the person.
+
 ## 1. What the server can and cannot see
 
 | Data | Can the server read it? | Notes |
 |---|---|---|
-| Your name, email, real identity | No. It never asks. | Sign-up needs no personal data. |
+| Who you are: your real name, your own email address, your own phone number | No. It never asks. | Sign-up needs no personal data. The exception is a phone that you link (below). |
 | Recovery key | No. | It never leaves your browser. |
 | Account key and private key | No. | The server stores encrypted copies only. |
 | Labels and notes on aliases, inboxes, numbers | No. | Encrypted in the browser. |
+| Identities: their names, their notes, and which aliases and numbers are in them | No. | Encrypted in the browser. The server sees only that an encrypted entry exists, and its size. |
+| Made-up details (a made-up name and address for sign-up forms) | No. | Made in the browser. Stored inside the encrypted labels and the encrypted identities. |
 | Stored email (text, subject, sender, attachments) | No. | Encrypted for you when it arrives. See Limits 1. |
-| Stored texts and call history | No. | Encrypted for you when they arrive. See Limits 1. |
+| Stored texts, call history, and voicemail | No. | Encrypted for you when they arrive. See Limits 1 and 10. |
+| Mail and texts that you send | For a moment. | The server needs the readable form to send them. It keeps only a copy that is encrypted for you. See Limits 4. |
 | Your alias addresses and VoIP numbers | Not from the database. | The database has keyed hashes only. See Limits 2. |
-| A linked real phone number | **Yes.** | The server must know it to forward calls and texts. The link is optional. |
+| The senders that you block | Not from the database. | The database has a keyed hash of each one, and a copy that only you can read. |
+| A linked real phone number | **Yes.** | The server must know it to forward calls and texts. The phone company sees it too. The link is optional. |
 | Which items belong to one account | Yes. | The server must route mail and texts to the correct account. |
 | Sizes and times of messages | Yes. | Necessary to sort and to apply limits. |
+| Your settings for each item, and two counters | Yes. | See the next table. |
 | Your credit balance | Yes. | Necessary to charge for items. |
 | Which payment added credit to which account | **No.** | See section 4. |
 | Your IP address | In memory only. | Used for rate limits. Never written to disk or to logs. |
+
+### What the server stores for each function
+
+The server keeps a value in plain form only when it must use that value itself.
+
+| Function | The server stores | The server does not store |
+|---|---|---|
+| Blocked senders | For each block: a keyed hash of the address or domain, and a copy that only your browser can open. | The blocked sender in plain form. A record of refused senders. |
+| Automatic deletion | A number of days for each inbox and for each number. The server deletes older mail and texts one time each hour. | — |
+| End date of an alias | The date. After it, the server refuses mail to the alias. | — |
+| One-shot alias | Two yes/no values: "one-shot" and "used up". | — |
+| Counters | For each address: one number for received mail and one number for refused mail. | Who wrote, and when. |
+| Forwarding and voicemail | On or off for each number, and the linked phone. | — |
+| Newsletter data ("unsubscribe") | Nothing outside the encrypted message. | — |
+| Voicemail | The audio, encrypted for you in the same way as a mail message. | The plain audio. It is in memory for a moment only. |
+| Identities and made-up details | Encrypted entries that only your browser can open. | Names, notes, groups, details. |
+| A payment in progress | An encrypted entry in your account. Your browser needs it to finish the payment. | A link between the account and the invoice. |
+
+When mail arrives, the server compares the envelope sender, the From line, and the Sender line with the hashes of your blocks.
 
 ## 2. Keys
 
@@ -30,13 +56,14 @@ recovery key (20 random bytes, shown one time)
   └─ recovery wrap key ──encrypts──► account key
 
 account key (32 random bytes, made in the browser)
-  └─ vault key ──encrypts──► labels, notes, and the private key
+  ├─ vault key  ──encrypts──► labels, notes, identities, and the private key
+  └─ export key ──encrypts──► the export file ("Download my data")
 
 passkey (optional, one or more)
   └─ PRF value ──► passkey wrap key ──encrypts──► account key
 
 ECDH P-256 key pair
-  public key:  on the server. The server uses it to seal incoming mail and texts.
+  public key:  on the server. The server uses it to seal incoming mail, texts, and voicemail.
   private key: only in the browser (the server has an encrypted copy).
 ```
 
@@ -48,7 +75,7 @@ ECDH P-256 key pair
 
 - **Passkeys** (WebAuthn) are the main login method. A passkey cannot be phished and is never sent to the server.
 - **Recovery key** is the second method. It is a long random secret, not a password that a person chooses.
-- There are **no SMS codes**, no email codes, and no passwords.
+- There are **no SMS codes**, no email codes, and no passwords for login.
 - Sessions use one cookie: `HttpOnly`, `SameSite=Strict`, and `Secure` on HTTPS. The server stores only a hash of the session token.
 - Sign-up uses a small proof-of-work puzzle in the browser. This slows down robots without a CAPTCHA and without tracking.
 
@@ -59,48 +86,66 @@ Goal: the payment records and the account records must have no link between them
 How it works:
 
 1. Your browser makes random credit tokens. One token is worth 1.00 USD.
-2. Your browser hides ("blinds") each token and sends the blinded values with the invoice request. This request does not carry your login cookie.
-3. You pay the invoice with Lightning or Monero.
-4. The payment system signs the blinded values. It cannot see the tokens inside.
-5. Your browser removes the blinding. Now it has valid signed tokens that the payment system has never seen.
-6. Your browser gives the tokens to your account. The server checks the signature and adds credit.
+2. Your browser saves the secret values of the payment in your account, in encrypted form. So a closed tab does not lose the payment.
+3. Your browser hides ("blinds") each token and sends the blinded values with the invoice request. This request does not carry your login cookie.
+4. You pay the invoice with Bitcoin Lightning, Monero, or Bitcoin on-chain. The operator decides which of the three the server offers.
+5. The payment system signs the blinded values. It cannot see the tokens inside.
+6. Your browser removes the blinding. Now it has valid signed tokens that the payment system has never seen.
+7. Your browser gives the tokens to your account. The server checks the signature and adds credit.
 
 Result: the payment database knows "invoice X was paid". The account database knows "this account received credit". No stored value connects the two. The two databases are separate files (`payments.db`, `accounts.db`).
+
+If you close the app before step 7, the payment continues the next time you open the app. See Limits 6.
 
 The method is an RSA blind signature (Chaum, 1982) with a full-domain hash. The code is in `shared/blind.js` and `server/core/blindsign.js`.
 
 ## 5. Other protections
 
 - **No request logs.** The application log has operational messages and errors only. It has no addresses, no numbers, no message text, and no IP addresses.
-- **Deleted means deleted.** The database runs with `secure_delete`, which writes zeros over deleted rows.
+- **Deleted means deleted, on the server.** The database runs with `secure_delete`, which writes zeros over deleted rows. One time each hour the server also empties the write-ahead file of the database, where an older copy can stay for a short time. Backups are a different matter: see Limits 9.
 - **Day precision.** Creation dates are stored as a day, not as an exact time, where the service does not need the exact time.
 - **Strict browser policy.** The web app loads no third-party script, font, or image. A Content-Security-Policy blocks inline scripts.
 - **Email HTML is isolated.** The app shows email HTML in a sandboxed frame that cannot run scripts. Remote images are blocked, so senders cannot track when you open a message.
+- **No unsubscribe link is opened.** To leave a newsletter, the app sends a normal email to the address that the newsletter gives. Postern never opens an unsubscribe web link. A visit to that link tells the sender that a person reads the address, and it makes the server open an address that a stranger chose.
+- **Work that stays in the browser.** These helpers run in the browser only and send nothing to the server: the code helper (it finds a sign-up code in a message), the "possibly leaked" hint, the mail statistics, the made-up details, and the username and password maker. The password maker stores no password. You copy the password into your password manager.
+- **Encrypted export.** The browser makes the export file and encrypts it. The server never sees the plain file. The recovery key opens the file, with no server. See Limits 12.
 - **Cross-site request protection.** `SameSite=Strict` cookie, an Origin check, and JSON-only request bodies.
 - **Rate limits** on login, sign-up, and sending. Counters are in memory only.
 - **A deleted address is never reused.** A new user cannot get the old mail of a deleted alias.
-- **Real phone links are verified** with a code, so nobody can forward calls to the phone of a different person.
+- **Real phone links are verified** with a code, by text or by a call that says the code. So nobody can forward calls to the phone of a different person.
 
 ## 6. Limits (read this)
 
 1. **Mail and texts arrive unencrypted.** Email (SMTP) and the telephone network are not end-to-end encrypted. The server sees an incoming message for a moment, encrypts it for you, and forgets the plain form. A server that an attacker controls *at that moment* can read new messages as they arrive. It cannot read messages that are stored already. This is the same model as Proton Mail and Tuta for mail from other providers.
-2. **A seized server can test guesses.** The database stores keyed hashes of addresses and numbers. An attacker who has the database *and* the server secret key can test "does address X exist here?". The attacker cannot list the addresses of an account.
-3. **The telephone provider sees everything on its side.** The provider (for example Twilio) sees the numbers, the texts, and the call records. It keeps logs under its own policy. Postern cannot change that. Use phone numbers for convenience, not for secrets.
-4. **Outgoing mail is visible to the relay and to the recipient's provider.** This is how email works.
+2. **A seized server can test guesses.** The database stores keyed hashes of addresses, numbers, and blocked senders. An attacker who has the database *and* the server secret key can test "does address X exist here?" or "does this address block sender Y?". The attacker cannot list the addresses of an account.
+3. **The telephone provider sees everything on its side.** The provider (for example Twilio) sees the numbers, the texts, and the call records. It keeps logs under its own policy. Postern cannot change that. If you link a real phone, the provider also sees that phone number each time it forwards a call or a text to it. Use phone numbers for convenience, not for secrets.
+4. **Outgoing mail is visible to the relay and to the recipient's provider.** This is how email works. The server also sees a message or a text that you send, for the moment in which it sends it.
 5. **You must trust the web app code that the server sends.** This is true for every web app with browser encryption. If you run your own server, you control that code. A future improvement is a signed browser extension or a packaged app.
-6. **Timing can link things.** The server stores no link between a payment and an account. But a modified server could log the time of both events and compare them. Postern does not do this. You can lower the risk more: pay first, and add the credit to your account later.
-7. **If you lose the recovery key and all passkeys, the data is lost.** Nobody can reset it. This is the price of "the server cannot read it".
+6. **Timing can link things.** The server stores no link between a payment and an account. But a modified server could log times and IP addresses and compare them. Postern does not do this. There are two moments:
+   - Just before the invoice request, your browser saves the encrypted payment entry in your account.
+   - After the payment, your browser adds the credit to your account.
+
+   You can lower the risk of the second moment. There is no "add credit later" button. Pay, close the app, and open it later: the app then finishes the payment. This does not change the first moment.
+7. **If you lose the recovery key and all passkeys, the data is lost.** Nobody can reset it. This is the price of "the server cannot read it". The data is also lost in this case: you have no recovery key, and your only passkeys are of the type in limit 8. Then you can sign in, but nothing can decrypt your data.
 8. **Passkeys without PRF support** cannot unlock the encryption alone. The app then asks for the recovery key one time in each new browser session.
+9. **Backups keep deleted data.** The operator can make backups of the database. A backup from before a deletion still has the data, in the same encrypted form as on the server. This is true for data that you delete and for data that the automatic deletion removes. The data stays until the operator deletes that backup. The backup script of the setup guide keeps 7 backups. Ask the operator how long backups stay.
+10. **The phone company hears each voicemail.** The company plays the greeting and records the message itself. Postern cannot encrypt a voicemail before the company has it. Postern fetches the recording, encrypts it for you, and then deletes it at the company. If the company does not delete it, Postern tries again each hour for 30 days. The company can keep call records under its own policy, and its own backups for some time. Postern cannot delete those.
+11. **A mail domain that only one person uses links its aliases.** Each website sees the domain of the alias that you give it. If only you use that domain, websites that compare their lists can tell that the addresses belong to one person. A domain that many people share does not show this. On a server for one person, each domain is such a domain.
+12. **Two export files of one account can be recognised.** The plain header of an export file has the app name, the day, sizes, and the encrypted account key. The encrypted account key is the same in each export of one account. A person who has two export files can tell that they come from the same account. That person cannot read them without the recovery key. A person who has one file *and* the recovery key can read everything in it.
+13. **Some settings and counts are plain for the server.** The server does the deleting and the refusing, so it knows your settings for automatic deletion, end dates, one-shot aliases, forwarding, and voicemail. It also knows how many messages each address received and refused. It does not know who wrote them.
 
 ## 7. What an attacker gets
 
 | Attacker | Gets | Does not get |
 |---|---|---|
-| Steals a database backup | Encrypted blobs, hashes, balances, real phone numbers in encrypted form | Mail, texts, labels, addresses, numbers, real phone numbers (they need the server secret key) |
-| Steals the database and the server secret key | Linked real phone numbers; can test guesses of addresses | Stored mail and texts, labels, lists of addresses |
-| Controls the running server for some time | New incoming mail and texts during that time; can send bad web app code | Old stored messages (unless you sign in during that time) |
+| Steals a database backup | Encrypted blobs, hashes, balances, settings and counters, real phone numbers in encrypted form. Also data that was deleted after the backup. | Mail, texts, voicemail, labels, identities, made-up details, addresses, numbers, blocked senders, real phone numbers (they need the server secret key) |
+| Steals the database and the server secret key | Linked real phone numbers; can test guesses of addresses and of blocked senders; can make false credit tokens | Stored mail, texts and voicemail, labels, identities, lists of addresses |
+| Controls the running server for some time | New incoming mail, texts and voicemail during that time; can send bad web app code; can log times and IP addresses | Old stored messages (unless you sign in during that time) |
 | Watches the network | Nothing useful with HTTPS; SMTP between mail servers uses opportunistic TLS | — |
 | Gets a payment processor record | That an invoice was paid | Which account got the credit |
+| Gets the records of the phone company | Numbers, texts, call records; a linked real phone that got forwarded calls or texts, and which numbers forward to it; a voicemail recording until Postern deleted it | Stored mail, labels, your aliases |
+| Gets two export files, without the recovery key | That the two files come from the same account; their sizes and days | The contents |
+| Websites that compare their lists | That aliases on a domain of one person belong together | Aliases on a domain that many people share |
 
 ## 8. Report a problem
 

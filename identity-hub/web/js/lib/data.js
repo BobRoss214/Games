@@ -10,14 +10,20 @@ import { loadIdentities } from './identities.js';
 //   { label, note, persona?, identityId?, …fields of later versions }
 // persona = made-up details (name and address). identityId = the identity (group) that the item is in.
 // Everything read from it is checked before use. A value in a wrong form counts as absent.
+// A feature file may keep its own fields in the blob: it reads them from item.extra and writes
+// them with setItemExtra(). The four fields above belong to this file.
 const IDENTITY_ID = /^[A-Za-z0-9_-]{22}$/;
+const OWN_FIELDS = ['label', 'note', 'persona', 'identityId'];
 function readEnc(obj) {
-  const o = obj && typeof obj === 'object' ? obj : {};
+  const o = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
+  const extra = {};
+  for (const [k, v] of Object.entries(o)) if (!OWN_FIELDS.includes(k)) extra[k] = v;
   return {
     label: typeof o.label === 'string' ? o.label : '',
     note: typeof o.note === 'string' ? o.note : '',
     persona: isPersona(o.persona) ? o.persona : null,
     identityId: typeof o.identityId === 'string' && IDENTITY_ID.test(o.identityId) ? o.identityId : '',
+    extra,
   };
 }
 
@@ -36,7 +42,7 @@ export async function loadMailboxes() {
     const [sealed, label] = await Promise.all([openSealed(m.sealedAddress, 'address'), decLabel(m.enc, 'mailbox')]);
     const e = readEnc(label);
     return {
-      id: m.id, addressId: m.addressId, address: sealed ? sealed.address : '', label: e.label, note: e.note,
+      id: m.id, addressId: m.addressId, address: sealed ? sealed.address : '', label: e.label, note: e.note, extra: e.extra,
       status: m.status, paidUntil: m.paidUntil, createdDay: m.createdDay, unread: m.unread || 0, total: m.total || 0,
     };
   }));
@@ -51,7 +57,7 @@ export async function loadAliases() {
     const [sealed, label] = await Promise.all([openSealed(a.sealedAddress, 'address'), decLabel(a.enc, 'alias')]);
     const e = readEnc(label);
     return {
-      id: a.id, mailboxId: a.mailboxId, address: sealed ? sealed.address : '', label: e.label, note: e.note, persona: e.persona, identityId: e.identityId,
+      id: a.id, mailboxId: a.mailboxId, address: sealed ? sealed.address : '', label: e.label, note: e.note, persona: e.persona, identityId: e.identityId, extra: e.extra,
       enabled: !!a.enabled, createdDay: a.createdDay, received: a.received || 0,
     };
   }));
@@ -67,7 +73,7 @@ export async function loadNumbers() {
     const [sealed, label] = await Promise.all([openSealed(n.sealedNumber, 'number'), decLabel(n.enc, 'number')]);
     const e = readEnc(label);
     return {
-      id: n.id, number: sealed ? sealed.number : '', label: e.label, note: e.note, persona: e.persona, identityId: e.identityId,
+      id: n.id, number: sealed ? sealed.number : '', label: e.label, note: e.note, persona: e.persona, identityId: e.identityId, extra: e.extra,
       country: n.country, sms: !!n.sms, voice: !!n.voice, status: n.status, paidUntil: n.paidUntil, createdDay: n.createdDay,
       forwardPhoneId: n.forwardPhoneId || null, forwardTexts: !!n.forwardTexts, forwardCalls: !!n.forwardCalls, unread: n.unread || 0,
       retentionDays: Number.isInteger(n.retentionDays) ? n.retentionDays : null, // old texts are deleted after this many days; null = never
@@ -204,6 +210,14 @@ export function setItemPersona(kind, id, persona) {
 // Puts an alias or a number in an identity. identityId = '' takes it out.
 export function setItemIdentity(kind, id, identityId) {
   return patchEnc(kind, id, (e) => { if (identityId) e.identityId = identityId; else delete e.identityId; });
+}
+// Fields of a feature file in the encrypted blob of an inbox, an alias or a number.
+// kind: 'inbox' | 'alias' | 'number'. patch: { field: value } ; null removes a field.
+// The newest copy is read first and every other field is kept. Read the fields from item.extra.
+export function setItemExtra(kind, id, patch) {
+  if (!KINDS[kind]) throw new Error('This kind of item has no encrypted fields.');
+  for (const k of Object.keys(patch)) if (OWN_FIELDS.includes(k)) throw new Error(`The field "${k}" is not a feature field.`);
+  return patchEnc(kind, id, (e) => { for (const [k, v] of Object.entries(patch)) { if (v === null || v === undefined) delete e[k]; else e[k] = v; } });
 }
 
 export async function createMailbox({ localPart, domain, label }) {

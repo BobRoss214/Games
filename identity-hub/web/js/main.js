@@ -98,10 +98,11 @@ function featureScreen(route) {
     };
   };
 }
-// The menu item to mark: the one the route names, or the one whose path is the start of the route path.
+// The menu item to mark: the one the route names, or the one whose path is the start of the address.
 function navFor(route) {
   if (route.nav) return route.nav;
-  const item = registered.navItems().find((n) => n.path === route.path || route.path.startsWith(`${n.path}/`));
+  const path = location.pathname;
+  const item = registered.navItems().find((n) => path === n.path || path.startsWith(`${n.path}/`));
   return item ? item.id : '';
 }
 onRoute((r) => defineRoutes([{ path: r.path, name: `feature:${r.path}`, title: r.title, layout: 'auto', nav: () => navFor(r), signedOut: r.signedOut, screen: featureScreen(r) }]));

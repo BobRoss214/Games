@@ -92,7 +92,7 @@ a.stat:hover { background: var(--sunken); color: var(--ink); }
   .stat-value { font-size: 1.5rem; }
 }
 
-.firststeps { margin-bottom: var(--s-5); padding: var(--s-4) var(--s-5); }
+.firststeps { padding: var(--s-4) var(--s-5); }
 .firststeps-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s-3); }
 .firststeps-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--s-4); margin-top: var(--s-4); counter-reset: none; }
 .firststep { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s-3); row-gap: var(--s-3); align-items: start; align-content: start; padding-top: var(--s-3); border-top: 2px solid var(--line-2); }

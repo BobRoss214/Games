@@ -26,16 +26,16 @@ export function rowItems(state, aliasUnread = new Map()) {
   const group = (x) => { const g = x.identityId ? groups.get(x.identityId) : null; return { identityId: g ? g.id : '', identityName: g ? g.name : '', persona: x.persona || null }; };
   const items = [];
   for (const m of boxes) {
-    items.push({ kind: 'inbox', id: m.id, address: m.address, value: m.address, display: m.address, label: m.label, off: m.status !== 'active', paused: m.status !== 'active', unread: m.unread, href: `/mail/${m.id}`, route: { text: 'Inbox', plain: true }, raw: m });
+    items.push({ kind: 'inbox', id: m.id, address: m.address, value: m.address, display: m.address, label: m.label, off: m.status !== 'active', paused: m.status !== 'active', unread: m.unread, href: `/mail/${m.id}`, route: { text: 'Inbox', plain: true }, extra: m.extra || {}, raw: m });
   }
   for (const a of state.aliases || []) {
     const box = boxes.find((m) => m.id === a.mailboxId);
-    items.push({ kind: 'alias', id: a.id, address: a.address, value: a.address, display: a.address, label: a.label, off: !a.enabled, enabled: a.enabled, mailboxId: a.mailboxId, unread: aliasUnread.get(a.id) || 0, received: a.received, href: box ? `/mail/${box.id}` : '/mail', route: { text: `Inbox ${mailboxName(box)}` }, ...group(a), raw: a });
+    items.push({ kind: 'alias', id: a.id, address: a.address, value: a.address, display: a.address, label: a.label, off: !a.enabled, enabled: a.enabled, mailboxId: a.mailboxId, unread: aliasUnread.get(a.id) || 0, received: a.received, href: box ? `/mail/${box.id}` : '/mail', route: { text: `Inbox ${mailboxName(box)}` }, ...group(a), extra: a.extra || {}, raw: a });
   }
   for (const n of state.numbers || []) {
     const phone = n.forwardPhoneId ? phones.find((p) => p.id === n.forwardPhoneId) : null;
     const forwards = phone && phone.verified && (n.forwardTexts || n.forwardCalls);
-    items.push({ kind: 'number', id: n.id, number: n.number, value: n.number, display: phoneText(n.number), label: n.label, off: n.status !== 'active', paused: n.status !== 'active', unread: n.unread, href: `/numbers/${n.id}`, forwards: !!forwards, route: forwards ? { text: `forwards to ${phoneName(phone)}` } : { text: 'in app only', plain: true }, ...group(n), raw: n });
+    items.push({ kind: 'number', id: n.id, number: n.number, value: n.number, display: phoneText(n.number), label: n.label, off: n.status !== 'active', paused: n.status !== 'active', unread: n.unread, href: `/numbers/${n.id}`, forwards: !!forwards, route: forwards ? { text: `forwards to ${phoneName(phone)}` } : { text: 'in app only', plain: true }, ...group(n), extra: n.extra || {}, raw: n });
   }
   return items;
 }

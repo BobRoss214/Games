@@ -14,6 +14,7 @@ import { loadMailboxes, updateAlias, findMailbox } from '../lib/data.js';
 import { openNewInbox } from '../ui/items.js';
 import { openCompose } from './compose.js';
 import { openTestTools } from './testtools.js';
+import { registered } from '../lib/registry.js';
 
 // Plain text with links for http(s) addresses. Everything is added as text nodes.
 function textWithLinks(text) {
@@ -291,7 +292,11 @@ export function mailScreen({ params, scope }) {
         } catch (err) { reportError(err); }
       } } : null,
       { label: 'Copy sender address', icon: 'copy', onSelect: () => copyText(meta.from.address || '', 'Address copied') },
+      // Entries of feature files (registerMessageAction).
+      ...registered.messageActions(msg, alias).map((a) => ({ label: a.label, icon: a.icon, danger: a.danger, onSelect: () => a.run(msg, alias) })),
     ] });
+    // Panels of feature files (registerMessagePanel), between the head and the text.
+    const panels = msg.broken ? [] : registered.messagePanels(msg, alias);
 
     const atts = meta.attachments || [];
     return h('article', { class: 'message' },
@@ -336,6 +341,7 @@ export function mailScreen({ params, scope }) {
           turnOff,
         ) : null,
       ),
+      panels.length ? h('div', { class: 'message-panels' }, panels) : null,
       msg.broken ? h('p', { class: 'form-error' }, 'This message cannot be opened with your key.') : renderBody(msg),
       atts.length ? h('section', { class: 'message-atts', 'aria-label': 'Attachments' },
         h('h3', { class: 'message-atts-title' }, plural(atts.length, 'attachment')),

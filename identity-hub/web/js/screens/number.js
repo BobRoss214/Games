@@ -16,6 +16,7 @@ import { findIdentity } from '../lib/identities.js';
 import { confirmDeleteItem } from '../ui/items.js';
 import { openLinkPhone } from './numbers.js';
 import { openTestTools } from './testtools.js';
+import { registered, renderSafe, mergeByOrder } from '../lib/registry.js';
 
 const MAX_TEXT = 1600;
 const TEXT_STATUS = { queued: 'Sending', sent: 'Sent', delivered: 'Delivered', failed: 'Not delivered' };
@@ -134,6 +135,9 @@ export function numberScreen({ params, scope }) {
     return form;
   }
 
+  // Parts of feature files under one text or one call (registerTextAddon, registerCallAddon).
+  const addons = (nodes, cls) => (nodes.length ? h('div', { class: `addons ${cls}` }, nodes) : null);
+
   function bubble(t) {
     return h('li', { class: `bubble-row is-${t.direction}` },
       h('div', { class: 'bubble' },
@@ -143,6 +147,7 @@ export function numberScreen({ params, scope }) {
           t.direction === 'out' ? h('span', { class: `bubble-status ${t.status === 'failed' ? 'is-failed' : ''}`.trim() }, TEXT_STATUS[t.status] || 'Sent') : h('span', { class: 'sr-only' }, ' received'),
         ),
         t.direction === 'out' && t.status === 'failed' ? h('p', { class: 'bubble-failed' }, 'The provider did not deliver this text. The charge came back.') : null,
+        t.broken ? null : addons(registered.textAddons(t, findNumber(id)), 'bubble-addons'),
       ),
       menuButton({ label: 'Text actions', cls: 'icon-btn-sm bubble-menu', items: [
         { label: 'Copy text', icon: 'copy', onSelect: () => copyText(t.body, 'Text copied') },
@@ -317,6 +322,7 @@ export function numberScreen({ params, scope }) {
         h('div', { class: 'grow' },
           h('p', { class: 'mono call-peer truncate' }, phoneText(c.peer) || 'Unknown number'),
           h('p', { class: 'small muted' }, label, c.status === 'answered' ? `, ${duration(c.seconds)}` : ''),
+          addons(registered.callAddons(c, number), 'call-addons'),
         ),
         h('time', { class: 'small muted nowrap', datetime: new Date(c.at * 1000).toISOString() }, shortTime(c.at)),
         menuButton({ label: 'Call actions', items: [
@@ -387,7 +393,7 @@ export function numberScreen({ params, scope }) {
       toggle({ checked: on && hasTarget, label: title, disabled: !hasTarget, withText: true, onChange: (v) => updateNumber(id, { [key]: v }) }),
     );
 
-    replace(settingsPane,
+    const own = [
       h('section', null, labelForm),
       h('section', { class: 'stack stack-3' },
         h('div', null,
@@ -439,7 +445,16 @@ export function numberScreen({ params, scope }) {
           if (ok) navigate('/numbers', { replace: true });
         } })),
       ),
-    );
+    ];
+    // The sections above, with the sections of feature files between them (registerNumberSetting).
+    const ORDERS = [10, 20, 30, 40, 50, 80, 100];
+    const extra = registered.numberSettings().map((sec) => {
+      const node = renderSafe(sec.render, { number, scope });
+      return node ? { order: sec.order, el: h('section', { class: 'stack stack-3', dataset: { section: sec.id } },
+        h('div', null, h('h2', { class: 'section-title' }, sec.title), sec.lede ? h('p', { class: 'section-lede' }, sec.lede) : null),
+        node) } : null;
+    }).filter(Boolean);
+    replace(settingsPane, mergeByOrder(own.map((el, i) => ({ order: ORDERS[i], el })), extra).map((part) => part.el));
   }
 
   // ---------- page ----------
@@ -471,11 +486,12 @@ export function numberScreen({ params, scope }) {
   function build() {
     built = true;
     headRegion = h('header', { class: 'page-head' });
-    tabsEl = tabs({ label: 'Number', value: 'texts', items: [
-      { id: 'texts', label: 'Texts', render: () => { queueMicrotask(() => { paintTexts(); if (texts && texts.some((t) => t.direction === 'in' && !t.seen)) markTextsSeen(id).then(() => loadNumbers()).catch(() => {}); }); return textsPane; } },
-      { id: 'calls', label: 'Calls', render: () => { if (calls === null) loadCalls(); queueMicrotask(paintCalls); return callsPane; } },
-      { id: 'settings', label: 'Settings', render: () => { queueMicrotask(paintSettings); return settingsPane; } },
-    ] });
+    // Texts, Calls and Settings, with the tabs of feature files between them (registerNumberTab).
+    tabsEl = tabs({ label: 'Number', value: 'texts', items: mergeByOrder([
+      { order: 10, id: 'texts', label: 'Texts', render: () => { queueMicrotask(() => { paintTexts(); if (texts && texts.some((t) => t.direction === 'in' && !t.seen)) markTextsSeen(id).then(() => loadNumbers()).catch(() => {}); }); return textsPane; } },
+      { order: 20, id: 'calls', label: 'Calls', render: () => { if (calls === null) loadCalls(); queueMicrotask(paintCalls); return callsPane; } },
+      { order: 90, id: 'settings', label: 'Settings', render: () => { queueMicrotask(paintSettings); return settingsPane; } },
+    ], registered.numberTabs().map((t) => ({ order: t.order, id: t.id, label: t.label, render: () => renderSafe(t.render, { number: findNumber(id), scope }) || h('div') }))) });
     replace(root, headRegion, tabsEl);
     paintHead();
     // Another screen asked for one conversation, or for another tab.
@@ -499,7 +515,7 @@ export function numberScreen({ params, scope }) {
     paintHead();
     if (tabsEl.active === 'settings') paintSettings();
     else if (tabsEl.active === 'texts') paintTexts();
-    else paintCalls();
+    else if (tabsEl.active === 'calls') paintCalls();
   }
 
   if (!config.features.phone) {

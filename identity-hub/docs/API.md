@@ -161,17 +161,18 @@ Errors when an address is made (`POST /api/mailboxes`, `POST /api/aliases`):
 
 | Route | Body / query | Result |
 |---|---|---|
-| `GET /api/mailboxes` **(auth)** | — | `{ mailboxes: [{ id, addressId, sealedAddress, enc, status: "active"\|"suspended", paidUntil, createdDay, unread, total, retentionDays, blocks }] }`, oldest first |
+| `GET /api/mailboxes` **(auth)** | — | `{ mailboxes: [{ id, addressId, sealedAddress, enc, status: "active"\|"suspended", paidUntil, createdDay, unread, total, retentionDays, blocks, refused }] }`, oldest first |
 | `POST /api/mailboxes` **(auth)** | `{ localPart?, domain?, enc? }` | 201 `{ mailbox, address }`. Charges `prices.mailboxMonth` (kind `mailbox`). `address` is the plain address, returned this one time. 409 `taken`, 409 `limit_reached`, 402, 400 `bad_request`. Rate limit 60/hour per account. |
 | `PATCH /api/mailboxes/:id` **(auth)** | `{ enc?, retentionDays? }` (at least one; `enc: null` removes the label; `retentionDays`: null or 1 to 3650) | `{ mailbox }`. 400 `bad_request` if no value is given or a value is not valid. |
 | `DELETE /api/mailboxes/:id` **(auth)** | — | 204. Deletes its messages and its aliases. No credit is given back. |
-| `GET /api/aliases` **(auth)** | — | `{ aliases: [{ id, mailboxId, sealedAddress, enc, enabled, createdDay, received, expiresAt, blocks }] }`, oldest first (`received` = count of delivered messages) |
-| `POST /api/aliases` **(auth)** | `{ mailboxId, localPart?, domain?, enc? }` | 201 `{ alias, address }`. Free. 404 `not_found` (mailbox), 409 `taken`, 409 `limit_reached`, 400 `bad_request`. Rate limit 120/hour per account. |
-| `PATCH /api/aliases/:id` **(auth)** | `{ enabled?, mailboxId?, enc?, expiresAt? }` (at least one; `enc: null` removes the label; `expiresAt`: null or Unix seconds in the future) | `{ alias }`. 400 `bad_request` if no value is given or a value is not valid. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
+| `GET /api/aliases` **(auth)** | — | `{ aliases: [{ id, mailboxId, sealedAddress, enc, enabled, createdDay, received, expiresAt, blocks, oneShot, usedUp, refused }] }`, oldest first (`received` = count of delivered messages, `refused` = count of refused messages) |
+| `POST /api/aliases` **(auth)** | `{ mailboxId, localPart?, domain?, enc?, oneShot? }` (`oneShot`: boolean, default false) | 201 `{ alias, address }`. Free. 404 `not_found` (mailbox), 409 `taken`, 409 `limit_reached`, 400 `bad_request`. Rate limit 120/hour per account. |
+| `PATCH /api/aliases/:id` **(auth)** | `{ enabled?, mailboxId?, enc?, expiresAt?, oneShot? }` (at least one; `enc: null` removes the label; `expiresAt`: null or Unix seconds in the future; `oneShot`: boolean) | `{ alias }`. 400 `bad_request` if no value is given or a value is not valid. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
 | `DELETE /api/aliases/:id` **(auth)** | — | 204. Messages stay in the mailbox. Their `addressId` becomes null. Its blocks are deleted. |
 | `GET /api/addresses/:id/blocks` **(auth)** | — | `{ blocks: [{ id, sealed, createdDay }] }`, oldest first. `:id` is an alias id or `mailbox.addressId`. |
 | `POST /api/addresses/:id/blocks` **(auth)** | `{ kind: "address"\|"domain", value }` | 201 `{ block }`. 200 `{ block }` with the block that exists, if this sender is blocked on this address already. 400 `bad_request`, 409 `limit_reached` (200 blocks for one address). Rate limit 60/minute per account. |
 | `DELETE /api/addresses/:id/blocks/:blockId` **(auth)** | — | 204. 404 `not_found` if the block is not a block of this address. |
+| `DELETE /api/addresses/:id/messages` **(auth)** | — | 200 `{ deleted: n }`. "Burn": deletes all stored messages of this address (see below). `:id` is an alias id or `mailbox.addressId`. Rate limit 30/minute per account. |
 | `GET /api/messages` **(auth)** | `?mailboxId=&addressIds=<id,id,…>&direction=in\|out&before=<at>&beforeId=&limit=` (limit 1 to 100, default 50; `addressIds` 1 to 50 ids) | `{ messages: [{ id, mailboxId, addressId, direction, at, seen, size, attachments (count), sealedKey, encMeta }], more: bool }` newest first. 400 `bad_request` for a bad query value. 404 `not_found` if `mailboxId` is not a mailbox of the account. |
 | `GET /api/messages/:id` **(auth)** | — | `{ message: { ...same fields, body: b64u (part 0) } }` |
 | `GET /api/messages/:id/parts/:index` **(auth)** | index ≥ 1 | 200 `application/octet-stream` (the encrypted attachment). 404 `not_found` if the part does not exist. |
@@ -190,18 +191,41 @@ Mailbox and alias notes:
 - `limits.mailboxes` and `limits.aliases`: 0 = no limit. The alias limit counts the aliases of the account, not the mailbox addresses.
 - The address of a mailbox (`mailbox.addressId`) is not an alias. It is not in `GET /api/aliases`, and the alias routes give 404 for it. It can send mail (`addressId` in `POST /api/mail/send`).
 - An alias can be made for a suspended mailbox. `PATCH` with `mailboxId` moves the alias: new mail goes to the new mailbox, old messages stay where they are.
-- A disabled alias gets no mail (SMTP answer 550, like an unknown address) and cannot send.
+- A disabled alias gets no mail (SMTP answer 550, like an unknown address) and cannot send. Each message that it refuses adds 1 to `refused`.
 - `expiresAt` is the end date of an alias: null (no end date, the default) or Unix seconds. `PATCH` accepts null or a time in the future, 10 years ahead at most.
   From this time on, the alias behaves exactly like a disabled alias: it gets no mail (SMTP `550 5.1.1`, also for mail inside the server) and it cannot send (the same 409 `conflict`).
   The alias stays in the list with `enabled` as it was; the web app compares `expiresAt` with the clock. A new date in the future or null makes the alias work again.
   The address of a mailbox has no end date.
+- `oneShot` makes an alias that works for one message. It is a boolean, false by default; a value that is not a boolean gives 400 `bad_request`.
+  Only an alias can be one-shot. The address of a mailbox cannot.
+  - The first message that the server stores for the alias turns the alias off: `enabled` becomes false and `usedUp` becomes true.
+    The server does this in the same database transaction that stores the message. It reads the state of the alias again inside this transaction,
+    so a second message is not stored, also when two messages arrive at the same moment. The second sender gets `550 5.1.1`.
+  - A used-up alias behaves exactly like a disabled alias: it gets no mail (SMTP `550 5.1.1`, also for mail inside the server), it cannot send (409 `conflict`),
+    and each message that it refuses adds 1 to `refused`.
+  - A message that is not stored does not use the alias up: mail from a blocked sender, mail while the mailbox is suspended or full, a message that cannot be parsed.
+  - `PATCH { enabled: true }` turns a used-up alias on again and sets `usedUp` to false. The alias is still one-shot: it stops again after the next message.
+  - `PATCH { oneShot: false }` makes it a normal alias and sets `usedUp` to false. It does not turn the alias on: `enabled` stays false until the request has `enabled: true`
+    (the two values can be in one request).
+  - `PATCH { oneShot: true }` on a normal alias: the next message that arrives is the last one. Messages that arrived before do not count.
+  - `usedUp` is true only while the alias is off because its one message arrived. `PATCH { enabled: false }` does not change `usedUp`.
+- `refused` is the number of messages that the address refused. It is one whole number for each address: for an alias, and for the address of a mailbox (`mailbox.refused`).
+  The server stores nothing more about a refused message: no sender, no time, no size, no content. The number starts at 0. No route sets it back. It is deleted with the address.
+  - Counted: mail for an address that exists, when the refusal is final: the alias is turned off, is past its end date, or is used up, or the address blocks the sender.
+  - Not counted: mail for an address that does not exist (also a deleted address and a domain that is not ours); a temporary refusal (suspended mailbox, full mailbox,
+    a problem in the server); a message that is too large or cannot be parsed.
+  - One count for each message and recipient, not for each SMTP command. If a sender repeats `RCPT TO` for the same recipient in one message, the server counts 1.
+    A new message counts again, also on the same connection and also if it is a new try of the same message. A message for three addresses that refuse adds 1 to each of them.
+  - A block that is found after DATA (From line or Sender line) counts 1 for each recipient that blocks. A one-shot alias that is used up between RCPT and the end of DATA counts 1.
+  - Mail inside the server counts in the same way: `POST /api/mail/send` (each recipient on our own domains with a final refusal), `deliverLocal`, and the dev route.
+  - A change of `refused` publishes no event. The web app gets the number with the next `GET /api/aliases` or `GET /api/mailboxes`.
 - `retentionDays` is the auto-delete of a mailbox: null (off, the default) or 1 to 3650. The server deletes the messages of this mailbox that are older than this number of days
   (by `at`; incoming messages and Sent copies, with their attachments). A job does this one time each hour, also for a suspended mailbox, and publishes `mail` with the `mailboxId`.
   The deleted messages cannot be brought back. The setting changes nothing in the counter `received` of an alias.
 - `blocks` = the number of blocked senders of the address (for a mailbox: of `mailbox.addressId`).
 - Events for the browser: `mailbox` (mailbox made, changed, deleted, suspended, active again; a block of the mailbox address added or removed),
-  `aliases` (alias made, changed, deleted; mailbox deleted; a block of an alias added or removed),
-  `mail` with `mailboxId` (new message, seen flag changed, message deleted by the user or by the auto-delete, Sent copy stored), `balance` (after a charge).
+  `aliases` (alias made, changed, deleted; mailbox deleted; a block of an alias added or removed; a one-shot alias used up, after the `mail` event of its message),
+  `mail` with `mailboxId` (new message, seen flag changed, message deleted by the user, by the auto-delete, or by a burn, Sent copy stored), `balance` (after a charge).
 
 Blocked senders:
 - A block belongs to one address (an alias, or the address of a mailbox). Mail from the blocked sender to this address is refused. Everything else on the address keeps working,
@@ -214,8 +238,21 @@ Blocked senders:
   `store.sealJsonFor(accountId, { kind, value }, 'block')`. The browser opens `sealed` with `openJson(keys, sealed, 'block')` and gets `{ kind, value }`.
 - The server checks the envelope sender (MAIL FROM) and every address in the From line and in the Sender line of the message. Upper case, a dot at the end of the domain,
   and the two spellings of an international domain make no difference.
-- A refused message is not stored, is not counted in `received`, and publishes no event. The sender is not written to a log.
+- A refused message is not stored, is not counted in `received`, and publishes no event. It adds 1 to `refused` of the address. The sender is not written to a log.
 - To block the sender of a message, the web app takes `meta.from.address` (kind `address`) or the part after the `@` (kind `domain`).
+
+Burn (`DELETE /api/addresses/:id/messages`):
+- Deletes all stored messages with this `addressId`: incoming messages and Sent copies, with their attachments, in all mailboxes of the account
+  (an alias that was moved has messages in two mailboxes).
+- For the address of a mailbox, only the messages of this address are deleted. The messages of the aliases of the mailbox stay.
+  Messages of a deleted alias (`addressId: null`) are not reached by this route.
+- Answer: 200 `{ deleted: n }`, the number of deleted messages. It is 0 if there was nothing to delete. 404 `not_found` for an unknown id, an id of a different account,
+  an address that was deleted, and an id that is not well formed. 429 `rate_limited` after 30 requests in one minute.
+- The server deletes in steps of 500 messages, like the auto-delete, so that a large delete does not stop other requests. Then it empties the write-ahead file of the database.
+  A message that arrives while the delete runs can stay.
+- The address is not changed: `enabled`, `received`, `refused`, its blocks, and its label stay, and it accepts new mail.
+- Publishes `mail` with the `mailboxId`, one time for each mailbox that lost messages. No event if nothing was deleted.
+- The deleted messages cannot be brought back.
 
 Message notes:
 - Order: `at` from new to old; messages of the same second by `id` from high to low.
@@ -244,7 +281,28 @@ Content of an incoming message (the server makes it; see the envelope in section
   (for the plain view and for the quote in a reply), for example from `body.html`.
 - `body.html` is the HTML part, or null. The server stores it as it arrived: scripts, remote images, and `cid:` links are still in it. The web app must clean it and show it in a sandbox.
 - `body.messageId` and `body.inReplyTo` are null if the header is absent. `body.references` has 100 entries at most.
+- `meta.bulk` is a boolean. It is true when the message has a `List-Unsubscribe` header or a `List-Id` header (also with an empty value), or a `Precedence` header
+  with the value `bulk` or `list` (upper case makes no difference). It is false for all other messages.
+- `body.unsubscribe` is null when the message has no `List-Unsubscribe` header. If the message has one, it is `{ mailto, subject, hasLink }`:
+  - `mailto`: the address of the first valid `mailto:` target of the header, in lower case, or null. It passes the recipient address rule of the send body (below).
+    Percent-encoding is decoded (`leave%40list.example`). If one target names several addresses, the first address is used. A target that is not valid is passed over.
+  - `subject`: the `subject=` value of this target, decoded, or null. It has 200 characters at most. Line breaks and control characters become one space,
+    so the text is safe as the subject of a message. Other values of the target (`body`, `cc`, `bcc`) are not kept.
+  - `hasLink`: true if the header has an `http://` or `https://` target. The link itself is not kept.
+  - The server reads the first `List-Unsubscribe` header of the message, its first 4,000 characters, and its first 10 targets. A target stands in angle brackets.
+    If the header has no angle brackets, the server splits the text at the commas. `mailto:` and `http` can be in upper case.
+  - A header without a usable target gives `{ mailto: null, subject: null, hasLink: false }`, and `meta.bulk` is true.
+- `bulk` and `unsubscribe` are in the sealed envelope only (`encMeta` and part 0). The server stores no column for them and cannot filter or count by them.
 - The content of a Sent copy comes from the browser. The server cannot read it and checks sizes only.
+
+Newsletters and "unsubscribe":
+- Decision: **the server never opens an unsubscribe web link**, and there is no route that does. To open a link from a stranger tells the sender that the address is read,
+  and it makes the server request a web address that a stranger chose. For the same reason the server does not send a one-click request (`List-Unsubscribe-Post`).
+- To unsubscribe, the web app sends a normal message with `POST /api/mail/send`: `addressId` and `from` = the address that got the message, `to: [body.unsubscribe.mailto]`,
+  `subject` = `body.unsubscribe.subject` (if it is null, a text such as "unsubscribe"). All rules of the send route apply (relay, daily limit, rate limit, Sent copy).
+  The list sees the alias address, which it has already, and the mail server. It does not see the IP address of the user.
+- If `mailto` is null, unsubscribe by email is not possible. The web app can offer to turn the alias off. `hasLink` tells that the sender offers a web link, which Postern does not open.
+- There is no new route and no new event for this.
 
 `POST /api/mail/send` body (limit: `config.mail.maxMessageBytes` × 1.5):
 ```json
@@ -264,6 +322,7 @@ Content of an incoming message (the server makes it; see the envelope in section
   If there is no relay and `config.dev` is false, a message with a recipient on a different server is refused (503 `no_relay`); mail between our own addresses still works.
   `features.mockMail` in `GET /api/config` is true when there is no relay.
 - All recipients on our own domains are checked before anything is sent. If one of them cannot get mail, the request fails with `bad_recipient` and nobody gets the message.
+  The answer names the first of these recipients. Each of them that gives a final refusal (see `refused`) gets 1 added to `refused`.
 - `copy` is the browser-encrypted Sent copy. The server stores it as a message with `direction: "out"` in the mailbox of the from-address.
   `id` in the answer is null if no `copy` was sent.
 - Outgoing headers: no client IP, no user agent. `Message-ID` uses the from domain. Bcc recipients are in no header.
@@ -292,9 +351,9 @@ Errors of `POST /api/mail/send`:
 | Status and code | When |
 |---|---|
 | 400 `bad_request` | A value is not valid, or `from` is not the address of `addressId`. |
-| 400 `bad_recipient` | No recipient; more than 20 recipients; an address that is not well formed; a recipient on our own domains that does not exist, is disabled, or is past its end date ("This address does not exist: x@…"); a recipient on our own domains that blocks the from-address ("This address does not accept mail from your address: x@…"); a recipient on our own domains with a suspended or full mailbox ("This address cannot receive mail now: x@…"). |
+| 400 `bad_recipient` | No recipient; more than 20 recipients; an address that is not well formed; a recipient on our own domains that does not exist, is disabled, is used up, or is past its end date ("This address does not exist: x@…"); a recipient on our own domains that blocks the from-address ("This address does not accept mail from your address: x@…"); a recipient on our own domains with a suspended or full mailbox ("This address cannot receive mail now: x@…"). |
 | 404 `not_found` | `addressId` is not an address of this account. |
-| 409 `conflict` | The from-address is disabled or past its end date (one message for both), or its mailbox is suspended. |
+| 409 `conflict` | The from-address is disabled, used up, or past its end date (one message for all three), or its mailbox is suspended. |
 | 409 `limit_reached` | The mailbox has no room for the Sent copy. |
 | 413 `too_large` | The request, the content, the finished message, or the copy is over its size limit. |
 | 429 `send_limit` | The daily limit is reached. |
@@ -305,7 +364,9 @@ Errors of `POST /api/mail/send`:
 Incoming SMTP (`smtp-server` on `config.mail.smtpPort`; port 0 = pick a free port, expose as `app.services.mail.smtpPort`):
 - The server accepts mail for its own addresses only. It has no login (no AUTH) and is no relay. The greeting shows no software name and no version.
 - For each accepted recipient: parse with `mailparser`, build meta/body/attachments, `sealEnvelope(publicKey, …)`, store, add 1 to `received`, `events.publish(accountId, 'mail', { mailboxId })`.
-  Each recipient gets an own copy with an own content key.
+  Each recipient gets an own copy with an own content key. A one-shot alias is turned off in the transaction that stores its copy; then the server also publishes `aliases`.
+- Final refusals of an address that exists are counted in `refused` (see the rules above): at RCPT one time for each recipient of a message, and after DATA for a recipient
+  that was accepted at RCPT but then blocks the From line or is used up.
 - Blocked senders are checked two times. At RCPT: the envelope sender, for each recipient. After the message arrived: the From line and the Sender line, for each recipient.
   A recipient that blocks the sender gets no copy. If other recipients are left, they get the message and the answer is 250. A bounce (empty envelope sender) is checked by its From line only.
 - The plain message is never written to disk and never logged.
@@ -316,7 +377,7 @@ SMTP answers:
 | Answer | When |
 |---|---|
 | `250` | The message is stored for at least one recipient. |
-| `550 5.1.1` | Unknown recipient, disabled alias, alias past its end date, or an address on a domain that is not ours. |
+| `550 5.1.1` | Unknown recipient, disabled alias, one-shot alias that is used up, alias past its end date, or an address on a domain that is not ours. After DATA: a one-shot alias got its one message in the meantime and no recipient is left. |
 | `550 5.7.1` | The recipient blocks this sender. At RCPT for the envelope sender (the other recipients can still be accepted). After DATA if the From line or the Sender line is blocked and no recipient is left. The answer does not repeat the sender. A block is answered before a suspended or full mailbox. |
 | `450 4.2.1` | The mailbox of the recipient is suspended. |
 | `452 4.2.2` | The mailbox of the recipient is full (`config.limits.mailboxBytes`, default 1 GB, 0 = no limit). The check runs before the message arrives, so a mailbox can go over the limit by one message. |
@@ -340,7 +401,7 @@ TLS on the SMTP port (STARTTLS):
   If the new files do not belong together or cannot be read, the old certificate stays in use.
 
 Service object: `app.services.mail = { smtpPort, outbox: [], deliverLocal({ from, to: [], raw: Buffer }) → Promise<{ accepted: [], rejected: [] }>, checkTls() → bool, tlsStatus() → { source, minVersion } }`.
-- `deliverLocal` gives the lower-case addresses back. `rejected` has the addresses that are unknown, disabled, past their end date, suspended, full, not ours, or that block the sender.
+- `deliverLocal` gives the lower-case addresses back. `rejected` has the addresses that are unknown, disabled, used up, past their end date, suspended, full, not ours, or that block the sender.
   `from` is the envelope sender (leave it out for none); it is checked against the blocks, like the From line of `raw`. It rejects (error code `EPARSE`) if the message cannot be parsed.
 - `outbox` entries: `{ accountId, from, to: [], subject, at, raw: Buffer }`. The outbox keeps the newest 200 messages and 64 MB at most. It is in memory only.
 - `checkTls()` runs the check of the certificate files now. It returns true if a new certificate was loaded.
@@ -348,7 +409,7 @@ Service object: `app.services.mail = { smtpPort, outbox: [], deliverLocal({ from
 
 Dev routes (register only if `config.dev`):
 - `POST /api/dev/inbound-mail` **(auth)** `{ to, from?, fromName?, subject?, text?, html?, attachments?: [{filename, contentType, content}] }` → 204. Injects a message as if it came from the internet. `to` must be an address of this account.
-  The fields have the same rules as in `POST /api/mail/send`. `from` is `sender@example.com` if absent. 404 `not_found` if `to` is not an address of this account. 409 `conflict` if the address cannot get mail now (disabled alias, alias past its end date, suspended or full mailbox), or if the address blocks `from` (message "This address blocks this sender.").
+  The fields have the same rules as in `POST /api/mail/send`. `from` is `sender@example.com` if absent. 404 `not_found` if `to` is not an address of this account. 409 `conflict` if the address cannot get mail now (disabled alias, used-up alias, alias past its end date, suspended or full mailbox), or if the address blocks `from` (message "This address blocks this sender."). A message through this route uses a one-shot alias up and counts in `received` and `refused` like mail from the internet.
 - `GET /api/dev/outbox` **(auth)** → `{ mail: [{ from, to: [], subject, at }] }` from the simulated outbox, own messages only.
 
 Renewal: register a renewable of kind `mailbox` with `app.renewables.register(...)` (see `server/core/renew.js`). A suspended mailbox is readable but receives no mail and cannot send. There is no `expire` for mailboxes.

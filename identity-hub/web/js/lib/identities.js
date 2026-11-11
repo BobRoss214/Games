@@ -23,14 +23,20 @@ const today = () => new Date().toISOString().slice(0, 10);
 function rawList(value) {
   return isObject(value) && Array.isArray(value.identities) ? value.identities.filter(isObject) : [];
 }
+// A feature file may keep its own fields on an identity: it reads them from identity.extra
+// and writes them with setIdentityExtra(). The five fields below belong to this file.
+const OWN_FIELDS = ['id', 'name', 'note', 'persona', 'createdDay'];
 function view(raw) {
   if (typeof raw.id !== 'string' || !ID.test(raw.id)) return null;
+  const extra = {};
+  for (const [k, v] of Object.entries(raw)) if (!OWN_FIELDS.includes(k)) extra[k] = v;
   return {
     id: raw.id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, NAME_MAX) : 'No name',
     note: typeof raw.note === 'string' ? raw.note.slice(0, NOTE_MAX) : '',
     persona: isPersona(raw.persona) ? raw.persona : null,
     createdDay: typeof raw.createdDay === 'string' ? raw.createdDay : '',
+    extra,
   };
 }
 function publish(value) {
@@ -87,6 +93,20 @@ export function updateIdentity(id, patch) {
   });
 }
 
+// Fields of a feature file on an identity. patch: { field: value } ; null removes a field.
+export function setIdentityExtra(id, patch) {
+  for (const k of Object.keys(patch)) if (OWN_FIELDS.includes(k)) throw new Error(`The field "${k}" is not a feature field.`);
+  return mutate((list) => {
+    if (!list.some((raw) => raw.id === id)) throw new Error('This identity does not exist any more.');
+    return list.map((raw) => {
+      if (raw.id !== id) return raw;
+      const next = { ...raw };
+      for (const [k, v] of Object.entries(patch)) { if (v === null || v === undefined) delete next[k]; else next[k] = v; }
+      return next;
+    });
+  });
+}
+
 // The aliases and numbers of a deleted identity stay. Their identityId then matches
 // no group, and that means "not in an identity".
 export function deleteIdentity(id) {
@@ -95,6 +115,11 @@ export function deleteIdentity(id) {
 
 export function findIdentity(id) {
   return (store.get('identities') || []).find((g) => g.id === id) || null;
+}
+
+// An identity in the form that row actions and row marks of feature files get.
+export function identityItem(g) {
+  return { kind: 'identity', id: g.id, name: g.name, note: g.note, persona: g.persona, extra: g.extra || {}, href: `/identities/${g.id}`, raw: g };
 }
 
 // The id of the identity that an item is in, or '' if that identity does not exist.

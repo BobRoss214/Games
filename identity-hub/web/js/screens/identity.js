@@ -13,7 +13,8 @@ import { rowItems, itemRows } from '../ui/rows.js';
 import { personaCard } from '../ui/persona.js';
 import { openAddExisting, confirmDeleteIdentity } from '../ui/identity.js';
 import { openNewAlias, openGetNumber } from '../ui/items.js';
-import { findIdentity, membersOf, forwardingOf, updateIdentity, NAME_MAX, NOTE_MAX } from '../lib/identities.js';
+import { findIdentity, membersOf, forwardingOf, updateIdentity, identityItem, NAME_MAX, NOTE_MAX } from '../lib/identities.js';
+import { registered } from '../lib/registry.js';
 import { phoneName, mailboxName, findMailbox } from '../lib/data.js';
 import { listMessages, personShort } from '../lib/mail.js';
 import { listTexts, listCalls, setNumberOpen } from '../lib/phone.js';
@@ -147,14 +148,21 @@ export function identityScreen({ params, scope }) {
       name.input.focus();
       return;
     }
+    // Marks and menu entries of feature files (registerRowBadge, registerRowAction with the kind 'identity').
+    const item = identityItem(g);
+    const marks = registered.rowBadges('identity', item);
+    const actions = registered.rowActions('identity', item);
     replace(headSlot, back,
       h('div', { class: 'page-head-row' },
         h('div', { class: 'grow' },
           h('h1', { class: 'page-title break', tabIndex: -1 }, g.name),
           g.note ? h('p', { class: 'page-lede identity-note' }, g.note) : null,
-          h('p', { class: 'identity-count small muted' }, `${plural(m.aliases.length, 'address', 'addresses')}, ${plural(m.numbers.length, 'number')}`),
+          h('p', { class: 'identity-count small muted' }, h('span', null, `${plural(m.aliases.length, 'address', 'addresses')}, ${plural(m.numbers.length, 'number')}`), marks),
         ),
-        h('div', { class: 'page-actions' }, button('Edit name and note', { iconName: 'edit', onClick: () => { editing = true; paintHead(); }, attrs: { class: 'btn identity-edit-btn' } })),
+        h('div', { class: 'page-actions' },
+          button('Edit name and note', { iconName: 'edit', onClick: () => { editing = true; paintHead(); }, attrs: { class: 'btn identity-edit-btn' } }),
+          actions.length ? menuButton({ label: `More actions for ${g.name}`, text: 'More', items: () => registered.rowActions('identity', identityItem(findIdentity(id) || g)).map((a) => ({ label: a.label, icon: a.icon, danger: a.danger, onSelect: () => a.run(identityItem(findIdentity(id) || g)) })) }) : null,
+        ),
       ),
     );
   }
