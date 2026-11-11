@@ -8,13 +8,14 @@ import { button, iconButton, emptyState, skeletonRows, pageHeader, field, select
 import { menuButton } from '../ui/menu.js';
 import { formDialog, confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
-import { findNumber, findPhone, updateNumber, loadNumbers, phoneName } from '../lib/data.js';
+import { findNumber, findPhone, updateNumber, loadNumbers, phoneName, renewDays, graceDays } from '../lib/data.js';
 import { listTexts, sendText, markTextsSeen, deleteText, listCalls, startCall, deleteCall, threadsOf } from '../lib/phone.js';
 import { confirmDeleteItem } from '../ui/identities.js';
 import { openLinkPhone } from './numbers.js';
 import { openTestTools } from './testtools.js';
 
 const MAX_TEXT = 1600;
+const TEXT_STATUS = { queued: 'Sending', sent: 'Sent', delivered: 'Delivered', failed: 'Not delivered' };
 
 export function numberScreen({ params, scope }) {
   const id = params.id;
@@ -136,8 +137,9 @@ export function numberScreen({ params, scope }) {
         h('p', { class: 'bubble-text' }, t.broken ? 'This text cannot be opened.' : t.body),
         h('span', { class: 'bubble-meta' },
           h('time', { datetime: new Date(t.at * 1000).toISOString() }, clock(new Date(t.at * 1000))),
-          h('span', { class: 'sr-only' }, t.direction === 'out' ? ' sent' : ' received'),
+          t.direction === 'out' ? h('span', { class: `bubble-status ${t.status === 'failed' ? 'is-failed' : ''}`.trim() }, TEXT_STATUS[t.status] || 'Sent') : h('span', { class: 'sr-only' }, ' received'),
         ),
+        t.direction === 'out' && t.status === 'failed' ? h('p', { class: 'bubble-failed' }, 'The provider did not deliver this text. The charge came back.') : null,
       ),
       menuButton({ label: 'Text actions', cls: 'icon-btn-sm bubble-menu', items: [
         { label: 'Copy text', icon: 'copy', onSelect: () => copyText(t.body, 'Text copied') },
@@ -212,7 +214,7 @@ export function numberScreen({ params, scope }) {
         ),
         scroller,
         number.status !== 'active'
-          ? h('p', { class: 'composer-paused small' }, icon('warning', { size: 14 }), 'This number is paused. Add funds to send texts.')
+          ? h('p', { class: 'composer-paused small' }, icon('warning', { size: 14 }), h('span', null, 'This number is paused. Add funds to send texts. ', releaseNote(number)))
           : number.sms === false ? h('p', { class: 'composer-paused small' }, 'This number cannot send texts.') : composer(number, openPeer),
       );
       queueMicrotask(() => { scroller.scrollTop = scroller.scrollHeight; });
@@ -289,10 +291,12 @@ export function numberScreen({ params, scope }) {
   function paintCalls() {
     const number = findNumber(id);
     if (!number) return;
-    const head = h('div', { class: 'calls-head' },
-      h('p', { class: 'muted read' }, 'To call from this number, we ring your real phone first and then connect you. The other person sees this number, not your real one.'),
-      button('Call', { kind: 'primary', iconName: 'phone', onClick: () => openCall(), disabled: number.status !== 'active' }),
-    );
+    const head = number.voice
+      ? h('div', { class: 'calls-head' },
+        h('p', { class: 'muted read' }, 'To call from this number, we ring your real phone first and then connect you. The other person sees this number, not your real one.'),
+        button('Call', { kind: 'primary', iconName: 'phone', onClick: () => openCall(), disabled: number.status !== 'active' }),
+      )
+      : h('div', { class: 'calls-head' }, callout('info', 'This number has no calls', h('p', null, 'It can send and get texts. It cannot make or get calls.')));
     if (calls === null) { replace(callsPane, head, h('div', { class: 'sheet' }, skeletonRows(3))); return; }
     if (callsError && !calls.length) { replace(callsPane, head, h('div', { class: 'sheet' }, loadError(callsError, () => { calls = null; paintCalls(); loadCalls(); }))); return; }
     if (!calls.length) {
@@ -319,6 +323,14 @@ export function numberScreen({ params, scope }) {
         ] }),
       );
     })), callsMore ? h('div', { class: 'list-more' }, button('Show older calls', { size: 'sm', onClick: (e, btn) => runBusy(btn, loadOlderCalls) })) : null));
+  }
+
+  // A paused number is given back to the provider after some days.
+  function releaseNote(number) {
+    const days = graceDays();
+    if (!days || !number.paidUntil) return null;
+    const day = new Date((number.paidUntil + days * 86400) * 1000).toISOString().slice(0, 10);
+    return `If the balance stays too low, the number is released after ${dayText(day)}.`;
   }
 
   // ---------- settings ----------
@@ -362,14 +374,16 @@ export function numberScreen({ params, scope }) {
           : h('div', { class: 'sheet sheet-pad stack' },
             target.el,
             forwardRow('Forward texts', prices.textOut ? `Each forwarded text costs ${money(prices.textOut)}.` : 'Texts are sent on to your phone.', 'forwardTexts', number.forwardTexts),
-            forwardRow('Forward calls', prices.callMinute ? `Forwarded calls cost ${money(prices.callMinute)} for each minute.` : 'Calls ring on your phone.', 'forwardCalls', number.forwardCalls),
+            number.voice
+              ? forwardRow('Forward calls', prices.callMinute ? `Forwarded calls cost ${money(prices.callMinute)} for each minute.` : 'Calls ring on your phone.', 'forwardCalls', number.forwardCalls)
+              : h('div', { class: 'switch-row' }, h('div', { class: 'grow' }, h('p', { class: 'strong' }, 'Forward calls'), h('p', { class: 'small muted' }, 'This number cannot make or get calls.'))),
           ),
       ),
       h('section', { class: 'stack stack-3' },
         h('h2', { class: 'section-title' }, 'Renewal'),
         h('dl', { class: 'kv kv-left sheet sheet-pad' },
-          h('dt', null, 'Status'), h('dd', null, number.status === 'active' ? 'Active' : 'Paused. Add funds to turn it on again.'),
-          h('dt', null, 'Price'), h('dd', { class: 'mono' }, prices.numberMonth ? `${money(prices.numberMonth)} / 30 days` : 'Free'),
+          h('dt', null, 'Status'), h('dd', null, number.status === 'active' ? 'Active' : h('span', null, 'Paused. Add funds to turn it on again. ', releaseNote(number))),
+          h('dt', null, 'Price'), h('dd', { class: 'mono' }, prices.numberMonth ? `${money(prices.numberMonth)} / ${renewDays()} days` : 'Free'),
           h('dt', null, number.status === 'active' ? 'Renews on' : 'Paid until'), h('dd', null, number.paidUntil ? dayText(new Date(number.paidUntil * 1000).toISOString().slice(0, 10)) : '–'),
           h('dt', null, 'Can do'), h('dd', null, [number.sms && 'Texts', number.voice && 'Calls'].filter(Boolean).join(' and ') || '–'),
         ),

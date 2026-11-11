@@ -237,7 +237,9 @@ a.id-value:hover { color: var(--accent); text-decoration: underline; }
 .mail-box-line { display: flex; align-items: center; gap: var(--s-1); min-height: 1.75rem; }
 .mail-box-address { font-size: var(--fs-sm); color: var(--ink-2); flex: 0 1 auto; }
 .mail-paused { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; color: var(--warn); }
-.mail-list-head .segmented { align-self: flex-start; }
+.mail-filters { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.mail-address-filter { flex: 1 1 9rem; min-width: 0; }
+.mail-address-filter .select { min-height: calc(var(--control-h) - 2px); font-size: var(--fs-sm); }
 .msg-list { display: flex; flex-direction: column; }
 .msg-row { display: flex; gap: var(--s-2); padding: var(--s-3) var(--s-4) var(--s-3) var(--s-3); border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; transition: background-color var(--t-fast) var(--ease); }
 .msg-row:hover { background: var(--sunken); color: var(--ink); }
@@ -350,7 +352,9 @@ a.id-value:hover { color: var(--accent); text-decoration: underline; }
 .bubble-row.is-in .bubble { border-bottom-left-radius: 2px; }
 .bubble-row.is-out .bubble { background: var(--accent); border-color: var(--accent); color: var(--on-accent); border-bottom-right-radius: 2px; }
 .bubble-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
-.bubble-meta { display: block; margin-top: 0.125rem; font-size: 0.6875rem; opacity: 0.75; text-align: right; font-variant-numeric: tabular-nums; }
+.bubble-meta { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.125rem; font-size: 0.6875rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.bubble-status.is-failed { font-weight: 700; }
+.bubble-failed { margin-top: 0.375rem; padding-top: 0.375rem; border-top: 1px solid currentColor; font-size: var(--fs-xs); }
 .bubble-menu { opacity: 0; transition: opacity var(--t-fast) var(--ease); }
 .bubble-row:hover .bubble-menu, .bubble-menu:focus-visible, .bubble-menu[aria-expanded="true"] { opacity: 1; }
 @media (hover: none) { .bubble-menu { opacity: 0.7; } }

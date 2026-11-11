@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS numbers (
   forward_phone_id TEXT,
   forward_texts INTEGER NOT NULL DEFAULT 0,
   forward_calls INTEGER NOT NULL DEFAULT 0,
-  created_day TEXT NOT NULL
+  created_day TEXT NOT NULL,
+  retention_days INTEGER              -- delete the texts of this number after so many days; NULL = keep them
 ) STRICT;
 CREATE INDEX IF NOT EXISTS numbers_account ON numbers(account_id);
 CREATE INDEX IF NOT EXISTS numbers_due ON numbers(paid_until);
@@ -117,6 +118,7 @@ const MIGRATIONS = [
   ['texts', 'msg_hmac', 'BLOB'],
   ['calls', 'call_hmac', 'BLOB'],
   ['texts', 'status', 'TEXT'],
+  ['numbers', 'retention_days', 'INTEGER'],
 ];
 // Indexes on those columns. They can be made only after the columns exist.
 const INDEXES = `
@@ -300,6 +302,27 @@ export async function register(app) {
     releaseLater(providerRef) {
       db.run('INSERT INTO release_later (provider_ref, since) VALUES (?, ?)', providerRef, nowSec());
     },
+
+    // Deletes texts of one number: one text (textId), or all texts older than a time (before).
+    // A send that still waits for its delivery status must not point at a text that is gone.
+    // The send itself stays: if the provider reports later that the text failed, the charge
+    // still comes back, one time. Returns the count of deleted texts.
+    deleteTexts(accountId, numberId, { textId, before }) {
+      const which = textId !== undefined ? 'id = ?' : 'at < ?';
+      const value = textId !== undefined ? textId : before;
+      return db.tx(() => {
+        db.run(`UPDATE text_sends SET text_id = NULL WHERE account_id = ? AND text_id IN (SELECT id FROM texts WHERE account_id = ? AND number_id = ? AND ${which})`,
+          accountId, accountId, numberId, value);
+        return db.run(`DELETE FROM texts WHERE account_id = ? AND number_id = ? AND ${which}`, accountId, numberId, value).changes;
+      });
+    },
+    // Deletes the row of a number. Its texts and calls go with it.
+    deleteNumber(accountId, numberId) {
+      db.tx(() => {
+        ph.deleteTexts(accountId, numberId, { before: Number.MAX_SAFE_INTEGER });
+        db.run('DELETE FROM numbers WHERE id = ? AND account_id = ?', numberId, accountId);
+      });
+    },
   };
 
   // Charge, send, and delivery status of outgoing texts.
@@ -309,6 +332,24 @@ export async function register(app) {
   ph.reportTextStatus = delivery.reportTextStatus;
 
   registerRoutes(app, ph);
+
+  // Auto-delete: the user can ask that the texts of a number go away after some days.
+  // The server does it, because the browser is not always open. This also runs with no
+  // provider. Calls are not touched.
+  app.every('phone-retention', 3600, async () => {
+    const now = nowSec();
+    let total = 0;
+    for (const num of db.all('SELECT id, account_id, retention_days FROM numbers WHERE retention_days IS NOT NULL')) {
+      const deleted = ph.deleteTexts(num.account_id, num.id, { before: now - num.retention_days * 86400 });
+      if (deleted) app.events.publish(num.account_id, 'text', { numberId: num.id });
+      total += deleted;
+    }
+    // The database overwrites deleted rows (secure_delete). Old copies can still be in the
+    // write-ahead file. Fold it into the database now and cut it, so that they are gone too.
+    if (total) {
+      try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* a later checkpoint does it */ }
+    }
+  });
 
   // reportTextStatus is for a provider that learns the result of a text in its own way (not by our webhook).
   const service = { provider, name, capabilities: ph.capabilities, reportTextStatus: delivery.reportTextStatus };
@@ -343,7 +384,7 @@ export async function register(app) {
       const row = db.get('SELECT * FROM numbers WHERE id = ? AND account_id = ?', id, accountId);
       if (!row) return;
       await ph.releaseAtProvider(row);
-      db.run('DELETE FROM numbers WHERE id = ? AND account_id = ?', id, accountId);
+      ph.deleteNumber(accountId, id);
     },
   });
 

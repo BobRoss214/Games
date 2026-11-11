@@ -103,6 +103,7 @@ export function openTestTools(startTab = 'mail') {
           ), 'No texts sent yet.'),
           block('Calls', phone.calls, (c) => h('li', { class: 'outbox-item' },
             h('p', { class: 'mono small' }, `${phoneText(c.from)} to ${phoneText(c.to)}`),
+            c.say ? h('p', { class: 'outbox-body break' }, `The voice said: ${c.say}`) : null,
             h('p', { class: 'tiny faint' }, fullTime(c.at)),
           ), 'No calls made yet.'),
           block('Mail to the outside', mail.mail, (m) => h('li', { class: 'outbox-item' },

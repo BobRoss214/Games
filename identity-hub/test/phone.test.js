@@ -1,7 +1,7 @@
 // Phone module with the mock provider: numbers, texts, calls, linked phones, webhooks.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -1351,6 +1351,150 @@ test('destinations: only allowed prefixes, and no blocked prefix', async () => {
   }
 });
 
+test('auto-delete: old texts of a number go away when its retention is on; nothing else is touched', async () => {
+  const a = await newAccount(app, { credits: 2000 });
+  const b = await newAccount(app, { credits: 1000 });
+  const n1 = await buyNumber(a); // retention 7 days
+  const n2 = await buyNumber(a); // retention off
+  const m1 = await buyNumber(b); // a different account, retention 30 days
+  const state = async (acct, num) => (await acct.api.get('/api/numbers')).data.numbers.find((n) => n.id === num.id);
+  const DAY = 86400;
+
+  // Off by default.
+  assert.equal(n1.retentionDays, null);
+  assert.equal((await state(a, n1)).retentionDays, null);
+  assert.equal(app.db.get('SELECT retention_days FROM numbers WHERE id = ?', n1.id).retention_days, null);
+
+  // Bad values change nothing.
+  for (const bad of [0, -1, 3651, 1.5, '7', true, [7], {}]) {
+    const res = await a.api.patch(`/api/numbers/${n1.id}`, { retentionDays: bad });
+    assert.equal(res.status, 400, JSON.stringify(bad));
+    assert.equal(res.data.error.code, 'bad_request');
+  }
+  assert.equal((await state(a, n1)).retentionDays, null);
+
+  // Set, change, clear, set again.
+  for (const days of [1, 3650, 7]) {
+    const res = await a.api.patch(`/api/numbers/${n1.id}`, { retentionDays: days });
+    assert.equal(res.status, 200);
+    assert.equal(res.data.number.retentionDays, days);
+  }
+  // A change of a different field keeps the setting, and the setting changes no other field.
+  assert.equal((await a.api.patch(`/api/numbers/${n1.id}`, { forwardTexts: true })).data.number.retentionDays, 7);
+  const cleared = await a.api.patch(`/api/numbers/${n1.id}`, { retentionDays: null });
+  assert.equal(cleared.data.number.retentionDays, null);
+  assert.equal(cleared.data.number.forwardTexts, true);
+  assert.equal((await a.api.patch(`/api/numbers/${n1.id}`, { retentionDays: 7 })).data.number.retentionDays, 7);
+  assert.equal((await state(a, n2)).retentionDays, null);
+  // A different account cannot set it.
+  assert.equal((await b.api.patch(`/api/numbers/${n1.id}`, { retentionDays: 1 })).status, 404);
+  assert.equal((await b.api.patch(`/api/numbers/${m1.id}`, { retentionDays: 30 })).data.number.retentionDays, 30);
+
+  // Each number gets four texts: an old and a new one in each direction.
+  // "Old" is a little more than 7 days, "new" is a little less.
+  const peer = outsider();
+  const t = now();
+  const ages = { 'old out': t - 7 * DAY - 100, 'new out': t - 7 * DAY + 100, 'old in': t - 7 * DAY - 100, 'new in': t - 7 * DAY + 100 };
+  const fill = async (acct, num, tag) => {
+    for (const kind of ['old out', 'new out']) {
+      // The old sent text of the first number still waits for its delivery status.
+      if (tag === 'n1' && kind === 'old out') mock.queueNextText();
+      const res = await acct.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: peer, body: `${tag} ${kind}` });
+      assert.equal(res.status, 201);
+      app.db.run('UPDATE texts SET at = ? WHERE id = ?', ages[kind], res.data.text.id);
+    }
+    for (const kind of ['old in', 'new in']) {
+      await hook('text', { to: num.plain, from: peer, body: `${tag} ${kind}` });
+      const row = app.db.get('SELECT id FROM texts WHERE number_id = ? ORDER BY rowid DESC LIMIT 1', num.id);
+      app.db.run('UPDATE texts SET at = ? WHERE id = ?', ages[kind], row.id);
+    }
+  };
+  await fill(a, n1, 'n1');
+  await fill(a, n2, 'n2');
+  await fill(b, m1, 'm1');
+  const bodies = async (acct, num) => (await Promise.all((await texts(acct, num)).texts.map(async (x) => (await openText(acct, x)).body))).sort();
+  assert.equal((await bodies(a, n1)).length, 4);
+  // An old call of the first number. The auto-delete is for texts only.
+  await hook('voice', { to: n1.plain, from: peer, callId: 'retention-call' });
+  app.db.run('UPDATE calls SET at = ? WHERE number_id = ?', t - 400 * DAY, n1.id);
+  // The old queued text is tracked and points at its row.
+  const oldRef = mock.outbox.texts.find((x) => x.body === 'n1 old out').ref;
+  const oldId = app.db.get("SELECT text_id FROM text_sends WHERE account_id = ? AND status = 'queued'", a.id).text_id;
+  assert.ok(oldId);
+
+  // Run the job. Watch the events that it publishes.
+  const published = [];
+  const realPublish = app.events.publish;
+  app.events.publish = (...args) => { published.push(args); return realPublish(...args); };
+  try {
+    await app.runJobs('phone-retention');
+    // One event, for the account and the number that lost texts.
+    assert.deepEqual(published, [[a.id, 'text', { numberId: n1.id }]]);
+    // The write-ahead file of the database is empty: no old copy of a deleted row is in it.
+    assert.equal(statSync(join(app.config.dataDir, 'accounts.db-wal')).size, 0);
+
+    // Only the old texts of the number with retention are gone, in both directions.
+    assert.deepEqual(await bodies(a, n1), ['n1 new in', 'n1 new out']);
+    assert.equal(await unread(a, n1), 1);
+    // The number with no retention, the number of the other account (30 days), and the call: all there.
+    assert.deepEqual(await bodies(a, n2), ['n2 new in', 'n2 new out', 'n2 old in', 'n2 old out']);
+    assert.deepEqual(await bodies(b, m1), ['m1 new in', 'm1 new out', 'm1 old in', 'm1 old out']);
+    assert.equal((await calls(a, n1)).length, 1);
+    assert.equal(app.db.get('SELECT COUNT(*) AS n FROM texts WHERE id = ?', oldId).n, 0);
+
+    // A second run finds nothing and publishes nothing.
+    published.length = 0;
+    await app.runJobs('phone-retention');
+    assert.deepEqual(published, []);
+    assert.deepEqual(await bodies(a, n1), ['n1 new in', 'n1 new out']);
+  } finally {
+    app.events.publish = realPublish;
+  }
+
+  // The send of the deleted text still waits for its status, and points at no text.
+  const waiting = app.db.all('SELECT text_id, charged, status FROM text_sends WHERE account_id = ?', a.id);
+  assert.equal(waiting.filter((w) => w.status === 'queued').length, 1);
+  assert.equal(waiting.find((w) => w.status === 'queued').text_id, null);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM text_sends WHERE text_id IS NOT NULL AND text_id NOT IN (SELECT id FROM texts)').n, 0);
+  // The provider reports late that this text failed: the charge comes back, one time.
+  const balance = app.store.balance(a.id);
+  await mock.reportText(oldRef, 'failed');
+  assert.equal(app.store.balance(a.id), balance + 3);
+  assert.equal(ledger(a)[0], 'refund:3');
+  await mock.reportText(oldRef, 'failed');
+  await mock.reportText(oldRef, 'delivered');
+  assert.equal(app.store.balance(a.id), balance + 3);
+  assert.equal(ledger(a).filter((l) => l === 'refund:3').length, 1);
+  assert.deepEqual(await bodies(a, n1), ['n1 new in', 'n1 new out']);
+
+  // Time passes: the other texts get old too. A suspended number is cleaned as well.
+  app.db.run('UPDATE texts SET at = at - 200 WHERE number_id = ?', n1.id);
+  app.db.run("UPDATE numbers SET status = 'suspended' WHERE id = ?", n1.id);
+  await app.runJobs('phone-retention');
+  assert.deepEqual(await bodies(a, n1), []);
+  assert.equal(await unread(a, n1), 0);
+  assert.equal((await bodies(a, n2)).length, 4);
+  // 30 days for the other account: its texts stay until they are older than that.
+  app.db.run('UPDATE texts SET at = ? WHERE number_id = ? AND direction = ?', t - 31 * DAY, m1.id, 'in');
+  await app.runJobs('phone-retention');
+  assert.deepEqual(await bodies(b, m1), ['m1 new out', 'm1 old out']);
+  // Retention off again: nothing more is deleted.
+  await b.api.patch(`/api/numbers/${m1.id}`, { retentionDays: null });
+  app.db.run('UPDATE texts SET at = ? WHERE number_id = ?', t - 4000 * DAY, m1.id);
+  await app.runJobs('phone-retention');
+  assert.equal((await bodies(b, m1)).length, 2);
+
+  // A text that the user deletes by hand, and a number that is deleted, leave no send that points at them.
+  mock.queueNextText();
+  const manual = await a.api.post(`/api/numbers/${n2.id}/texts`, { number: n2.plain, to: peer, body: 'by hand' });
+  assert.equal((await a.api.del(`/api/texts/${manual.data.text.id}`)).status, 204);
+  assert.equal((await a.api.del(`/api/numbers/${n2.id}`)).status, 204);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM text_sends WHERE text_id IS NOT NULL AND text_id NOT IN (SELECT id FROM texts)').n, 0);
+  const before = app.store.balance(a.id);
+  await mock.reportText(mock.outbox.texts.find((x) => x.body === 'by hand').ref, 'failed');
+  assert.equal(app.store.balance(a.id), before + 3);
+});
+
 test('migration: an older database gets the new columns, and old sent texts get a status', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'postern-phone-'));
   const opts = { dataDir, port: 0, host: '127.0.0.1', logLevel: 'silent', rateLimits: false, mail: { smtpPort: 0, smtpHost: '127.0.0.1', relayUrl: '' }, phone: { provider: 'mock', mockAutoAnswer: false }, pay: { provider: 'off' } };
@@ -1370,7 +1514,9 @@ test('migration: an older database gets the new columns, and old sent texts get 
     const raw = new DatabaseSync(join(dataDir, 'accounts.db'));
     raw.exec('DROP INDEX texts_msg; DROP INDEX calls_call; DROP TABLE text_sends;');
     raw.exec('ALTER TABLE texts DROP COLUMN status; ALTER TABLE texts DROP COLUMN msg_hmac; ALTER TABLE calls DROP COLUMN call_hmac;');
+    raw.exec('ALTER TABLE numbers DROP COLUMN retention_days;');
     const columns = (table) => raw.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    assert.ok(!columns('numbers').includes('retention_days'));
     assert.ok(!columns('texts').includes('status'));
     assert.ok(!columns('texts').includes('msg_hmac'));
     assert.ok(!columns('calls').includes('call_hmac'));
@@ -1383,8 +1529,14 @@ test('migration: an older database gets the new columns, and old sent texts get 
       assert.ok(cols('texts').includes('status'));
       assert.ok(cols('texts').includes('msg_hmac'));
       assert.ok(cols('calls').includes('call_hmac'));
+      assert.ok(cols('numbers').includes('retention_days'));
       const api = client(two);
       api.setCookie(`postern=${a.session.token}`);
+      // The old number has no auto-delete, and the setting works on the old database.
+      assert.equal((await api.get('/api/numbers')).data.numbers[0].retentionDays, null);
+      await two.runJobs('phone-retention');
+      assert.equal((await api.patch(`/api/numbers/${num.id}`, { retentionDays: 30 })).data.number.retentionDays, 30);
+      await two.runJobs('phone-retention');
       // The old rows are there. The old sent text counts as sent, the old incoming text has no status.
       const list = (await api.get(`/api/numbers/${num.id}/texts`)).data.texts;
       assert.deepEqual(list.map((t) => `${t.direction}:${t.status}`).sort(), ['in:null', 'out:sent']);
@@ -1457,6 +1609,8 @@ test('provider off: lists work and are empty; search and create answer 503', asy
     assert.equal((await client(off).post('/api/hooks/phone/text', {})).status, 404);
     assert.equal((await a.api.get('/api/dev/phone-outbox')).status, 404);
     assert.equal(off.store.balance(a.id), 1000);
+    // The cleanup jobs run with no provider too.
+    await off.runJobs('phone-retention');
   } finally {
     await off.stop();
   }

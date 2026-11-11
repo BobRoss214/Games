@@ -11,6 +11,7 @@ import { E164 } from './common.js';
 const TEXT_MAX = 1600;
 const CODE_SECONDS = 10 * 60;
 const CODE_TRIES = 5;
+const RETENTION_MAX_DAYS = 3650;
 const NOT_AVAILABLE = 'This number is not available. Choose a different one.';
 
 export function registerRoutes(app, ph) {
@@ -30,7 +31,8 @@ export function registerRoutes(app, ph) {
   const numberView = (r) => ({
     id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), country: r.country, sms: r.sms === 1, voice: ph.hasVoice(r),
     status: r.status, paidUntil: r.paid_until, createdDay: r.created_day,
-    forwardPhoneId: r.forward_phone_id, forwardTexts: r.forward_texts === 1, forwardCalls: r.forward_calls === 1, unread: r.unread || 0,
+    forwardPhoneId: r.forward_phone_id, forwardTexts: r.forward_texts === 1, forwardCalls: r.forward_calls === 1,
+    retentionDays: r.retention_days ?? null, unread: r.unread || 0,
   });
   const loadNumber = (accountId, id) => numberView(db.get(`SELECT ${NUMBER_COLS} FROM numbers n WHERE n.id = ? AND n.account_id = ?`, id, accountId));
   const phoneView = (r) => ({ id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), verified: r.verified === 1, createdDay: r.created_day });
@@ -147,6 +149,12 @@ export function registerRoutes(app, ph) {
     const texts = need.optional(b.forwardTexts, need.bool, 'forwardTexts');
     const calls = need.optional(b.forwardCalls, need.bool, 'forwardCalls');
     if (calls === true) ph.requireVoice(num);
+    // Auto-delete of texts: null = off, or a count of days. The hourly job does the deleting.
+    if (b.retentionDays === null) sets.push('retention_days = NULL');
+    else if (b.retentionDays !== undefined) {
+      sets.push('retention_days = ?');
+      args.push(need.int(b.retentionDays, 'retentionDays', { min: 1, max: RETENTION_MAX_DAYS }));
+    }
     if (b.forwardPhoneId === null) {
       // No phone, no forwarding. A phone that is linked later must not start to ring by surprise.
       sets.push('forward_phone_id = NULL', 'forward_texts = 0', 'forward_calls = 0');
@@ -173,7 +181,7 @@ export function registerRoutes(app, ph) {
     const num = ph.ownNumber(accountId, c.params.id);
     // The provider first. If it fails, the row stays, and the user can try again.
     try { await ph.releaseAtProvider(num); } catch (err) { throw ph.providerFail(err); }
-    db.run('DELETE FROM numbers WHERE id = ? AND account_id = ?', num.id, accountId);
+    ph.deleteNumber(accountId, num.id);
     for (const [token, b] of ph.bridges) if (b.numberId === num.id) ph.bridges.delete(token);
     events.publish(accountId, 'number', { numberId: num.id });
   });
@@ -223,7 +231,7 @@ export function registerRoutes(app, ph) {
   http.del('/api/texts/:id', { auth: true }, (c) => {
     const row = db.get('SELECT number_id FROM texts WHERE id = ? AND account_id = ?', idOf(c.params.id), c.account.id);
     if (!row) throw fail(404, 'not_found', 'This text does not exist.');
-    db.run('DELETE FROM texts WHERE id = ? AND account_id = ?', c.params.id, c.account.id);
+    ph.deleteTexts(c.account.id, row.number_id, { textId: c.params.id });
     events.publish(c.account.id, 'text', { numberId: row.number_id });
   });
 

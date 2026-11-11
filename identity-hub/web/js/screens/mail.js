@@ -8,7 +8,7 @@ import { button, emptyState, skeletonRows, segmented, copyButton, tag, runBusy, 
 import { menuButton } from '../ui/menu.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
-import { listMessages, getMessage, getAttachment, setSeen, deleteMessage, personShort, personText, downloadBlob } from '../lib/mail.js';
+import { listMessages, getMessage, getAttachment, setSeen, deleteMessage, personShort, personText, downloadBlob, takeMailFilter } from '../lib/mail.js';
 import { sanitizeEmail, inlineImageUrl, cidKey, htmlToText, INLINE_IMAGE_MAX } from '../lib/sanitize.js';
 import { loadMailboxes, updateAlias, findMailbox } from '../lib/data.js';
 import { openNewInbox } from '../ui/identities.js';
@@ -40,6 +40,7 @@ export function mailScreen({ params, scope }) {
   let mailboxId = null;
   let messageId = null;
   let direction = 'in';
+  let addressFilter = ''; // '' = all mail of the inbox, or one address id (the inbox address or an alias)
   let list = null;        // null = loading
   let more = false;
   let listError = '';
@@ -99,11 +100,30 @@ export function mailScreen({ params, scope }) {
         copyButton(() => box.address, 'Copy address', { what: 'Address copied', cls: 'icon-btn-sm' }),
       ),
       box.status !== 'active' ? h('p', { class: 'mail-paused small' }, icon('warning', { size: 14 }), h('span', null, 'This inbox is paused. It receives no mail. '), h('a', { href: '/funds', 'data-link': true }, 'Add funds')) : null,
-      segmented({ label: 'Folder', value: direction, options: [{ value: 'in', label: 'Inbox' }, { value: 'out', label: 'Sent' }], onChange: (v) => {
-        direction = v; list = null; paintList(); loadList();
-        // An open message of the other folder is closed.
-        if (messageId && (!currentMsg || currentMsg.direction !== v)) navigate(`/mail/${mailboxId}`);
-      } }),
+      h('div', { class: 'mail-filters' },
+        segmented({ label: 'Folder', value: direction, options: [{ value: 'in', label: 'Inbox' }, { value: 'out', label: 'Sent' }], onChange: (v) => {
+          direction = v; list = null; paintList(); loadList();
+          // An open message of the other folder is closed.
+          if (messageId && (!currentMsg || currentMsg.direction !== v)) navigate(`/mail/${mailboxId}`);
+        } }),
+        addressSelect(box),
+      ),
+    );
+  }
+
+  // "Show only mail of one address": the inbox address itself, or one of its aliases.
+  function addressSelect(box) {
+    const aliases = (store.get('aliases') || []).filter((a) => a.mailboxId === box.id);
+    if (addressFilter && addressFilter !== box.addressId && !aliases.some((a) => a.id === addressFilter)) addressFilter = '';
+    if (aliases.length === 0) return null;
+    const option = (value, label) => h('option', { value, selected: value === addressFilter }, label);
+    return h('div', { class: 'select-wrap mail-address-filter' },
+      h('select', { class: 'input select', 'aria-label': 'Show mail of', onChange: (e) => { addressFilter = e.target.value; list = null; paintList(); loadList(); } },
+        option('', 'All addresses'),
+        option(box.addressId, 'Inbox address only'),
+        aliases.map((a) => option(a.id, a.label ? `${a.label} (${a.address})` : a.address)),
+      ),
+      icon('chevronDown', { size: 16, cls: 'select-caret' }),
     );
   }
 
@@ -137,6 +157,11 @@ export function mailScreen({ params, scope }) {
     if (!box) { replace(listBody); return; }
     if (list === null) { replace(listBody, skeletonRows(6, { tall: true })); return; }
     if (listError && !list.length) { replace(listBody, loadError(listError, () => { list = null; paintList(); loadList(); })); return; }
+    if (!list.length && addressFilter) {
+      replace(listBody, emptyState({ title: 'No mail for this address', compact: true, figure: false, text: direction === 'in' ? 'Nothing came to this address yet.' : 'Nothing was sent from this address yet.',
+        action: button('Show all addresses', { onClick: () => { addressFilter = ''; list = null; paintListHead(); paintList(); loadList(); } }) }));
+      return;
+    }
     if (!list.length) {
       const dev = store.get('config').dev;
       replace(listBody, direction === 'in'
@@ -158,7 +183,7 @@ export function mailScreen({ params, scope }) {
     if (!mailboxId) return;
     const token = ++listToken;
     try {
-      const res = await listMessages({ mailboxId, direction, limit: Math.max(50, Math.min(100, list ? list.length : 0)) });
+      const res = await listMessages({ mailboxId, direction, addressIds: addressFilter ? [addressFilter] : undefined, limit: Math.max(50, Math.min(100, list ? list.length : 0)) });
       if (scope.disposed || token !== listToken) return;
       list = res.messages;
       more = res.more;
@@ -178,7 +203,7 @@ export function mailScreen({ params, scope }) {
     const token = listToken;
     try {
       const last = list[list.length - 1];
-      const res = await listMessages({ mailboxId, direction, before: last.at, beforeId: last.id, limit: 50 });
+      const res = await listMessages({ mailboxId, direction, addressIds: addressFilter ? [addressFilter] : undefined, before: last.at, beforeId: last.id, limit: 50 });
       if (scope.disposed || token !== listToken) return;
       const have = new Set(list.map((m) => m.id));
       list = [...list, ...res.messages.filter((m) => !have.has(m.id))];
@@ -379,7 +404,7 @@ export function mailScreen({ params, scope }) {
     el.dataset.view = messageId ? 'message' : 'list';
     paintBoxes();
     paintListHead();
-    if (boxChanged) { direction = 'in'; list = null; paintListHead(); paintList(); loadList(); }
+    if (boxChanged) { direction = 'in'; addressFilter = takeMailFilter(mailboxId); list = null; paintListHead(); paintList(); loadList(); }
     else paintList();
     if (boxChanged || msgChanged) loadMessage();
   }
@@ -388,6 +413,7 @@ export function mailScreen({ params, scope }) {
   scope.add(store.subscribe(['mailboxes'], () => sync(lastParams)));
   // An alias was turned on or off: show the new state in the open message.
   scope.add(store.subscribe(['aliases'], () => {
+    if (mailboxId) paintListHead();
     if (!currentMsg || currentMsg.id !== messageId) return;
     const mark = markOf(currentMsg);
     if (mark === aliasMark) return;

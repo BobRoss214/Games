@@ -8,6 +8,7 @@ import { updateAlias, mailboxName, phoneName } from '../lib/data.js';
 import { openRename, openMoveAlias, confirmDeleteItem } from './identities.js';
 import { toast } from './toast.js';
 import { navigate } from '../lib/router.js';
+import { setMailFilter } from '../lib/mail.js';
 
 const KIND_ICON = { inbox: 'inbox', alias: 'alias', number: 'phone' };
 const KIND_NAME = { inbox: 'Inbox', alias: 'Alias', number: 'Number' };
@@ -53,6 +54,7 @@ export function identityRow(item, { showReceived = false } = {}) {
   const menuItems = () => [
     { label: 'Rename', icon: 'edit', onSelect: () => openRename(item) },
     item.kind === 'alias' ? { label: 'Move to another inbox', icon: 'move', onSelect: () => openMoveAlias(item) } : null,
+    item.kind === 'alias' ? { label: 'Show its mail', icon: 'mail', onSelect: () => { setMailFilter({ mailboxId: item.mailboxId, addressId: item.id }); navigate(item.href); } } : null,
     item.kind === 'inbox' ? { label: 'Open inbox', icon: 'mail', onSelect: () => navigate(item.href) } : null,
     item.kind === 'number' ? { label: 'Open number', icon: 'message', onSelect: () => navigate(item.href) } : null,
     'separator',

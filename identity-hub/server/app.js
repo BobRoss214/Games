@@ -110,6 +110,11 @@ export async function createApp(overrides = {}, env = process.env) {
   app.renewables = createRenewables({ store, config, log, events });
   app.every('renew', 3600, () => app.renewables.run());
   app.every('purge-sessions', 3600, async () => store.purgeExpiredSessions());
+  // Deleted rows are overwritten in the database file (secure_delete), but older copies can
+  // stay in the write-ahead file. Empty that file regularly so that deleted data is gone.
+  app.every('checkpoint', 3600, async () => {
+    for (const d of [db, paydb]) d.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  });
 
   for (const mod of [auth, mail, phone, pay]) await mod.register(app);
   return app;

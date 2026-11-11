@@ -7,6 +7,7 @@ import { icon } from '../ui/icons.js';
 import { button, emptyState, skeletonRows, pageHeader, section, field, segmented, runBusy, reportError, spinner, tag, loadError } from '../ui/components.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
+import { renewDays, graceDays } from '../lib/data.js';
 import { payInfo, startPurchase, simulatePayment, removePurchase, forgetDone, pollNow, resumePurchases } from '../lib/pay.js';
 
 const METHOD_NOTE = {
@@ -14,7 +15,7 @@ const METHOD_NOTE = {
   'XMR-CHAIN': 'The most private coin. Takes about 20 minutes.',
   'BTC-CHAIN': 'Slow, with a network fee. Use it for larger amounts.',
 };
-const LEDGER = { topup: 'Funds added', mailbox: 'Inbox, 30 days', number: 'Number, 30 days', text: 'Text sent', call: 'Call', refund: 'Refund' };
+const ledgerText = (kind) => ({ topup: 'Funds added', mailbox: `Inbox, ${renewDays()} days`, number: `Number, ${renewDays()} days`, text: 'Text sent', call: 'Call', refund: 'Refund' }[kind] || kind);
 
 export function fundsScreen({ scope }) {
   const config = store.get('config');
@@ -148,7 +149,7 @@ export function fundsScreen({ scope }) {
       h('thead', null, h('tr', null, h('th', { scope: 'col' }, 'Day'), h('th', { scope: 'col' }, 'What'), h('th', { scope: 'col', class: 'right' }, 'Amount'))),
       h('tbody', null, ledger.map((row) => h('tr', null,
         h('td', { class: 'nowrap muted' }, dayText(row.day)),
-        h('td', null, LEDGER[row.kind] || row.kind),
+        h('td', null, ledgerText(row.kind)),
         h('td', { class: `right mono ${row.delta > 0 ? 'is-plus' : ''}`.trim() }, money(row.delta, { sign: true })),
       ))),
     ));
@@ -161,9 +162,9 @@ export function fundsScreen({ scope }) {
   const prices = h('table', { class: 'ledger prices' },
     h('caption', { class: 'sr-only' }, 'Prices'),
     h('tbody', null,
-      priceRow('Inbox', p.mailboxMonth, 'per 30 days'),
+      priceRow('Inbox', p.mailboxMonth, `per ${renewDays()} days`),
       h('tr', null, h('td', null, 'Alias'), h('td', { class: 'right mono' }, 'Free'), h('td', { class: 'muted' }, config.limits.aliases ? `up to ${config.limits.aliases}` : 'no limit')),
-      config.features.phone ? priceRow('Number', p.numberMonth, 'per 30 days') : null,
+      config.features.phone ? priceRow('Number', p.numberMonth, `per ${renewDays()} days`) : null,
       config.features.phone ? priceRow('Text you send', p.textOut, 'per text') : null,
       config.features.phone ? priceRow('Call', p.callMinute, 'per minute') : null,
     ),
@@ -183,7 +184,7 @@ export function fundsScreen({ scope }) {
         section({ title: 'History' }, historySlot),
       ),
       h('aside', { class: 'funds-side' },
-        section({ title: 'Prices' }, h('div', { class: 'sheet' }, prices), h('p', { class: 'hint prices-hint' }, 'When your balance is too low to renew, the inbox or number is paused. It is not deleted at once.')),
+        section({ title: 'Prices' }, h('div', { class: 'sheet' }, prices), h('p', { class: 'hint prices-hint' }, config.features.phone && graceDays() ? `When your balance is too low to renew, the inbox or number is paused. A paused inbox is kept. A paused number is released after ${graceDays()} days.` : 'When your balance is too low to renew, the inbox is paused. It is not deleted.')),
         !payOn ? null : section({ title: 'Why payments are private' },
           h('div', { class: 'private-note' },
             icon('shield', { size: 20 }),

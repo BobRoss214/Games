@@ -9,7 +9,7 @@ import { openDialog, formDialog, confirmDialog } from './dialog.js';
 import { toast } from './toast.js';
 import {
   createAlias, createMailbox, buyNumber, renameMailbox, updateAlias, updateNumber, deleteMailbox, deleteAlias, releaseNumber,
-  mailboxName, findMailbox,
+  mailboxName, findMailbox, renewDays,
 } from '../lib/data.js';
 import { searchNumbers } from '../lib/phone.js';
 
@@ -110,7 +110,7 @@ export async function openNewInbox() {
     submitLabel: price ? `Make inbox for ${money(price)}` : 'Make inbox',
     build: () => h('div', { class: 'stack' },
       label.el, name.el,
-      price ? h('p', { class: 'price-note' }, icon('funds', { size: 16 }), h('span', null, `An inbox costs ${money(price)} for each 30 days. The first 30 days are charged now.`)) : null,
+      price ? h('p', { class: 'price-note' }, icon('funds', { size: 16 }), h('span', null, `An inbox costs ${money(price)} for each ${renewDays()} days. The first ${renewDays()} days are charged now.`)) : null,
     ),
     onSubmit: async () => {
       const n = name.read();
@@ -140,7 +140,7 @@ export function openGetNumber() {
       submitLabel: price ? `Buy for ${money(price)}` : 'Get number',
       build: () => h('div', { class: 'stack' },
         label.el,
-        price ? h('p', { class: 'price-note' }, icon('funds', { size: 16 }), h('span', null, `You pay ${money(price)} now, then ${money(price)} every 30 days while you keep the number.`)) : null,
+        price ? h('p', { class: 'price-note' }, icon('funds', { size: 16 }), h('span', null, `You pay ${money(price)} now, then ${money(price)} every ${renewDays()} days while you keep the number.`)) : null,
       ),
       onSubmit: async () => buyNumber({ number: n.number, label: label.value.trim() }),
       onError: (err, inner) => { if (err.status === 402) { inner.close(); api.close(); needFunds(err); return true; } return false; },
@@ -153,7 +153,7 @@ export function openGetNumber() {
 
   openDialog({
     title: 'Get a number', size: 'lg',
-    description: price ? `A number costs ${money(price)} for each 30 days. The first 30 days are charged when you buy.` : 'Choose a number.',
+    description: price ? `A number costs ${money(price)} for each ${renewDays()} days. The first ${renewDays()} days are charged when you buy.` : 'Choose a number.',
     content: (api) => {
       const searchBtn = button('Search', { kind: 'primary', type: 'submit', iconName: 'search' });
       const run = () => runBusy(searchBtn, async () => {
@@ -195,8 +195,8 @@ export function openNewChooser() {
     title: 'New', size: 'md',
     content: (api) => h('div', { class: 'choices' },
       option('alias', 'Alias', 'An extra address that delivers to an inbox. Make one for each shop or site.', 'Free', () => { api.close(); openNewAlias(); }),
-      option('inbox', 'Inbox', 'Its own address. Read and send mail here.', prices.mailboxMonth ? `${money(prices.mailboxMonth)} / 30 days` : 'Free', () => { api.close(); openNewInbox(); }),
-      phoneOn ? option('phone', 'Number', 'A phone number for texts and calls. Forward it to your real phone if you like.', prices.numberMonth ? `${money(prices.numberMonth)} / 30 days` : 'Free', () => { api.close(); openGetNumber(); }) : null,
+      option('inbox', 'Inbox', 'Its own address. Read and send mail here.', prices.mailboxMonth ? `${money(prices.mailboxMonth)} / ${renewDays()} days` : 'Free', () => { api.close(); openNewInbox(); }),
+      phoneOn ? option('phone', 'Number', 'A phone number for texts and calls. Forward it to your real phone if you like.', prices.numberMonth ? `${money(prices.numberMonth)} / ${renewDays()} days` : 'Free', () => { api.close(); openGetNumber(); }) : null,
     ),
   });
 }

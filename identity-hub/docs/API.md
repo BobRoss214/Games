@@ -330,9 +330,9 @@ The provider is `config.phone.provider`: `mock`, `twilio`, or `off`.
 | Route | Body / query | Result |
 |---|---|---|
 | `GET /api/numbers/search` **(auth)** | `?country=US&areaCode=415` | `{ numbers: [{ number, locality, region, country, sms, voice }] }` (max 20). `country` must be one of `phoneCountries` (if absent: the first one). `areaCode` is optional, 1 to 6 digits. 400 `bad_request`, 502 `provider_error`. Rate limit 30/minute. |
-| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, unread }] }`, oldest first. `unread` = count of incoming texts that are not seen. |
+| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, retentionDays, unread }] }`, oldest first. `unread` = count of incoming texts that are not seen. `retentionDays` is null or a count of days (see "Automatic deletion of old texts"). |
 | `POST /api/numbers` **(auth)** | `{ number, enc? }` | 201 `{ number: {…}, plain: "+1…" }`. Charges `prices.numberMonth` (kind `number`). 409 `taken`, 409 `limit_reached`, 402, 502 `provider_error`. See "Buying a number". |
-| `PATCH /api/numbers/:id` **(auth)** | `{ enc?, forwardPhoneId? (null clears), forwardTexts?, forwardCalls? }` | `{ number }`. 404 `not_found`, 409 `conflict`, 409 `no_voice`. See "Forwarding". |
+| `PATCH /api/numbers/:id` **(auth)** | `{ enc?, forwardPhoneId? (null clears), forwardTexts?, forwardCalls?, retentionDays? (null = off) }` | `{ number }`. 400 `bad_request`, 404 `not_found`, 409 `conflict`, 409 `no_voice`. See "Forwarding" and "Automatic deletion of old texts". |
 | `DELETE /api/numbers/:id` **(auth)** | — | 204. Releases the number at the provider, then deletes it with its texts and calls. No credit is given back. 502 `provider_error` if the provider fails; then the number stays. |
 | `GET /api/numbers/:id/texts` **(auth)** | `?before=<at>&limit=` (limit 1 to 200, default 100; a larger value counts as 200) | `{ texts: [{ id, direction: "in"\|"out", at, seen, sealed, status }], more }` newest first. See "Pages" and "Status of a sent text". |
 | `POST /api/numbers/:id/texts` **(auth)** | `{ number, to, body }` (`number` = our own number in plain form; body 1 to 1600 characters) | 201 `{ text }`. Charges `prices.textOut` (kind `text`). 400 `bad_destination`, 409 `suspended`, 409 `conflict` (the number has no texts), 402, 502 `provider_error` (the charge comes back, no text is stored). Rate limit 30/minute. |
@@ -392,8 +392,19 @@ Error codes of this module:
 - If the provider refuses a text at once, the answer is 502 `provider_error`, no text is stored, and the charge comes back.
 - Each change of status publishes `text`. A refund publishes `balance`.
 - The code text of a phone link and a forwarded text have no row. If the provider reports that one of them failed, the charge comes back too.
+- A sent text can be deleted (by the user, or by the automatic deletion) before its final status arrives. If the provider then reports that it failed, the charge still comes back, one time.
 - The server waits 7 days for the final status of a text. After that, a report changes nothing.
 - The mock provider gives `sent` at once. Twilio gives `queued` and reports the result later.
+
+### Automatic deletion of old texts
+
+- Each number has `retentionDays`: null (off, the default) or an integer from 1 to 3650. `PATCH /api/numbers/:id` sets it. Other values give 400 `bad_request`.
+- Every hour the server deletes the texts of each number with a value: all texts of that number, incoming and sent, whose `at` is more than `retentionDays` × 24 hours ago. The server does this by itself. The app does not have to be open.
+- After a change of the setting, the first deletion comes with the next hourly run.
+- Only the texts of that number are deleted. Calls are not deleted.
+- The deletion is final. The database overwrites deleted rows.
+- The server publishes `text` (with `numberId`) for each number that lost texts.
+- The setting also works for a suspended number, and with provider `off`.
 
 ### Destination limits
 
@@ -488,7 +499,7 @@ Service object: `app.services.phone = { provider, name, capabilities, reportText
 Provider `off`:
 - `GET /api/numbers`, `GET /api/phones`, the text and call lists, `PATCH`, `POST …/texts/seen`, the delete routes for texts, calls and phones, and `POST …/verify` work.
 - Search, purchase, `DELETE /api/numbers/:id`, send, call, and phone link give 503 `phone_off`.
-- There are no webhooks, and numbers are not renewed or charged.
+- There are no webhooks, and numbers are not renewed or charged. The automatic deletion of old texts still runs.
 
 Dev routes (register only if `config.dev` and the provider is `mock`):
 - `POST /api/dev/inbound-text` **(auth)** `{ numberId, number, from, body }` → 204
