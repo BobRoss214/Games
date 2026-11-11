@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createHmac, randomBytes } from 'node:crypto';
 import { startTestApp, client, newAccount, unb64u } from './helpers.js';
-import { openJson } from '../shared/crypto.js';
+import { openJson, openContentKey, openMeta, openAttachment } from '../shared/crypto.js';
 import { createTwilioProvider, twilioSignature, twiml } from '../server/phone/providers/twilio.js';
 import { ProviderError } from '../server/phone/providers/errors.js';
 
@@ -26,6 +26,7 @@ function startFakeTwilio() {
   const requests = [];
   const planned = new Map(); // "METHOD /Path.json" -> [{ status, body }]
   const bought = new Map(); // sid -> number
+  const recordings = new Map(); // recording sid -> { bytes, chunked }
   const sid = (prefix) => prefix + randomBytes(16).toString('hex');
   const server = createServer((req, res) => {
     const chunks = [];
@@ -71,6 +72,25 @@ function startFakeTwilio() {
         res.writeHead(204);
         return res.end();
       }
+      // Recordings: the audio as MP3, and the delete request.
+      if (req.method === 'GET' && (m = /^\/Recordings\/(RE[0-9a-f]{32})\.mp3$/.exec(path))) {
+        if (req.headers.authorization !== 'Basic ' + Buffer.from(`${SID}:${TOKEN}`).toString('base64')) return send(401, { code: 20003, message: 'Authenticate', status: 401 });
+        const rec = recordings.get(m[1]);
+        if (!rec) return send(404, { code: 20404, message: 'not found', status: 404 });
+        if (rec.chunked) {
+          // No length header: the client must count the bytes itself.
+          res.writeHead(200, { 'content-type': 'audio/mpeg' });
+          for (let i = 0; i < rec.bytes.length; i += 65536) res.write(rec.bytes.subarray(i, i + 65536));
+          return res.end();
+        }
+        res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': rec.bytes.length });
+        return res.end(rec.bytes);
+      }
+      if (req.method === 'DELETE' && (m = /^\/Recordings\/(RE[0-9a-f]{32})\.json$/.exec(path))) {
+        if (!recordings.delete(m[1])) return send(404, { code: 20404, message: 'not found', status: 404 });
+        res.writeHead(204);
+        return res.end();
+      }
       if (req.method === 'POST' && path === '/Messages.json') return send(201, { sid: sid('SM'), status: 'queued', error_code: null });
       if (req.method === 'POST' && path === '/Calls.json') return send(201, { sid: sid('CA'), status: 'queued' });
       return send(404, { code: 20404, message: 'not found', status: 404 });
@@ -81,6 +101,13 @@ function startFakeTwilio() {
       url: `http://127.0.0.1:${server.address().port}`,
       requests,
       bought,
+      recordings,
+      // A recording that waits at Twilio. Returns its sid.
+      addRecording(bytes, { chunked = false } = {}) {
+        const s = sid('RE');
+        recordings.set(s, { bytes, chunked });
+        return s;
+      },
       last: () => requests.at(-1),
       failNext(method, path, status, body) {
         const key = `${method} ${path}`;
@@ -791,4 +818,284 @@ test('end to end: phone link by a call; Twilio gets TwiML that speaks the code',
   assert.equal(no.data.error.message, 'The telephone provider refused this call.');
   assert.equal(app.store.balance(a.id), 97);
   assert.equal((await a.api.get('/api/phones')).data.phones.length, 1);
+});
+
+// ---- voicemail ----
+
+const GREETING = 'The person you called is not available. Please leave a message after the tone.';
+const RECORD_XML = (max = 120) => `<Say>${GREETING}</Say>`
+  + `<Record maxLength="${max}" playBeep="true" trim="trim-silence" action="${PUBLIC}${HOOK.status}" method="POST"`
+  + ` recordingStatusCallback="${PUBLIC}/api/hooks/phone/recording" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"/><Hangup/>`;
+const VOICEMAIL_XML = (max = 120) => `${XML_HEAD}<Response>${RECORD_XML(max)}</Response>`;
+const RECORDING_HOOK = '/api/hooks/phone/recording';
+// Some bytes that stand for an MP3 file.
+const mp3 = (size = 4000) => Buffer.concat([Buffer.from('ID3\u0004fake-mp3-'), randomBytes(size)]);
+// The recording status callback as Twilio posts it.
+const recordingReport = (callSid, recSid, seconds, extra = {}) => ({
+  AccountSid: SID, CallSid: callSid, RecordingSid: recSid, RecordingUrl: `${fake.url}${API}/Recordings/${recSid}`,
+  RecordingStatus: 'completed', RecordingDuration: String(seconds), RecordingChannels: '1', RecordingSource: 'RecordVerb', ...extra,
+});
+async function openVoicemail(acct, call) {
+  const key = await openContentKey(acct.keys, unb64u(call.voicemail.sealedKey));
+  const meta = await openMeta(key, unb64u(call.voicemail.encMeta));
+  const res = await acct.api.get(`/api/calls/${call.id}/voicemail`);
+  assert.equal(res.status, 200);
+  return { meta, audio: Buffer.from(await openAttachment(key, res.data, 1)) };
+}
+const recordingRequests = (recSid) => fake.requests.filter((r) => r.path.includes(recSid)).map((r) => `${r.method} ${r.path}`);
+
+test('TwiML and adapter: voicemail recording', async () => {
+  assert.equal(
+    twiml([{ say: GREETING }, { record: { maxSeconds: 120, doneUrl: 'https://x.test/rec?a=1&b=2', actionUrl: 'https://x.test/status' } }, { hangup: true }]),
+    `${XML_HEAD}<Response><Say>${GREETING}</Say><Record maxLength="120" playBeep="true" trim="trim-silence" action="https://x.test/status" method="POST"`
+    + ' recordingStatusCallback="https://x.test/rec?a=1&amp;b=2" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"/><Hangup/></Response>',
+  );
+  // No transcription is requested.
+  assert.doesNotMatch(VOICEMAIL_XML(), /transcri/i);
+
+  const twilio = createTwilioProvider({ accountSid: SID, authToken: TOKEN, baseUrl: fake.url });
+  const auth = 'Basic ' + Buffer.from(`${SID}:${TOKEN}`).toString('base64');
+  const parse = (body) => twilio.parseRecording({ body });
+  const recSid = 'RE' + 'a'.repeat(32);
+  assert.deepEqual(parse(recordingReport('CA1', recSid, 17)), { callId: 'CA1', recordingRef: recSid, seconds: 17, url: `${fake.url}${API}/Recordings/${recSid}`, ready: true });
+  assert.equal(parse(recordingReport('CA1', recSid, 17, { RecordingStatus: 'in-progress' })).ready, false);
+  assert.equal(parse(recordingReport('CA1', recSid, 17, { RecordingStatus: 'absent' })).ready, false);
+  assert.deepEqual(parse({}), { callId: '', recordingRef: '', seconds: 0, url: '', ready: true });
+
+  // Download: the MP3 from our own API address, with the account password.
+  const bytes = mp3();
+  const sid1 = fake.addRecording(bytes);
+  const got = await twilio.fetchRecording({ ref: sid1, url: 'http://127.0.0.1:1/other-host' }, { maxBytes: 100_000 });
+  assert.ok(got.bytes.equals(bytes));
+  assert.equal(got.contentType, 'audio/mpeg');
+  let req = fake.last();
+  assert.equal(req.method, 'GET');
+  assert.equal(req.fullPath, `/2010-04-01/Accounts/${SID}/Recordings/${sid1}.mp3`);
+  assert.equal(req.headers.authorization, auth);
+
+  // Too large: with a length header, and with no length header (the bytes are counted).
+  await assert.rejects(twilio.fetchRecording({ ref: sid1 }, { maxBytes: bytes.length - 1 }), { tooLarge: true });
+  const sid2 = fake.addRecording(mp3(300_000), { chunked: true });
+  await assert.rejects(twilio.fetchRecording({ ref: sid2 }, { maxBytes: 100_000 }), { tooLarge: true });
+  assert.equal((await twilio.fetchRecording({ ref: sid2 }, { maxBytes: 400_000 })).bytes.length, fake.recordings.get(sid2).bytes.length);
+
+  // An id that does not look like a recording id never goes into a request.
+  const count = fake.requests.length;
+  for (const bad of ['', 'RE123', '../IncomingPhoneNumbers/PN1', `${sid1}/../x`, `${sid1}?x=1`, 'http://127.0.0.1:1/x', undefined]) {
+    await assert.rejects(twilio.fetchRecording({ ref: bad }), { notFound: true });
+    await assert.rejects(twilio.deleteRecording(bad), { notFound: true });
+  }
+  assert.equal(fake.requests.length, count);
+
+  // Delete.
+  await twilio.deleteRecording(sid1);
+  req = fake.last();
+  assert.equal(req.method, 'DELETE');
+  assert.equal(req.fullPath, `/2010-04-01/Accounts/${SID}/Recordings/${sid1}.json`);
+  assert.equal(req.headers.authorization, auth);
+  assert.ok(!fake.recordings.has(sid1));
+  await assert.rejects(twilio.deleteRecording(sid1), { notFound: true });
+  await assert.rejects(twilio.fetchRecording({ ref: sid1 }), { notFound: true });
+  fake.failNext('DELETE', `/Recordings/${sid2}.json`, 500, { message: 'oops' });
+  await assert.rejects(twilio.deleteRecording(sid2), { notFound: false, message: 'The telephone provider is not available. Try again later.' });
+  await twilio.deleteRecording(sid2);
+});
+
+test('end to end: voicemail for a call that is not forwarded (Twilio)', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const caller = outsider();
+  const base = { AccountSid: SID, ApiVersion: '2010-04-01', Direction: 'inbound', From: caller, To: num.plain };
+
+  // Voicemail off: the old answer.
+  assert.equal((await twilioPost(HOOK.voice, { ...base, CallSid: 'CAvm0', CallStatus: 'ringing' })).text, NOT_AVAILABLE_XML);
+  assert.equal((await a.api.patch(`/api/numbers/${num.id}`, { voicemail: true })).data.number.voicemail, true);
+
+  // Voicemail on: the greeting, a tone, a recording of 120 seconds at most.
+  const callSid = 'CA' + 'e'.repeat(32);
+  const v = await twilioPost(HOOK.voice, { ...base, CallSid: callSid, CallStatus: 'ringing' });
+  assert.equal(v.status, 200);
+  assert.match(v.type, /^text\/xml/);
+  assert.equal(v.text, VOICEMAIL_XML(120));
+  // When the recording ends, Twilio asks the action address what to do: end the call.
+  const afterRecord = await twilioPost(HOOK.status, { ...base, CallSid: callSid, CallStatus: 'in-progress', RecordingUrl: 'x', RecordingDuration: '7' });
+  assert.equal(afterRecord.text, HANGUP_XML);
+  assert.equal((await calls(a, num))[0].voicemail, null);
+
+  // The recording is ready. A report with a bad signature is refused, and nothing is fetched.
+  const bytes = mp3();
+  const recSid = fake.addRecording(bytes);
+  const report = recordingReport(callSid, recSid, 7);
+  for (const sig of ['AAAAAAAAAAAAAAAAAAAAAAAAAAA=', sign(PUBLIC + HOOK.status, report), null]) {
+    assert.equal((await twilioPost(RECORDING_HOOK, report, sig)).status, 403);
+  }
+  assert.deepEqual(recordingRequests(recSid), []);
+  assert.ok(fake.recordings.has(recSid));
+
+  const ok = await twilioPost(RECORDING_HOOK, report);
+  assert.equal(ok.status, 200);
+  // The server fetched the audio, and after that it deleted the recording at Twilio. One time each.
+  assert.deepEqual(recordingRequests(recSid), [`GET /Recordings/${recSid}.mp3`, `DELETE /Recordings/${recSid}.json`]);
+  assert.ok(!fake.recordings.has(recSid));
+
+  const log = await calls(a, num);
+  assert.equal(log.length, 2);
+  assert.deepEqual({ status: log[0].status, direction: log[0].direction, seconds: log[0].voicemail.seconds }, { status: 'missed', direction: 'in', seconds: 7 });
+  const opened = await openVoicemail(a, log[0]);
+  assert.deepEqual(opened.meta, { peer: caller, seconds: 7, contentType: 'audio/mpeg' });
+  assert.ok(opened.audio.equals(bytes));
+  assert.equal(app.store.balance(a.id), 500 - 400 - 5);
+  assert.equal(ledger(a)[0], 'voicemail:-5');
+
+  // The same report again: no request to Twilio, no second charge.
+  assert.equal((await twilioPost(RECORDING_HOOK, report)).status, 200);
+  assert.equal(recordingRequests(recSid).length, 2);
+  assert.equal(app.store.balance(a.id), 95);
+  // The end of the whole call arrives last. Nothing changes.
+  await twilioPost(HOOK.status, { ...base, CallSid: callSid, CallStatus: 'completed', CallDuration: '15' });
+  assert.equal((await calls(a, num)).length, 2);
+  assert.equal(app.store.balance(a.id), 95);
+});
+
+test('end to end: voicemail after a forwarded call that nobody answers (Twilio)', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardCalls: true, voicemail: true });
+  const caller = outsider();
+  const base = { AccountSid: SID, ApiVersion: '2010-04-01', Direction: 'inbound', From: caller, To: num.plain };
+
+  // The real phone rings first.
+  const callSid = 'CA' + 'f'.repeat(32);
+  const v = await twilioPost(HOOK.voice, { ...base, CallSid: callSid, CallStatus: 'ringing' });
+  assert.match(v.text, /^<\?xml[^>]*\?><Response><Dial callerId="[^"]+" timeout="25" timeLimit="\d+" action="[^"]+" method="POST"><Number>[^<]+<\/Number><\/Dial><\/Response>$/);
+  // Nobody answers. Twilio asks the action address of the <Dial>: now the greeting and the recording.
+  const next = await twilioPost(HOOK.status, { ...base, CallSid: callSid, CallStatus: 'in-progress', DialCallStatus: 'no-answer' });
+  assert.equal(next.status, 200);
+  assert.match(next.type, /^text\/xml/);
+  assert.equal(next.text, VOICEMAIL_XML(120));
+  assert.deepEqual({ status: (await calls(a, num))[0].status, voicemail: (await calls(a, num))[0].voicemail }, { status: 'missed', voicemail: null });
+  // After the recording: end the call.
+  assert.equal((await twilioPost(HOOK.status, { ...base, CallSid: callSid, CallStatus: 'in-progress', RecordingDuration: '11' })).text, HANGUP_XML);
+
+  const bytes = mp3(9000);
+  const recSid = fake.addRecording(bytes);
+  assert.equal((await twilioPost(RECORDING_HOOK, recordingReport(callSid, recSid, 11))).status, 200);
+  const log = await calls(a, num);
+  assert.equal(log.length, 1);
+  const opened = await openVoicemail(a, log[0]);
+  assert.deepEqual(opened.meta, { peer: caller, seconds: 11, contentType: 'audio/mpeg' });
+  assert.ok(opened.audio.equals(bytes));
+  assert.ok(!fake.recordings.has(recSid));
+  assert.equal(app.store.balance(a.id), 500 - 400 - 3 - 5);
+
+  // Busy and failed lines also go to voicemail. An answered call does not.
+  for (const [i, dialStatus] of ['busy', 'failed', 'canceled'].entries()) {
+    const sid = `CAvmfwd${i}`;
+    await twilioPost(HOOK.voice, { ...base, CallSid: sid, CallStatus: 'ringing' });
+    assert.equal((await twilioPost(HOOK.status, { ...base, CallSid: sid, CallStatus: 'in-progress', DialCallStatus: dialStatus })).text, VOICEMAIL_XML(120));
+  }
+  await twilioPost(HOOK.voice, { ...base, CallSid: 'CAvmtalk', CallStatus: 'ringing' });
+  assert.equal((await twilioPost(HOOK.status, { ...base, CallSid: 'CAvmtalk', CallStatus: 'in-progress', DialCallStatus: 'completed', DialCallDuration: '20' })).text, HANGUP_XML);
+  const unwanted = fake.addRecording(mp3());
+  await twilioPost(RECORDING_HOOK, recordingReport('CAvmtalk', unwanted, 5));
+  assert.deepEqual(recordingRequests(unwanted), [`DELETE /Recordings/${unwanted}.json`]);
+  assert.equal((await calls(a, num))[0].voicemail, null);
+
+  // The balance is below the price of a voicemail: the call ends as before.
+  app.store.charge(a.id, app.store.balance(a.id) - 4, 'text');
+  await twilioPost(HOOK.voice, { ...base, CallSid: 'CAvmpoor', CallStatus: 'ringing' });
+  assert.equal((await twilioPost(HOOK.status, { ...base, CallSid: 'CAvmpoor', CallStatus: 'in-progress', DialCallStatus: 'no-answer' })).text, HANGUP_XML);
+  // Forwarding needs one call minute (3). With 2 credits the call is not forwarded and gets no voicemail.
+  app.store.charge(a.id, 2, 'text');
+  assert.equal((await twilioPost(HOOK.voice, { ...base, CallSid: 'CAvmpoor2', CallStatus: 'ringing' })).text, NOT_AVAILABLE_XML);
+});
+
+test('end to end: voicemail limits and the guard against requests to other hosts (Twilio)', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  await a.api.patch(`/api/numbers/${num.id}`, { voicemail: true });
+  const caller = outsider();
+  const base = { AccountSid: SID, Direction: 'inbound', From: caller, To: num.plain };
+  let n = 0;
+  const greeted = async () => {
+    const callSid = `CAvmlim${++n}`;
+    assert.equal((await twilioPost(HOOK.voice, { ...base, CallSid: callSid, CallStatus: 'ringing' })).text, VOICEMAIL_XML(120));
+    return callSid;
+  };
+  const lastCall = async () => (await calls(a, num))[0];
+
+  // A different server on this computer. It must never get a request from Postern.
+  const foreign = [];
+  const other = createServer((req, res) => { foreign.push(`${req.method} ${req.url} ${req.headers.authorization || ''}`); res.writeHead(200, { 'content-type': 'audio/mpeg' }); res.end('stolen'); });
+  await new Promise((resolve) => { other.listen(0, '127.0.0.1', resolve); });
+  try {
+    const otherUrl = `http://127.0.0.1:${other.address().port}`;
+    // The report names a recording address on the other server. The server ignores that address:
+    // it fetches the recording with this id from the Twilio API address, with its password.
+    const bytes = mp3();
+    const recSid = fake.addRecording(bytes);
+    const callSid = await greeted();
+    assert.equal((await twilioPost(RECORDING_HOOK, recordingReport(callSid, recSid, 6, { RecordingUrl: `${otherUrl}/2010-04-01/Accounts/${SID}/Recordings/${recSid}` }))).status, 200);
+    assert.deepEqual(foreign, []);
+    assert.deepEqual(recordingRequests(recSid), [`GET /Recordings/${recSid}.mp3`, `DELETE /Recordings/${recSid}.json`]);
+    assert.ok((await openVoicemail(a, await lastCall())).audio.equals(bytes));
+
+    // A recording id that is not an id (an address, a path): no request to any server, nothing stored.
+    const count = fake.requests.length;
+    for (const bad of [`${otherUrl}/x`, '../../Accounts/other/Recordings/RE1', `${recSid}/../../IncomingPhoneNumbers`, 'RE-not-hex']) {
+      const sid = await greeted();
+      assert.equal((await twilioPost(RECORDING_HOOK, recordingReport(sid, bad, 6, { RecordingUrl: `${otherUrl}/steal` }))).status, 200);
+      assert.equal((await lastCall()).voicemail, null);
+    }
+    assert.deepEqual(foreign, []);
+    assert.equal(fake.requests.length, count);
+    assert.equal(app.db.get('SELECT COUNT(*) AS n FROM release_later').n, 0);
+  } finally {
+    await new Promise((resolve) => { other.closeAllConnections(); other.close(resolve); });
+  }
+
+  // A report that is not "completed" is ignored.
+  const waitSid = fake.addRecording(mp3());
+  const waitCall = await greeted();
+  await twilioPost(RECORDING_HOOK, recordingReport(waitCall, waitSid, 6, { RecordingStatus: 'in-progress' }));
+  assert.deepEqual(recordingRequests(waitSid), []);
+  assert.equal((await lastCall()).voicemail, null);
+
+  // More than 5 MB: refused before the download ends, and deleted at Twilio.
+  for (const chunked of [false, true]) {
+    const bigSid = fake.addRecording(Buffer.alloc(5 * 1024 * 1024 + 1, 7), { chunked });
+    await twilioPost(RECORDING_HOOK, recordingReport(await greeted(), bigSid, 100));
+    assert.equal((await lastCall()).voicemail, null);
+    assert.deepEqual(recordingRequests(bigSid), [`GET /Recordings/${bigSid}.mp3`, `DELETE /Recordings/${bigSid}.json`]);
+    assert.ok(!fake.recordings.has(bigSid));
+  }
+  // Longer than the limit: refused with no download, and deleted at Twilio.
+  const longSid = fake.addRecording(mp3());
+  await twilioPost(RECORDING_HOOK, recordingReport(await greeted(), longSid, 126));
+  assert.deepEqual(recordingRequests(longSid), [`DELETE /Recordings/${longSid}.json`]);
+  assert.equal((await lastCall()).voicemail, null);
+  // One voicemail was stored in this test.
+  assert.equal(app.store.balance(a.id), 1000 - 400 - 5);
+
+  // Twilio cannot delete the recording now. The voicemail is stored, and the job deletes the recording later.
+  const stickySid = fake.addRecording(mp3());
+  fake.failNext('DELETE', `/Recordings/${stickySid}.json`, 500, { message: 'oops' });
+  await twilioPost(RECORDING_HOOK, recordingReport(await greeted(), stickySid, 6));
+  assert.ok((await lastCall()).voicemail);
+  assert.ok(fake.recordings.has(stickySid));
+  assert.equal(app.db.get("SELECT COUNT(*) AS n FROM release_later WHERE kind = 'recording'").n, 1);
+  await app.runJobs('phone-cleanup');
+  assert.ok(!fake.recordings.has(stickySid));
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM release_later').n, 0);
+  assert.deepEqual(recordingRequests(stickySid), [`GET /Recordings/${stickySid}.mp3`, `DELETE /Recordings/${stickySid}.json`, `DELETE /Recordings/${stickySid}.json`]);
+
+  // The number is deleted while a caller is at the tone. The late recording is deleted at Twilio and not stored.
+  const lateCall = await greeted();
+  assert.equal((await a.api.del(`/api/numbers/${num.id}`)).status, 204);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM voicemails WHERE account_id = ?', a.id).n, 0);
+  const lateSid = fake.addRecording(mp3());
+  assert.equal((await twilioPost(RECORDING_HOOK, recordingReport(lateCall, lateSid, 6))).status, 200);
+  assert.deepEqual(recordingRequests(lateSid), [`DELETE /Recordings/${lateSid}.json`]);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM voicemails WHERE account_id = ?', a.id).n, 0);
 });

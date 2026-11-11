@@ -120,6 +120,9 @@ You put each of these values in the `.env` file. Each row says which part of thi
 | BTCPay webhook secret | `BTCPAY_WEBHOOK_SECRET` | BTCPay Server, webhook page (Part E) | Yes |
 | Twilio Account SID | `TWILIO_ACCOUNT_SID` | Twilio Console (Part F) | No |
 | Twilio Auth Token | `TWILIO_AUTH_TOKEN` | Twilio Console (Part F) | Yes |
+| Twilio Messaging Service ID (optional) | `TWILIO_MESSAGING_SERVICE_SID` | Twilio Console, after the 10DLC registration (Part F3) | No |
+| Twilio regulatory bundle ID (optional) | `TWILIO_BUNDLE_SID` | Twilio Console (Part F5) | No |
+| Twilio address ID (optional) | `TWILIO_ADDRESS_SID` | Twilio Console (Part F5) | No |
 
 ---
 
@@ -143,34 +146,39 @@ Read this section completely. It tells you what Postern cannot do for you.
 9. **The carriers treat all texts from Twilio as business texts.** A text from one person to one person through Postern is not an exception `[R4]`.
 10. **To receive texts works without registration** `[R7]`. Texts to Canadian phones are also not blocked `[R7]`.
 11. **The 10DLC rule is about texts.** The research found no such block for calls. **Check this.**
-12. **Result for call forwarding:** to link a real phone, Postern sends a code by text from the user's number. Without 10DLC registration this text does not arrive at a US phone. Then the user cannot link a US phone. **Check this** with one test.
-13. **United Kingdom numbers need identity documents at Twilio** `[R9]`. Postern does not send these documents. A purchase of a UK number will probably fail. Keep `GB` out of `PHONE_COUNTRIES`. **Check this.**
-14. **You pay Twilio each month for each number, in normal money.** Your users pay you in credits. Set `PRICE_NUMBER_MONTH` higher than your cost.
+12. **A user links a real phone with a code.** Postern sends the code from the number of the user: by text, or by a call in which a voice says the code.
+    The call is important: a US number without 10DLC registration cannot send the text to a US phone, but it can make the call. **Check this** with one test.
+13. **Some countries need identity documents at Twilio.** The United Kingdom is an example `[R9]`. Twilio keeps the documents as a "regulatory bundle" and an "address".
+    Put their IDs in `TWILIO_BUNDLE_SID` and `TWILIO_ADDRESS_SID` (Part F5). Postern then sends the two IDs with each purchase.
+    The authors tested this with a simulated Twilio only. **Check this.** Without the IDs, keep such countries out of `PHONE_COUNTRIES`.
+14. **You pay Twilio each month for each number, in normal money.** Your users pay you with credit. Set `PRICE_NUMBER_MONTH` higher than your cost.
 15. **You can operate Postern without phone numbers.** Set `PHONE_PROVIDER=off`. Then Postern gives email and payments only, and you do not need Twilio. No provider in this guide then needs your identity, if you pay the server and the domain with crypto.
+16. **By default, users can text and call only numbers in the United States and Canada.** Postern also refuses premium numbers and some expensive area codes. You pay Twilio for each text and call, so this limit protects your money. Part F6 tells you how to change it.
+17. **The phone provider makes the recording of each voicemail.** Thus the provider hears the complete message. Part F7 tells you more.
 
 ### Email
 
-16. **Email arrives at your server without end-to-end encryption.** Postern encrypts each message for the user when it arrives. See [SECURITY.md](SECURITY.md), section 6.
-17. **Outgoing email is visible to the relay and to the provider of the recipient.** This is how email works.
-18. **A new server address has no reputation.** Large mail providers can put your first messages in the spam folder. Correct DNS records help. Time helps. No setting removes this problem fully.
-19. **Most server hosts in Part A block outgoing mail ports on a new server.** You must ask the host to open them `[E1][E3][E4]`.
-
-20. **A domain that only one person uses ties the aliases on it together.** Each website can see that the addresses are on the same private domain. On a server for one person, this is true for each domain. See Part H.
+18. **Email arrives at your server without end-to-end encryption.** Postern encrypts each message for the user when it arrives. See [SECURITY.md](SECURITY.md), section 6.
+19. **Outgoing email is visible to the relay and to the provider of the recipient.** This is how email works.
+20. **A new server address has no reputation.** Large mail providers can put your first messages in the spam folder. Correct DNS records help. Time helps. No setting removes this problem fully.
+21. **Most server hosts in Part A block outgoing mail ports on a new server.** You must ask the host to open them `[E1][E3][E4]`.
+22. **A domain that only one person uses ties the aliases on it together.** Each website can see that the addresses are on the same private domain. On a server for one person, this is true for each domain. See Part H.
 
 ### Payments
 
-21. **A third-party BTCPay host can see your payment data. Lightning payments go to the wallet of the host** `[B13]`. Use your own BTCPay Server.
-22. **The Monero plugin uses one wallet for all stores of a BTCPay Server** `[B10]`. This is one more reason to use your own BTCPay Server.
-23. **The name of the Monero payment method (`XMR-CHAIN`) is not confirmed** `[B9]`. Part E tells you how to confirm it.
-24. **If payments are off, users cannot get credits.** Then you must set the four `PRICE_` settings to `0`, or nobody can make a mailbox.
-25. **If prices are 0 and sign-up is open, each visitor can buy phone numbers with your Twilio money.** Close the sign-up (Part G).
+23. **A third-party BTCPay host can see your payment data. Lightning payments go to the wallet of the host** `[B13]`. Use your own BTCPay Server.
+24. **The Monero plugin uses one wallet for all stores of a BTCPay Server** `[B10]`. This is one more reason to use your own BTCPay Server.
+25. **The name of the Monero payment method (`XMR-CHAIN`) is not confirmed** `[B9]`. Part E tells you how to confirm it.
+26. **If payments are off, users cannot add credit.** Then you must set the five `PRICE_` settings to `0`, or nobody can make an inbox.
+27. **If prices are 0 and sign-up is open, each visitor can buy phone numbers with your Twilio money.** Close the sign-up (Part G).
 
 ### Your responsibility
 
-26. **You cannot make the server secret (`SECRET_KEY`) a second time.** If you lose it, Postern cannot find the addresses and numbers of your users.
-27. **A user who loses the recovery key and all passkeys loses the account.** You cannot reset it.
-28. **A backup keeps deleted data.** Data that a user deletes stays in old backups until you delete those backups.
-29. **You are the operator of a communication service.** The laws of your country can apply to you. This guide gives no legal advice.
+28. **You cannot make the server secret (`SECRET_KEY`) a second time.** If you lose it, Postern cannot find the addresses and numbers of your users.
+29. **A user who loses the recovery key and all passkeys loses the account.** You cannot reset it.
+30. **A backup keeps deleted data.** This is true for data that a user deletes, and for data that the automatic deletion removes.
+    The data stays in each older backup until you delete that backup. Part I7 tells you how long `backup.sh` keeps backups.
+31. **You are the operator of a communication service.** The laws of your country can apply to you. This guide gives no legal advice.
 
 ---
 
@@ -182,7 +190,7 @@ Read this section completely. It tells you what Postern cannot do for you.
 |---|---|---|
 | Operating system | Debian 12 or later, 64-bit | The commands in this guide are for Debian. |
 | Memory | 2 GB (1 GB is the minimum) | Three programs run at the same time. |
-| Disk | 20 GB or more | One mailbox can use 1 GB (`LIMIT_MAILBOX_BYTES`). |
+| Disk | 20 GB or more | One inbox can use 1 GB (`LIMIT_MAILBOX_BYTES`). |
 | IPv4 address | One address that only your server uses | Other mail servers judge your mail by this address. |
 | Port 25, incoming | Open | To receive mail |
 | Port 25, outgoing | Open, or the host opens it on request | To send mail |
@@ -272,7 +280,9 @@ Notes:
 - **Record 4 with a relay company.** If a relay company sends your mail, the company gives you a different value for record 4.
 - **Record 6 is long.** Some DNS pages want the value in parts of 255 characters or less. Read the help of your DNS page.
 - **Record 7 later.** After the mail test in Part G is successful, change the value to `v=DMARC1; p=quarantine`.
-- **IPv6 note.** With the default Docker network, all IPv6 visitors share one rate limit. Add record 2 only if you also enable IPv6 in `docker-compose.yml`. The last lines of that file tell you how. **Check this:** the authors did not test the IPv6 option.
+- **IPv6 note.** With the default Docker network, Postern sees all IPv6 visitors as one address. All IPv6 visitors then share one rate limit.
+  Postern also permits only 10 mail connections from one address at the same time. All mail servers that use IPv6 then share this limit.
+  Add record 2 only if you also enable IPv6 in `docker-compose.yml`. The last lines of that file tell you how. **Check this:** the authors did not test the IPv6 option.
 
 **Check:** run these commands on the server. Replace the example names.
 

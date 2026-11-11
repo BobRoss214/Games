@@ -46,7 +46,9 @@ export function menuButton({ label, items, iconName = 'more', cls = '', text = '
       else if (e.key === 'Tab') close(false);
     };
     const onDown = (e) => { if (!menu.contains(e.target) && !btn.contains(e.target)) close(false); };
-    const onScroll = (e) => { if (!menu.contains(e.target)) close(false); };
+    // The page moved (a scroll, a list that painted again): the menu follows its button.
+    // It does not close, or a background update could take the menu away under the pointer.
+    const onScroll = (e) => { if (!menu.contains(e.target) && btn.isConnected) place(menu); };
     menu.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onDown, true);
     window.addEventListener('resize', onScroll);

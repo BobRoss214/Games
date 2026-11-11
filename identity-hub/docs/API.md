@@ -361,17 +361,18 @@ The provider is `config.phone.provider`: `mock`, `twilio`, or `off`.
 | Route | Body / query | Result |
 |---|---|---|
 | `GET /api/numbers/search` **(auth)** | `?country=US&areaCode=415` | `{ numbers: [{ number, locality, region, country, sms, voice }] }` (max 20). `country` must be one of `phoneCountries` (if absent: the first one). `areaCode` is optional, 1 to 6 digits. 400 `bad_request`, 502 `provider_error`. Rate limit 30/minute. |
-| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, retentionDays, unread }] }`, oldest first. `unread` = count of incoming texts that are not seen. `retentionDays` is null or a count of days (see "Automatic deletion of old texts"). |
+| `GET /api/numbers` **(auth)** | — | `{ numbers: [{ id, sealedNumber, enc, country, sms, voice, status: "active"\|"suspended", paidUntil, createdDay, forwardPhoneId, forwardTexts, forwardCalls, retentionDays, voicemail, unread }] }`, oldest first. `unread` = count of incoming texts that are not seen. `retentionDays` is null or a count of days (see "Automatic deletion of old texts"). `voicemail` is a boolean (see "Voicemail"). |
 | `POST /api/numbers` **(auth)** | `{ number, enc? }` | 201 `{ number: {…}, plain: "+1…" }`. Charges `prices.numberMonth` (kind `number`). 409 `taken`, 409 `limit_reached`, 402, 502 `provider_error`. See "Buying a number". |
-| `PATCH /api/numbers/:id` **(auth)** | `{ enc?, forwardPhoneId? (null clears), forwardTexts?, forwardCalls?, retentionDays? (null = off) }` | `{ number }`. 400 `bad_request`, 404 `not_found`, 409 `conflict`, 409 `no_voice`. See "Forwarding" and "Automatic deletion of old texts". |
+| `PATCH /api/numbers/:id` **(auth)** | `{ enc?, forwardPhoneId? (null clears), forwardTexts?, forwardCalls?, retentionDays? (null = off), voicemail? }` | `{ number }`. 400 `bad_request`, 404 `not_found`, 409 `conflict`, 409 `no_voice`, 409 `no_voicemail`. See "Forwarding", "Automatic deletion of old texts" and "Voicemail". |
 | `DELETE /api/numbers/:id` **(auth)** | — | 204. Releases the number at the provider, then deletes it with its texts and calls. No credit is given back. 502 `provider_error` if the provider fails; then the number stays. |
 | `GET /api/numbers/:id/texts` **(auth)** | `?before=<at>&limit=` (limit 1 to 200, default 100; a larger value counts as 200) | `{ texts: [{ id, direction: "in"\|"out", at, seen, sealed, status }], more }` newest first. See "Pages" and "Status of a sent text". |
 | `POST /api/numbers/:id/texts` **(auth)** | `{ number, to, body }` (`number` = our own number in plain form; body 1 to 1600 characters) | 201 `{ text }`. Charges `prices.textOut` (kind `text`). 400 `bad_destination`, 409 `suspended`, 409 `conflict` (the number has no texts), 402, 502 `provider_error` (the charge comes back, no text is stored). Rate limit 30/minute. |
 | `POST /api/numbers/:id/texts/seen` **(auth)** | — | 204. Marks all texts of this number as seen. |
 | `DELETE /api/texts/:id` **(auth)** | — | 204 |
-| `GET /api/numbers/:id/calls` **(auth)** | `?before=&limit=` (as for texts) | `{ calls: [{ id, direction: "in"\|"out", at, seconds, status: "answered"\|"missed"\|"failed", sealed }], more }` newest first. `at` is the start of the call. |
+| `GET /api/numbers/:id/calls` **(auth)** | `?before=&limit=` (as for texts) | `{ calls: [{ id, direction: "in"\|"out", at, seconds, status: "answered"\|"missed"\|"failed", sealed, voicemail }], more }` newest first. `at` is the start of the call. `voicemail` is null or `{ seconds, size, sealedKey, encMeta }` (see "Voicemail"). |
 | `POST /api/numbers/:id/calls` **(auth)** | `{ number, to }` | 201 `{ ok: true }`. Click-to-call: the provider calls the linked real phone, then connects it to `to` with the VoIP number as caller ID. 409 `no_phone` (no verified forward phone on this number), 409 `no_voice`, 409 `suspended`, 400 `bad_destination`, 402 (balance below `prices.callMinute`), 502 `provider_error`. Rate limit 10/minute. |
-| `DELETE /api/calls/:id` **(auth)** | — | 204 |
+| `GET /api/calls/:id/voicemail` **(auth)** | — | 200 `application/octet-stream`: the encrypted audio of the voicemail. 404 `not_found` if the call is unknown or has no voicemail. |
+| `DELETE /api/calls/:id` **(auth)** | — | 204. Deletes its voicemail too. |
 | `GET /api/phones` **(auth)** | — | `{ phones: [{ id, sealedNumber, enc, verified, createdDay }] }`, oldest first |
 | `POST /api/phones` **(auth)** | `{ number, enc?, method?: "text"\|"call", via: { numberId, number } }` | 201 `{ phone }`. Sends a 6-digit code to the real phone from the VoIP number `via`, by text (default) or by a call that speaks the code. See "Linking a real phone". Rate limit 5/hour. |
 | `POST /api/phones/:id/verify` **(auth)** | `{ code }` | `{ phone }`. 400 `bad_code`. Max 5 tries, code valid 10 minutes. Rate limit 20 in 10 minutes. |
@@ -393,6 +394,7 @@ Error codes of this module:
 | `no_phone` | 409 | Click-to-call from a number with no verified forward phone. |
 | `no_number` | 409 | A phone link, and the account has no active VoIP number, or `via` is suspended. |
 | `no_voice` | 409 | A call function, and the number or the provider has no voice ("This number cannot make or get calls through Postern."). |
+| `no_voicemail` | 409 | `voicemail: true`, and the provider has voice but cannot record ("Voicemail is not available for this number."). |
 | `conflict` | 409 | The forward phone is not verified. The phone is linked already. The number has no texts. |
 | `bad_destination` | 400 | The destination is not permitted ("You cannot text or call this number from here."). |
 | `bad_code` | 400 | The code is wrong, too old, or used up. |
@@ -436,6 +438,38 @@ Error codes of this module:
 - The deletion is final. The database overwrites deleted rows.
 - The server publishes `text` (with `numberId`) for each number that lost texts.
 - The setting also works for a suspended number, and with provider `off`.
+
+### Voicemail
+
+A caller who does not reach the user can leave a message. It is off by default.
+
+- `PATCH /api/numbers/:id` with `voicemail: true` or `false` switches it for one number. `true` needs a number and a provider with voice (409 `no_voice`) and a provider that can record (409 `no_voicemail`). `false` always works.
+- Price: `prices.voicemail` credits for each stored voicemail (kind `voicemail`). Longest message: `voicemailMaxSeconds` seconds. `GET /api/config` gives both, so the app can show them before the user switches it on.
+- Voicemail is used for a call if the number has it on, the number is active, and the balance is not below `prices.voicemail`, in two cases:
+  1. The call is not forwarded (forwarding is off, there is no verified phone, or the balance is below `prices.callMinute`).
+  2. The call was forwarded and was not answered (no answer, busy, failed, or the caller gave up).
+- The caller then hears exactly: "The person you called is not available. Please leave a message after the tone." The greeting has no name and no number. After a tone the provider records for `voicemailMaxSeconds` at most, and the call ends.
+- In all other cases, and with voicemail off, calls behave as described in "Provider webhooks".
+- A call with voicemail is in the call log as a `missed` call. When the recording is stored, the call gets `voicemail: { seconds, size, sealedKey, encMeta }` and the server publishes `call`. `size` is the count of bytes of the encrypted audio.
+- The voicemail is encrypted for the account like a mail message (`sealEnvelope` in `shared/crypto.js`):
+  - `sealedKey`: the content key, sealed to the account. Open it with `openContentKey(keys, sealedKey)`.
+  - `encMeta`: `{ peer, seconds, contentType }`. Open it with `openMeta(contentKey, encMeta)`. `peer` is the caller, or `""` if the server was restarted between the call and the recording (the call itself still has the caller in `sealed`). `contentType` is `audio/mpeg` with Twilio and `audio/wav` with the mock provider.
+  - The audio: `GET /api/calls/:id/voicemail` gives part 1 of the envelope. Open it with `openAttachment(contentKey, bytes, 1)`.
+- What the server does when the provider reports a recording:
+  1. It finds the call. The call must have got the greeting not long ago, must have no voicemail yet, and the recording must be 1 second to `voicemailMaxSeconds` (+ 5) seconds long.
+  2. It fetches the audio from the provider (5 MB at most), encrypts it, and stores it. The plain audio is in memory only. It is never written to a file and never logged.
+  3. Then it deletes the recording at the provider. If that fails, a job tries again every hour, for 30 days.
+  4. It charges `prices.voicemail`. If the balance went down in the meantime, the user keeps the voicemail and nothing is charged.
+- A recording that is not accepted in step 1, that is too large, or that cannot be fetched is not stored and is deleted at the provider. This is also true for a recording that arrives after its call, number, or account was deleted.
+- The same report two times does nothing the second time.
+- `DELETE /api/calls/:id` deletes the voicemail of the call. The voicemails of a number go away with the number (delete, expiry) and with the account.
+- The automatic deletion of old texts does not delete calls or voicemails.
+
+**What the phone company hears and keeps.** The user must know this before voicemail is switched on:
+- The provider (for example Twilio) plays the greeting and records the audio itself. So the provider hears the complete message. Postern cannot encrypt a voicemail before the provider has it.
+- Postern deletes the recording at the provider right after it has stored its own encrypted copy. From then on only the browser of the account can play the message.
+- The provider can keep call records under its own policy: who called which number, when, and for how long. It can also have its own backups for some time. Postern cannot delete those.
+- Postern does not ask the provider for a transcription.
 
 ### Destination limits
 
@@ -494,37 +528,41 @@ A webhook for a number that is unknown or suspended gets the same answer as a we
 - `POST /api/hooks/phone/voice` — incoming call.
   - The call is forwarded if `forwardCalls` is on, the number has voice, the phone is verified, the caller is not the linked phone itself, and the balance is not below `prices.callMinute`.
   - Forwarded: the answer is a dial instruction to the real phone: ring time 25 seconds, caller ID = the number of the caller (none if the caller hides the number), and a time limit.
-  - Not forwarded: the caller hears "The person you called is not available.", the call ends, and a missed call is recorded.
+  - Not forwarded: a missed call is recorded. With voicemail (see "Voicemail") the caller hears the voicemail greeting and can leave a message. Without it the caller hears "The person you called is not available." and the call ends.
   - A call ID that is in the call log already is ignored.
 - `POST /api/hooks/phone/bridge?t=<token>` — click-to-call, runs when the real phone answers: dial the destination with the VoIP number as caller ID (ring time 25 seconds, with a time limit). The token is valid for 5 minutes. If the token is unknown, the number is suspended, or the balance is below `prices.callMinute`, the call ends and is recorded as `failed` with no charge.
 - `POST /api/hooks/phone/say-code?token=<token>` — phone link by call, runs when the real phone answers: speak the code two times, then end the call. The token is valid for 5 minutes. An unknown token ends the call.
 - `POST /api/hooks/phone/status` — a call ended. Record the call (`seconds`, `status`), charge `ceil(seconds / 60) × prices.callMinute` (kind `call`, never more than the balance), publish `call`.
   - Only the first final report for a call counts. A second report for the same call changes nothing and charges nothing.
   - `seconds` is the time that the two parties were connected. A call that was not answered has 0 seconds and no charge.
+  - The answer tells the provider how the call goes on: the voicemail greeting and the recording if an incoming forwarded call was not answered and voicemail applies (the call is then logged as `missed`), else "end the call".
+- `POST /api/hooks/phone/recording` — a voicemail recording is ready (see "Voicemail").
 
 The time limit of a dial instruction is the count of full minutes that the balance pays for (at least 1 minute, at most 4 hours). The provider ends the call at the limit. If `prices.callMinute` is 0, the limit is 4 hours.
 
-The call webhooks (`voice`, `bridge`, `say-code`, `status`) exist only if the provider has voice.
+The call webhooks (`voice`, `bridge`, `say-code`, `status`) exist only if the provider has voice. `recording` exists only if the provider also has voicemail.
 
 ### Provider adapters
 
 Adapters are in `server/phone/providers/`. The comment at the top of `mock.js` is the interface.
 
-- `capabilities = { voice, asyncText, searchByArea }` (all boolean):
-  - `voice`: the provider can make and receive calls. If false: the search and the number list show `voice: false`, new numbers are stored with no voice, and each call function gives 409 `no_voice` (`forwardCalls: true`, click-to-call, phone link by call).
+- `capabilities = { voice, voicemail, asyncText, searchByArea }` (all boolean):
+  - `voice`: the provider can make and receive calls. If false: the search and the number list show `voice: false`, new numbers are stored with no voice, and each call function gives 409 `no_voice` (`forwardCalls: true`, click-to-call, phone link by call, `voicemail: true`).
+  - `voicemail`: the provider can record a caller. If false, no caller gets the voicemail greeting.
   - `asyncText`: the result of a text can come after the send request.
   - `searchByArea`: the search can filter by area code. If false, `areaCode` is ignored.
-  - `mock`: `{ voice: true, asyncText: false, searchByArea: true }`. `twilio`: `{ voice: true, asyncText: true, searchByArea: true }`. With provider `off`: all false.
+  - `mock`: `{ voice: true, voicemail: true, asyncText: false, searchByArea: true }`. `twilio`: `{ voice: true, voicemail: true, asyncText: true, searchByArea: true }`. With provider `off`: all false.
 - `sendText({ from, to, body, statusUrl })` returns `{ ref, status }` with status `queued` or `sent`. A later result arrives at the `text-status` webhook, or the adapter calls `app.services.phone.reportTextStatus`.
 - `mock.js`: in memory; used by tests and development. Webhook bodies are JSON. The header `x-mock-signature` must be `keys.sign('mock-hook', rawBody)`.
 - `twilio.js`: REST with `fetch`, form-encoded webhooks, `X-Twilio-Signature` check, TwiML answers.
   - Each text carries `StatusCallback` = the `text-status` webhook. `MessageStatus` `queued` → `queued`; `sending`, `sent` → `sent`; `delivered` → `delivered`; `undelivered`, `failed` → `failed`. Also: `accepted` and `scheduled` count as `queued`, `read` as `delivered`, `canceled` as `failed`. Other values are ignored.
   - A call status `completed` is `answered`; `busy`, `no-answer`, `canceled` are `missed`; `failed` is `failed`. The result of a `<Dial>` (`DialCallStatus`, `DialCallDuration`) comes before the result of the whole call, so it is the one that counts.
   - Optional settings: `messagingServiceSid` (each new number is added to this Messaging Service, and texts name it), `bundleSid` and `addressSid` (sent with each purchase).
+  - Voicemail: `<Say>greeting</Say><Record maxLength="…" playBeep="true" trim="trim-silence" action="<status webhook>" method="POST" recordingStatusCallback="<recording webhook>" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"/><Hangup/>`. The `action` makes the call end cleanly after the recording. The audio is fetched as MP3 from `<baseUrl>/2010-04-01/Accounts/<sid>/Recordings/<RecordingSid>.mp3`. The address is built from the configured API address and the recording ID. The `RecordingUrl` of the webhook is never used, so the server sends no request and no password to a host that came in with a request. The recording is deleted with `DELETE …/Recordings/<RecordingSid>.json`.
 
 Service object: `app.services.phone = { provider, name, capabilities, reportTextStatus({ ref, status, errorText? }) → bool }`.
 - `reportTextStatus` is the function behind the `text-status` webhook. `ref` is the message ID that `sendText` returned. It returns true if the report changed something. `errorText` is for the server log only.
-- With the mock provider the object also has `mock` (the adapter), `outbox`, `simulateText({ to, from, body })`, `simulateCall({ to, from, seconds?, answered? })`, `answerCall(ref, { answered?, peerAnswered?, seconds? })` and `reportText(ref, status, errorText?)`.
+- With the mock provider the object also has `mock` (the adapter), `outbox`, `simulateText({ to, from, body })`, `simulateCall({ to, from, seconds?, answered?, voicemail? })`, `answerCall(ref, { answered?, peerAnswered?, seconds? })` and `reportText(ref, status, errorText?)`. For voicemail tests the adapter has `mock.addRecording({ bytes?, contentType? }) → ref`, `mock.reportRecording({ callId, recordingRef, seconds })`, `mock.recordings` and `mock.deletedRecordings`.
 - With provider `off`, `provider` is null.
 
 Provider `off`:
@@ -534,7 +572,8 @@ Provider `off`:
 
 Dev routes (register only if `config.dev` and the provider is `mock`):
 - `POST /api/dev/inbound-text` **(auth)** `{ numberId, number, from, body }` → 204
-- `POST /api/dev/inbound-call` **(auth)** `{ numberId, number, from, seconds? }` → 204 (simulates a full call: forwarded and answered if forwarding is on, otherwise missed; `seconds` is 30 if absent)
+- `POST /api/dev/inbound-call` **(auth)** `{ numberId, number, from, seconds?, voicemail? }` → 204 (simulates a full call: forwarded and answered if forwarding is on, otherwise missed; `seconds` is 30 if absent)
+  - `voicemail: true`: nobody answers, and the caller leaves a message of `seconds` seconds (5 if absent, `voicemailMaxSeconds` at most) if the number has voicemail on. The "recording" of the mock provider is a real WAV file (a tone of one second, 8 kHz, mono, 16 bit), so the app can play it.
 - `GET /api/dev/phone-outbox` **(auth)** → `{ texts: [{ from, to, body, at }], calls: [{ from, to, at, say? }] }` (what the mock provider "sent"). Own entries only: the sender is a number of the account, or the destination is a linked phone of the account. `say` is the text that a phone-link call spoke. It is there after the simulated phone answered.
 
 More behaviour of the mock provider:

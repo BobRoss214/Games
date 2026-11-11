@@ -9,6 +9,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ROOT, loadPlaywright, startServer, makeContext } from './lib.mjs';
 
+// node:sqlite (used by two tests to prepare rare states) prints an "experimental" notice. Keep the output clean.
+process.removeAllListeners('warning');
+process.on('warning', (w) => { if (w.name !== 'ExperimentalWarning') console.warn(w.stack || String(w)); });
+
 const filter = process.argv.slice(2);
 const dir = join(ROOT, 'e2e', 'tests');
 const files = readdirSync(dir).filter((f) => f.endsWith('.test.mjs')).sort().filter((f) => !filter.length || filter.some((w) => f.includes(w)));
