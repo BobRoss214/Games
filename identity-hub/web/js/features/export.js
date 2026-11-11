@@ -7,7 +7,7 @@
 //   export/collect.js  reads the data through the normal API and opens it in this browser
 //   export/viewer.js   the page that reads a file. It asks the server for nothing.
 import { h } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { store, appName } from '../lib/store.js';
 import { registerRoute, registerSettingsSection, registerWelcomeLink } from '../lib/registry.js';
 import { button, linkButton, runBusy } from '../ui/components.js';
 import { LARGE_EXPORT_BYTES } from '../lib/exportfile.js';
@@ -27,7 +27,7 @@ registerWelcomeLink({ id: 'open-export', label: 'Open an export file', path: VIE
 
 function exportSection() {
   const config = store.get('config') || {};
-  const app = config.appName || 'Postern';
+  const app = appName();
   const phone = !!(config.features && config.features.phone);
   const list = (title, items) => h('div', { class: 'prose' }, h('h3', null, title), h('ul', null, items.filter(Boolean).map((t) => h('li', null, t))));
   // The id is for links to this part of Settings: /settings#download-my-data

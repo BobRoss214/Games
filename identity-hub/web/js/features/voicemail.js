@@ -4,7 +4,7 @@
 // turns it on here. Before that, this section says the price, the longest message, the words
 // of the greeting, and what the phone company hears and keeps.
 import { h, replace } from '../lib/dom.js';
-import { store } from '../lib/store.js';
+import { store, appName } from '../lib/store.js';
 import { api, ApiError } from '../lib/api.js';
 import { registerNumberSetting, registerCallAddon } from '../lib/registry.js';
 import { loadNumbers } from '../lib/data.js';
@@ -17,7 +17,6 @@ import { voicemailLine } from './voicemail/line.js';
 // The words that the caller hears. The server says exactly this (docs/API.md, "Voicemail").
 export const GREETING = 'The person you called is not available. Please leave a message after the tone.';
 
-const appName = () => { const c = store.get('config'); return (c && c.appName) || 'Postern'; };
 const lengthText = (seconds) => (seconds % 60 === 0 ? `${seconds / 60} ${seconds === 60 ? 'minute' : 'minutes'}` : `${seconds} seconds`);
 
 // ---------- the Settings tab of a number ----------

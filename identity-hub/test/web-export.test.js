@@ -566,8 +566,8 @@ test('readExportHeader: junk input gives the plain error', async () => {
     new Blob([bytes.subarray(1)]), // the right file, moved by one byte
   ];
   for (const blob of junk) {
-    await assert.rejects(readExportHeader(blob), { message: 'This is not a Postern export file.' });
-    await assert.rejects(openExport(blob, { accountKey: account.accountKey }), { message: 'This is not a Postern export file.' });
+    await assert.rejects(readExportHeader(blob), { message: 'This is not an export file from this app.' });
+    await assert.rejects(openExport(blob, { accountKey: account.accountKey }), { message: 'This is not an export file from this app.' });
   }
   for (const notBlob of [null, undefined, 'file.postern', 42, {}, { size: 100 }, new Uint8Array(200), bytes]) {
     await assert.rejects(readExportHeader(notBlob), { message: EXPORT_ERRORS.notExport });

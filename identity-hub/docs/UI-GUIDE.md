@@ -52,7 +52,7 @@ Register at the top level of the file, not later. Keep heavy code in files that 
 | A code with "Copy" | `codeIn(text, subject)` gives the "Code 482913 · Copy" chip or `null`; `codeChip(found)` | `ui/code.js` |
 | Show an email body | `mailBody({ body: { text, html }, attachments, getAttachment, scope })`: the one viewer (cleaned HTML in a closed frame, remote images blocked). Never build a second one. | `ui/mailbody.js` |
 | Words for a recovery-key error | `recoveryMessage(err)` | `screens/signin.js` |
-| The product name | `appName()`, never the word "Postern" in a string: the person who runs the server can change the name | `lib/store.js` |
+| The product name | `appName()`, never the word "Postern" in a string: the person who runs the server can change the name. In `index.html` the token `%APP_NAME%` (the server fills it in). `test/web-words.test.js` checks this. | `lib/store.js` |
 | Open a shared dialog or place | `openAddPasskey()` gives `{ unlocks }` or `undefined` (`ui/passkeys.js`); `openAddFunds()` goes to Funds at "Add funds" (`screens/funds.js`); `openNewAlias()`, `openNewInbox()`, `openGetNumber()` (`ui/items.js`); `openNewIdentity()` (`ui/identity.js`) | see left |
 | Is a screen there? | `hasRoute('/stats')`: true for the app's own screens and for screens of feature files | `lib/registry.js` |
 | Things that happened in this tab | `bus.on('passkeys', fn)` (a passkey was added or removed), `bus.on('text-sent', fn)`; `store.get('passkeyCount')` (`null` while it loads) | `lib/store.js` |
@@ -228,7 +228,7 @@ Simple English for people who are not technical. Short sentences. Active voice. 
 | Phone online / Phone offline since … | the phone that carries a number of this server ("own phone"); a text that waits for it says "Waiting for the phone" | gateway, device, SIM status, queued |
 | possibly leaked | an alias that got mail from a sender it does not know. Always with "possibly". | leaked, compromised, breached |
 | code | a sign-up or login code found in a text or an email | OTP, token, 2FA code, PIN |
-| paused | an inbox or a number that waits for funds | suspended, frozen, inactive, expired |
+| paused | an inbox or a number that waits for funds | suspended, frozen, inactive, expired ("Expired" is right only for an invoice whose time ran out, on Funds) |
 | delete | remove for good: mail, an alias, an inbox, an identity, the account | remove (for these), erase, destroy, trash |
 | remove | take away a link, not data: a passkey, a real phone, random identifiers | delete (for these), unlink, revoke |
 | release (a number) | give a number back to the provider, for good | delete, cancel, drop |

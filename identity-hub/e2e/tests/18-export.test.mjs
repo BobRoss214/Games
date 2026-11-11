@@ -217,7 +217,7 @@ export default async function (t) {
     const junk = join(dir, 'notes.postern');
     writeFileSync(junk, 'These are my notes. They are not an export.');
     await chooseFile(vp, junk);
-    await vp.getByText('This is not a Postern export file.').waitFor();
+    await vp.getByText('This is not an export file from this app.').waitFor();
     t.ok('a file that is not an export gets a plain message');
 
     await chooseFile(vp, fullPath);

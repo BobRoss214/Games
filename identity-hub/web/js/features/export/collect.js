@@ -12,7 +12,7 @@
 // The server gets at most CONCURRENCY requests at the same time, and a "too many requests"
 // answer makes this code wait longer each time.
 import { api, ApiError, query } from '../../lib/api.js';
-import { store } from '../../lib/store.js';
+import { store, appName } from '../../lib/store.js';
 import { getKeys, openSealed } from '../../lib/session.js';
 import { loadMailboxes, loadAliases, loadNumbers, loadPhones } from '../../lib/data.js';
 import { loadIdentities } from '../../lib/identities.js';
@@ -199,9 +199,10 @@ export async function buildExport(survey, { lean = false, signal = null, onProgr
   if (!keys || !account) throw new Error('The app is locked. Unlock it, then start the export again.');
   const { gentle, pool, check } = makeGentle({ signal, onWait });
   const config = store.get('config') || {};
-  const appName = text(config.appName) || 'Postern';
+  // The header of the file has room for a short name.
+  const app = appName().slice(0, 40);
   const day = localDay();
-  const writer = createExportWriter({ accountKey: keys.accountKey, recoveryWrap: unb64u(account.recoveryWrap), appName, createdDay: day });
+  const writer = createExportWriter({ accountKey: keys.accountKey, recoveryWrap: unb64u(account.recoveryWrap), appName: app, createdDay: day });
   const skipped = { mail: 0, attachments: 0, voicemails: 0 };
 
   // Mail: the body and each attachment of every message.
@@ -286,7 +287,7 @@ export async function buildExport(survey, { lean = false, signal = null, onProgr
   const identityIds = new Set(survey.identities.map((g) => g.id));
   const inGroup = (id) => (id && identityIds.has(id) ? id : null);
   const index = {
-    v: 1, app: appName, createdDay: day,
+    v: 1, app, createdDay: day,
     inboxes: survey.mailboxes.map((m) => ({ id: m.id, address: text(m.address), label: text(m.label), note: text(m.note), status: text(m.status), addressId: text(m.addressId), createdDay: text(m.createdDay) })),
     aliases: survey.aliases.map((a) => {
       const raw = survey.aliasRaw.get(a.id) || {};
@@ -317,5 +318,5 @@ export async function buildExport(survey, { lean = false, signal = null, onProgr
   const blob = await writer.finish(index);
   check();
   onProgress({ part: 'file', done: 1, total: 1 });
-  return { blob, filename: exportFilename(appName, day), day, skipped, counts: { mail: index.mail.length, texts: index.texts.length, calls: index.calls.length } };
+  return { blob, filename: exportFilename(app, day), day, skipped, counts: { mail: index.mail.length, texts: index.texts.length, calls: index.calls.length } };
 }

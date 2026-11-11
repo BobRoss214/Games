@@ -1,8 +1,10 @@
 // The steps of the tutorial: which step is off, which is done, what a step costs, what it needs.
 // The words of the steps come from web/js/help/content.js. This file has no words of its own
-// for the steps, and it touches no page: every function gets plain data.
+// for the steps, and it touches no page: the functions get plain data (and the name of the
+// product from the store).
 import { TUTORIAL } from '../../help/content.js';
 import { money } from '../../lib/format.js';
+import { appName } from '../../lib/store.js';
 
 // The content file can get new steps. An entry that is no step (no id) is left out, so that
 // a mistake there cannot break the tutorial.
@@ -39,10 +41,10 @@ export function priceOf(step, config) {
 }
 
 // Puts the name of the product and the real price into a text of the content file.
+// The name comes from appName(): the person who runs the server can change it.
 export function fill(text, step, config) {
-  const app = (config && typeof config.appName === 'string' && config.appName) || 'Postern';
   const price = priceOf(step, config);
-  return String(text || '').replaceAll('{app}', app).replaceAll('{price}', money(price || 0));
+  return String(text || '').replaceAll('{app}', appName()).replaceAll('{price}', money(price || 0));
 }
 
 // A step is off when the part of the server that it needs is off.

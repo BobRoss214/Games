@@ -89,7 +89,7 @@ export const EXPORT_MIME_TYPE = 'application/octet-stream';
 
 // The messages are for the user. They say what is wrong and never show a key or file content.
 export const EXPORT_ERRORS = Object.freeze({
-  notExport: 'This is not a Postern export file.',
+  notExport: 'This is not an export file from this app.',
   tooNew: 'This export file was made by a newer version of the app. Update the app, then open the file again.',
   wrongKey: 'This key does not open this file.',
   damaged: 'This file is damaged or was changed. It cannot be opened safely.',
