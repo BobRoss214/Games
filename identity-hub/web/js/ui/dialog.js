@@ -9,7 +9,8 @@ export function closeAllDialogs() {
 
 // content: Node or (api) => Node, where api = { close, setBusy, setError, el }
 // Returns { close, el, closed: Promise<result> }.
-export function openDialog({ title, description = '', content, size = 'md', dismissable = true, cls = '' }) {
+// canClose: optional async function. If it returns false, the dialog stays open (unsaved text).
+export function openDialog({ title, description = '', content, size = 'md', dismissable = true, cls = '', canClose = null }) {
   const titleId = uid('dlg-title');
   const descId = description ? uid('dlg-desc') : null;
   let result;
@@ -25,22 +26,36 @@ export function openDialog({ title, description = '', content, size = 'md', dism
     setBusy(on) { dialog.toggleAttribute('data-busy', !!on); for (const el of dialog.querySelectorAll('button, input, select, textarea')) { if (on) { if (!el.disabled) { el.disabled = true; el.dataset.wasEnabled = '1'; } } else if (el.dataset.wasEnabled) { el.disabled = false; delete el.dataset.wasEnabled; } } },
   };
 
+  // Close asked by the person (X, Escape, backdrop). A form with unsaved text can say no.
+  let asking = false;
+  const tryClose = async () => {
+    if (!dismissable || dialog.hasAttribute('data-busy') || asking) return;
+    if (canClose) {
+      asking = true;
+      let ok = false;
+      try { ok = await canClose(); } finally { asking = false; }
+      if (!ok) return;
+    }
+    api.close();
+  };
+  api.tryClose = tryClose;
+
   const body = typeof content === 'function' ? content(api) : content;
   append(dialog,
     h('div', { class: 'dialog-head' },
       h('h2', { id: titleId, class: 'dialog-title' }, title),
-      dismissable ? h('button', { class: 'icon-btn dialog-x', type: 'button', 'aria-label': 'Close', onClick: () => api.close() }, icon('close', { size: 18 })) : null,
+      dismissable ? h('button', { class: 'icon-btn dialog-x', type: 'button', 'aria-label': 'Close', onClick: () => tryClose() }, icon('close', { size: 18 })) : null,
     ),
     description ? h('p', { id: descId, class: 'dialog-desc' }, description) : null,
     h('div', { class: 'dialog-body' }, body, errorBox),
   );
 
-  dialog.addEventListener('cancel', (e) => { if (!dismissable || dialog.hasAttribute('data-busy')) e.preventDefault(); });
+  dialog.addEventListener('cancel', (e) => { e.preventDefault(); tryClose(); });
   // A click on the backdrop closes the dialog (the click target is the dialog itself).
   let downOnBackdrop = false;
   dialog.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === dialog; });
   dialog.addEventListener('click', (e) => {
-    if (e.target === dialog && downOnBackdrop && dismissable && !dialog.hasAttribute('data-busy')) api.close();
+    if (e.target === dialog && downOnBackdrop) tryClose();
   });
   dialog.addEventListener('close', () => {
     openDialogs.delete(dialog);

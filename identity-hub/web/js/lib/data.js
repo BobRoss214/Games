@@ -6,6 +6,14 @@ import { decLabel, encLabel, openSealed, isUnlocked, vaultGet, vaultPut } from '
 
 const byCreated = (a, b) => String(a.createdDay || '').localeCompare(String(b.createdDay || ''));
 
+// Lists are reloaded often (every live event). The store changes only when the
+// content is different, so that screens do not repaint for nothing.
+function setList(key, value) {
+  const old = store.get(key);
+  if (old !== null && JSON.stringify(old) === JSON.stringify(value)) return;
+  store.set({ [key]: value });
+}
+
 // ---- loaders ----
 export async function loadMailboxes() {
   const { mailboxes } = await api.get('/api/mailboxes');
@@ -17,7 +25,7 @@ export async function loadMailboxes() {
     };
   }));
   if (!isUnlocked()) return [];
-  store.set({ mailboxes: out });
+  setList('mailboxes', out);
   return out;
 }
 
@@ -31,7 +39,7 @@ export async function loadAliases() {
     };
   }));
   if (!isUnlocked()) return [];
-  store.set({ aliases: out });
+  setList('aliases', out);
   return out;
 }
 
@@ -47,7 +55,7 @@ export async function loadNumbers() {
     };
   }));
   if (!isUnlocked()) return [];
-  store.set({ numbers: out });
+  setList('numbers', out);
   return out;
 }
 
@@ -59,7 +67,7 @@ export async function loadPhones() {
     return { id: p.id, number: sealed ? sealed.number : '', label: label.label || '', verified: !!p.verified, createdDay: p.createdDay };
   }));
   if (!isUnlocked()) return [];
-  store.set({ phones: out });
+  setList('phones', out);
   return out;
 }
 

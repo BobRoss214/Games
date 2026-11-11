@@ -1,0 +1,1033 @@
+// Phone module with the mock provider: numbers, texts, calls, linked phones, webhooks.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { startTestApp, client, newAccount, b64u, unb64u } from './helpers.js';
+import { openJson } from '../shared/crypto.js';
+import { randomBytes } from '../shared/bytes.js';
+import { ProviderError } from '../server/phone/providers/errors.js';
+
+const PUBLIC = 'http://localhost:8080';
+const STATUS_URL = PUBLIC + '/api/hooks/phone/status';
+const NOT_AVAILABLE = [{ say: 'The person you called is not available.' }, { hangup: true }];
+
+let app;
+let mock;
+// Every plain number and message text that the tests use. The last test looks for them in the database file.
+const secrets = [];
+
+before(async () => {
+  // mockAutoAnswer off: the tests decide when a simulated phone answers.
+  app = await startTestApp({ phone: { provider: 'mock', mockAutoAnswer: false } });
+  mock = app.services.phone.mock;
+});
+after(async () => { await app.stop(); });
+
+let counter = 0;
+const remember = (v) => { secrets.push(v); return v; };
+// A real mobile phone of a user, and a caller from the outside world.
+const realPhone = () => remember(`+1650555${2000 + counter++}`);
+const outsider = () => remember(`+1305555${2000 + counter++}`);
+const now = () => Math.floor(Date.now() / 1000);
+
+async function buyNumber(acct, query = 'country=US&areaCode=415') {
+  const s = await acct.api.get('/api/numbers/search?' + query);
+  assert.equal(s.status, 200);
+  const res = await acct.api.post('/api/numbers', { number: s.data.numbers[0].number });
+  assert.equal(res.status, 201);
+  return { ...res.data.number, plain: remember(res.data.plain) };
+}
+
+async function requestCode(acct, num, number, extra = {}) {
+  const res = await acct.api.post('/api/phones', { number, via: { numberId: num.id, number: num.plain }, ...extra });
+  if (res.status !== 201) return { res, code: null };
+  const sent = mock.outbox.texts.findLast((t) => t.to === number);
+  return { res, code: /code is (\d{6})\./.exec(sent.body)[1], sent };
+}
+
+async function linkPhone(acct, num, number = realPhone()) {
+  const { res, code } = await requestCode(acct, num, number);
+  assert.equal(res.status, 201);
+  const v = await acct.api.post(`/api/phones/${res.data.phone.id}/verify`, { code });
+  assert.equal(v.status, 200);
+  assert.equal(v.data.phone.verified, true);
+  return { ...v.data.phone, plain: number };
+}
+
+// A webhook request over HTTP, as the mock provider would send it. sig: undefined = valid, null = no header.
+function hook(name, payload, sig, query = '') {
+  const raw = JSON.stringify(payload);
+  const headers = { 'content-type': 'application/json' };
+  if (sig !== null) headers['x-mock-signature'] = sig ?? app.keys.sign('mock-hook', raw);
+  return client(app).call('POST', `/api/hooks/phone/${name}${query}`, raw, headers);
+}
+
+const texts = async (acct, num, query = '') => (await acct.api.get(`/api/numbers/${num.id}/texts${query}`)).data;
+const calls = async (acct, num) => (await acct.api.get(`/api/numbers/${num.id}/calls`)).data.calls;
+const openText = (acct, t) => openJson(acct.keys, unb64u(t.sealed), 'text');
+const openCall = (acct, k) => openJson(acct.keys, unb64u(k.sealed), 'call');
+const ledger = (acct) => app.store.ledger(acct.id).map((l) => `${l.kind}:${l.delta}`);
+const unread = async (acct, num) => (await acct.api.get('/api/numbers')).data.numbers.find((n) => n.id === num.id).unread;
+const countRows = (table, accountId) => app.db.get(`SELECT COUNT(*) AS n FROM ${table} WHERE account_id = ?`, accountId).n;
+
+test('numbers: search, buy, list; the sealed number opens with the account keys', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const b = await newAccount(app, { credits: 1000 });
+  assert.equal((await client(app).get('/api/numbers/search?country=US')).status, 401);
+  assert.equal((await a.api.get('/api/numbers/search?country=XX')).status, 400);
+  assert.equal((await a.api.get('/api/numbers/search?country=US&areaCode=41a')).status, 400);
+
+  const s = await a.api.get('/api/numbers/search?country=US&areaCode=212');
+  assert.equal(s.status, 200);
+  assert.equal(s.data.numbers.length, 20);
+  for (const n of s.data.numbers) {
+    assert.match(n.number, /^\+1212555\d{4}$/);
+    assert.deepEqual(Object.keys(n).sort(), ['country', 'locality', 'number', 'region', 'sms', 'voice']);
+    assert.equal(n.country, 'US');
+  }
+  const gb = await a.api.get('/api/numbers/search?country=gb');
+  assert.match(gb.data.numbers[0].number, /^\+447700900\d{3}$/);
+
+  const pick = remember(s.data.numbers[3].number);
+  const enc = b64u(randomBytes(48));
+  const made = await a.api.post('/api/numbers', { number: pick, enc });
+  assert.equal(made.status, 201);
+  assert.equal(made.data.plain, pick);
+  const n = made.data.number;
+  assert.match(n.id, /^[A-Za-z0-9_-]{22}$/);
+  assert.equal(n.enc, enc);
+  assert.equal(n.country, 'US');
+  assert.equal(n.sms, true);
+  assert.equal(n.voice, true);
+  assert.equal(n.status, 'active');
+  assert.ok(Math.abs(n.paidUntil - (now() + 30 * 86400)) < 60);
+  assert.match(n.createdDay, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(n.forwardPhoneId, null);
+  assert.equal(n.forwardTexts, false);
+  assert.equal(n.forwardCalls, false);
+  assert.equal(n.unread, 0);
+
+  // Only the account can read the number.
+  assert.deepEqual(await openJson(a.keys, unb64u(n.sealedNumber), 'number'), { number: pick });
+  await assert.rejects(openJson(b.keys, unb64u(n.sealedNumber), 'number'));
+
+  const list = await a.api.get('/api/numbers');
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.data.numbers, [n]);
+  assert.deepEqual((await b.api.get('/api/numbers')).data.numbers, []);
+  assert.equal((await client(app).get('/api/numbers')).status, 401);
+
+  // The charge.
+  assert.equal(app.store.balance(a.id), 600);
+  assert.deepEqual(ledger(a), ['number:-400', 'topup:1000']);
+  assert.ok([...mock.owned.values()].includes(pick));
+
+  // A number that is owned is not offered again and cannot be bought again.
+  const again = await b.api.get('/api/numbers/search?country=US&areaCode=212');
+  assert.equal(again.data.numbers.length, 20);
+  assert.ok(!again.data.numbers.some((x) => x.number === pick));
+  for (const who of [a, b]) {
+    const dup = await who.api.post('/api/numbers', { number: pick });
+    assert.equal(dup.status, 409);
+    assert.equal(dup.data.error.code, 'taken');
+  }
+  // A number that no search offered to this account cannot be bought.
+  const cold = await b.api.post('/api/numbers', { number: '+18005550123' });
+  assert.equal(cold.status, 409);
+  assert.equal(cold.data.error.code, 'taken');
+  assert.equal(app.store.balance(b.id), 1000);
+  assert.equal((await a.api.post('/api/numbers', { number: '4155550100' })).status, 400);
+  assert.equal((await a.api.post('/api/numbers', { number: pick, enc: b64u(randomBytes(2049)) })).status, 400);
+});
+
+test('numbers: 402 when the balance is too low, refund when the provider fails', async () => {
+  const poor = await newAccount(app, { credits: 399 });
+  const s = await poor.api.get('/api/numbers/search?country=US&areaCode=312');
+  const number = s.data.numbers[0].number;
+  const owned = mock.owned.size;
+  const res = await poor.api.post('/api/numbers', { number });
+  assert.equal(res.status, 402);
+  assert.equal(res.data.error.code, 'insufficient_funds');
+  assert.equal(res.data.error.needed, 400);
+  assert.equal(mock.owned.size, owned);
+  assert.equal(app.store.balance(poor.id), 399);
+
+  const a = await newAccount(app, { credits: 500 });
+  await a.api.get('/api/numbers/search?country=US&areaCode=312');
+  mock.failNext('buy');
+  const failed = await a.api.post('/api/numbers', { number });
+  assert.equal(failed.status, 502);
+  assert.equal(failed.data.error.code, 'provider_error');
+  assert.equal(app.store.balance(a.id), 500);
+  assert.deepEqual(ledger(a), ['refund:400', 'number:-400', 'topup:500']);
+  assert.deepEqual((await a.api.get('/api/numbers')).data.numbers, []);
+
+  // The provider says that the number is gone: 409, and the charge comes back too.
+  mock.failNext('buy', new ProviderError('gone', { unavailable: true }));
+  const gone = await a.api.post('/api/numbers', { number });
+  assert.equal(gone.status, 409);
+  assert.equal(gone.data.error.code, 'taken');
+  assert.equal(app.store.balance(a.id), 500);
+
+  // The offer is still good after a failure.
+  assert.equal((await a.api.post('/api/numbers', { number })).status, 201);
+  assert.equal(app.store.balance(a.id), 100);
+  remember(number);
+});
+
+test('numbers: limit', async () => {
+  const a = await newAccount(app, { credits: 2000 });
+  const old = app.config.limits.numbers;
+  app.config.limits.numbers = 2;
+  try {
+    await buyNumber(a, 'country=US&areaCode=512');
+    await buyNumber(a, 'country=US&areaCode=512');
+    const s = await a.api.get('/api/numbers/search?country=US&areaCode=512');
+    const res = await a.api.post('/api/numbers', { number: s.data.numbers[0].number });
+    assert.equal(res.status, 409);
+    assert.equal(res.data.error.code, 'limit_reached');
+    assert.equal(app.store.balance(a.id), 1200);
+
+    // Two requests at the same time cannot both pass the limit.
+    const c = await newAccount(app, { credits: 2000 });
+    await buyNumber(c, 'country=US&areaCode=512');
+    const offer = (await c.api.get('/api/numbers/search?country=US&areaCode=512')).data.numbers;
+    const both = await Promise.all([c.api.post('/api/numbers', { number: offer[0].number }), c.api.post('/api/numbers', { number: offer[1].number })]);
+    assert.deepEqual(both.map((r) => r.status).sort(), [201, 409]);
+    assert.equal(countRows('numbers', c.id), 2);
+    assert.equal(app.store.balance(c.id), 1200);
+    remember(both.find((r) => r.status === 201).data.plain);
+  } finally {
+    app.config.limits.numbers = old;
+  }
+});
+
+test('texts: send; charged, in the provider outbox, stored sealed', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const to = outsider();
+  const body = remember('Is the bike still for sale? 7f3a');
+  const res = await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body });
+  assert.equal(res.status, 201);
+  const t = res.data.text;
+  assert.equal(t.direction, 'out');
+  assert.equal(t.seen, true);
+  assert.ok(Math.abs(t.at - now()) < 60);
+  assert.deepEqual(await openText(a, t), { peer: to, body });
+
+  assert.equal(app.store.balance(a.id), 500 - 400 - 3);
+  assert.equal(ledger(a)[0], 'text:-3');
+  const sent = mock.outbox.texts.at(-1);
+  assert.equal(sent.from, num.plain);
+  assert.equal(sent.to, to);
+  assert.equal(sent.body, body);
+
+  const list = await texts(a, num);
+  assert.deepEqual(list, { texts: [t], more: false });
+  assert.equal(await unread(a, num), 0);
+
+  // The stored row has no plain text.
+  const row = app.db.get('SELECT * FROM texts WHERE id = ?', t.id);
+  assert.ok(!Buffer.from(row.sealed).includes(body));
+  assert.ok(!Buffer.from(row.sealed).includes(to));
+
+  // Bad input costs nothing and sends nothing.
+  const sentCount = mock.outbox.texts.length;
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '4155550100', body })).status, 400);
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body: '' })).status, 400);
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body: 'x'.repeat(1601) })).status, 400);
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body: 'x'.repeat(1600) })).status, 201);
+  assert.equal(mock.outbox.texts.length, sentCount + 1);
+
+  // The provider refuses: 502 with a plain message, and the charge comes back.
+  const before = app.store.balance(a.id);
+  mock.failNext('sendText', new ProviderError('The telephone provider refused this text.', { status: 400, code: 21610 }));
+  const refused = await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body: 'again' });
+  assert.equal(refused.status, 502);
+  assert.deepEqual(refused.data.error, { code: 'provider_error', message: 'The telephone provider refused this text.' });
+  assert.equal(app.store.balance(a.id), before);
+  assert.deepEqual(ledger(a).slice(0, 2), ['refund:3', 'text:-3']);
+  assert.equal((await texts(a, num)).texts.length, 2);
+
+  // No credits: 402.
+  const poor = await newAccount(app, { credits: 402 });
+  const pn = await buyNumber(poor);
+  const no = await poor.api.post(`/api/numbers/${pn.id}/texts`, { number: pn.plain, to, body: 'hi' });
+  assert.equal(no.status, 402);
+  assert.equal(no.data.error.needed, 3);
+});
+
+test('texts: the plain number must match the stored HMAC', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const other = await buyNumber(a);
+  const sent = mock.outbox.texts.length;
+  for (const wrong of [other.plain, '+14155559999']) {
+    const res = await a.api.post(`/api/numbers/${num.id}/texts`, { number: wrong, to: '+14155550001', body: 'hi' });
+    assert.equal(res.status, 400);
+    assert.equal(res.data.error.code, 'bad_request');
+  }
+  const call = await a.api.post(`/api/numbers/${num.id}/calls`, { number: other.plain, to: '+14155550001' });
+  assert.equal(call.status, 400);
+  const link = await a.api.post('/api/phones', { number: realPhone(), via: { numberId: num.id, number: other.plain } });
+  assert.equal(link.status, 400);
+  assert.equal(mock.outbox.texts.length, sent);
+  assert.equal(app.store.balance(a.id), 200);
+});
+
+test('webhook: incoming text with a valid signature; 403 with a bad one', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const from = outsider();
+  const body = remember('Yes, it is. Come at five. 91bc');
+
+  const ok = await hook('text', { to: num.plain, from, body });
+  assert.equal(ok.status, 200);
+  let list = await texts(a, num);
+  assert.equal(list.texts.length, 1);
+  assert.equal(list.texts[0].direction, 'in');
+  assert.equal(list.texts[0].seen, false);
+  assert.deepEqual(await openText(a, list.texts[0]), { peer: from, body });
+  assert.equal(await unread(a, num), 1);
+  // Receiving is free.
+  assert.equal(app.store.balance(a.id), 100);
+
+  // Wrong signature, signature of a different body, no signature.
+  const raw = JSON.stringify({ to: num.plain, from, body: 'other' });
+  for (const sig of ['AAAA', app.keys.sign('mock-hook', raw), app.keys.sign('other-purpose', JSON.stringify({ to: num.plain, from, body })), null, '']) {
+    const bad = await hook('text', { to: num.plain, from, body }, sig);
+    assert.equal(bad.status, 403);
+    assert.equal(bad.data.error.code, 'bad_signature');
+  }
+  for (const name of ['voice', 'bridge', 'status']) assert.equal((await hook(name, { to: num.plain, from, callId: 'x' }, 'AAAA')).status, 403);
+  assert.equal((await texts(a, num)).texts.length, 1);
+  assert.equal(countRows('calls', a.id), 0);
+
+  // A number that nobody has: the same answer as for a good one, and nothing is stored.
+  const total = app.db.get('SELECT COUNT(*) AS n FROM texts').n;
+  const unknown = await hook('text', { to: '+14155559876', from, body });
+  assert.equal(unknown.status, 200);
+  assert.deepEqual(unknown.data, ok.data);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM texts').n, total);
+
+  // Mark as seen, then delete.
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/texts/seen`)).status, 204);
+  assert.equal(await unread(a, num), 0);
+  list = await texts(a, num);
+  assert.equal(list.texts[0].seen, true);
+  assert.equal((await a.api.del(`/api/texts/${list.texts[0].id}`)).status, 204);
+  assert.equal((await a.api.del(`/api/texts/${list.texts[0].id}`)).status, 404);
+  assert.equal((await texts(a, num)).texts.length, 0);
+});
+
+test('texts: pages with before and limit', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const from = outsider();
+  for (let i = 0; i < 5; i++) await hook('text', { to: num.plain, from, body: `m${i}` });
+  // Give the rows different times: m0 is the oldest. m1 and m2 arrive in the same second.
+  const rows = app.db.all('SELECT id FROM texts WHERE number_id = ? ORDER BY rowid', num.id);
+  [100, 200, 200, 300, 400].forEach((at, i) => app.db.run('UPDATE texts SET at = ? WHERE id = ?', at, rows[i].id));
+  const bodies = async (list) => Promise.all(list.map(async (t) => (await openText(a, t)).body));
+
+  const all = await texts(a, num);
+  assert.deepEqual(await bodies(all.texts), ['m4', 'm3', 'm2', 'm1', 'm0']);
+  assert.equal(all.more, false);
+
+  const p1 = await texts(a, num, '?limit=2');
+  assert.deepEqual(await bodies(p1.texts), ['m4', 'm3']);
+  assert.equal(p1.more, true);
+  // The page would end between m2 and m1, which have the same time. It takes both, so that `before` skips nothing.
+  const p2 = await texts(a, num, `?limit=1&before=${p1.texts.at(-1).at}`);
+  assert.deepEqual(await bodies(p2.texts), ['m2', 'm1']);
+  assert.equal(p2.more, true);
+  const p3 = await texts(a, num, `?limit=2&before=${p2.texts.at(-1).at}`);
+  assert.deepEqual(await bodies(p3.texts), ['m0']);
+  assert.equal(p3.more, false);
+
+  assert.equal((await a.api.get(`/api/numbers/${num.id}/texts?limit=0`)).status, 400);
+  assert.equal((await a.api.get(`/api/numbers/${num.id}/texts?before=abc`)).status, 400);
+  assert.equal((await a.api.get(`/api/numbers/${num.id}/texts?limit=9999`)).status, 200);
+});
+
+test('texts: two accounts on this server text each other', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const b = await newAccount(app, { credits: 500 });
+  const na = await buyNumber(a);
+  const nb = await buyNumber(b);
+  const hello = remember('Hello B, this is A. c41d');
+  const reply = remember('Hello A, B here. e02f');
+
+  assert.equal((await a.api.post(`/api/numbers/${na.id}/texts`, { number: na.plain, to: nb.plain, body: hello })).status, 201);
+  let inbox = await texts(b, nb);
+  assert.equal(inbox.texts.length, 1);
+  assert.equal(inbox.texts[0].direction, 'in');
+  assert.deepEqual(await openText(b, inbox.texts[0]), { peer: na.plain, body: hello });
+  assert.equal(await unread(b, nb), 1);
+
+  assert.equal((await b.api.post(`/api/numbers/${nb.id}/texts`, { number: nb.plain, to: na.plain, body: reply })).status, 201);
+  inbox = await texts(a, na);
+  assert.deepEqual(inbox.texts.map((t) => t.direction).sort(), ['in', 'out']);
+  assert.deepEqual(await openText(a, inbox.texts.find((t) => t.direction === 'in')), { peer: nb.plain, body: reply });
+  // A cannot open what was sealed for B.
+  await assert.rejects(openText(a, (await texts(b, nb)).texts[0]));
+  // Only the sender pays.
+  assert.equal(app.store.balance(a.id), 97);
+  assert.equal(app.store.balance(b.id), 97);
+});
+
+test('phones: link with a code from a text, verify, wrong codes, expiry, limit', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const number = realPhone();
+
+  // No VoIP number yet.
+  const none = await a.api.post('/api/phones', { number, via: { numberId: 'x'.repeat(22), number: '+14155550100' } });
+  assert.equal(none.status, 409);
+  assert.equal(none.data.error.code, 'no_number');
+
+  const num = await buyNumber(a);
+  assert.equal((await a.api.post('/api/phones', { number })).status, 400);
+  assert.equal((await a.api.post('/api/phones', { number: '0123', via: { numberId: num.id, number: num.plain } })).status, 400);
+  assert.equal((await a.api.post('/api/phones', { number, via: { numberId: 'A'.repeat(22), number: num.plain } })).status, 404);
+  // One of the account's own VoIP numbers is not a real phone.
+  assert.equal((await a.api.post('/api/phones', { number: num.plain, via: { numberId: num.id, number: num.plain } })).status, 400);
+  assert.equal(app.store.balance(a.id), 600);
+
+  const enc = b64u(randomBytes(30));
+  const { res, code, sent } = await requestCode(a, num, number, { enc });
+  assert.equal(res.status, 201);
+  const phone = res.data.phone;
+  assert.deepEqual(Object.keys(phone).sort(), ['createdDay', 'enc', 'id', 'sealedNumber', 'verified']);
+  assert.equal(phone.verified, false);
+  assert.equal(phone.enc, enc);
+  assert.deepEqual(await openJson(a.keys, unb64u(phone.sealedNumber), 'phone'), { number });
+  assert.equal(sent.from, num.plain);
+  assert.equal(sent.body, `Your Postern code is ${code}. Do not share it.`);
+  assert.equal(app.store.balance(a.id), 597);
+  assert.equal(ledger(a)[0], 'text:-3');
+  assert.deepEqual((await a.api.get('/api/phones')).data.phones, [phone]);
+
+  // The database has a hash of the code, not the code. The number is encrypted for the server.
+  const row = app.db.get('SELECT * FROM phones WHERE id = ?', phone.id);
+  assert.equal(row.code_hash.length, 32);
+  assert.ok(Math.abs(row.code_expires - (now() + 600)) < 60);
+  assert.equal(app.keys.srvDecrypt(row.number_srv, 'phone').toString(), number);
+
+  // A phone that is not verified cannot be a forward target.
+  const early = await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id });
+  assert.equal(early.status, 409);
+
+  // Wrong code, malformed code.
+  const wrong = code === '000000' ? '000001' : '000000';
+  const bad = await a.api.post(`/api/phones/${phone.id}/verify`, { code: wrong });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.data.error.code, 'bad_code');
+  for (const c of ['12345', 'abcdef', 123456, undefined]) {
+    const r = await a.api.post(`/api/phones/${phone.id}/verify`, { code: c });
+    assert.equal(r.status, 400);
+    assert.equal(r.data.error.code, 'bad_code');
+  }
+  assert.equal(app.db.get('SELECT code_tries FROM phones WHERE id = ?', phone.id).code_tries, 1);
+
+  // The right code.
+  const good = await a.api.post(`/api/phones/${phone.id}/verify`, { code });
+  assert.equal(good.status, 200);
+  assert.equal(good.data.phone.verified, true);
+  assert.equal(app.db.get('SELECT code_hash FROM phones WHERE id = ?', phone.id).code_hash, null);
+  // A verified phone cannot be linked a second time.
+  const dup = await requestCode(a, num, number);
+  assert.equal(dup.res.status, 409);
+  assert.equal(dup.res.data.error.code, 'conflict');
+  assert.equal(app.store.balance(a.id), 597);
+
+  // Too many tries: after 5 wrong codes the right code does not work any more.
+  const second = realPhone();
+  const p2 = await requestCode(a, num, second);
+  const wrong2 = p2.code === '000000' ? '000001' : '000000';
+  for (let i = 0; i < 5; i++) assert.equal((await a.api.post(`/api/phones/${p2.res.data.phone.id}/verify`, { code: wrong2 })).status, 400);
+  const locked = await a.api.post(`/api/phones/${p2.res.data.phone.id}/verify`, { code: p2.code });
+  assert.equal(locked.status, 400);
+  assert.equal(locked.data.error.code, 'bad_code');
+  assert.equal((await a.api.get('/api/phones')).data.phones.find((p) => p.id === p2.res.data.phone.id).verified, false);
+
+  // The same request again sends a new code for the same phone. The old code is dead.
+  const p2b = await requestCode(a, num, second);
+  assert.equal(p2b.res.status, 201);
+  assert.equal(p2b.res.data.phone.id, p2.res.data.phone.id);
+  assert.equal((await a.api.get('/api/phones')).data.phones.length, 2);
+
+  // Expired code.
+  app.db.run('UPDATE phones SET code_expires = ? WHERE id = ?', now() - 1, p2.res.data.phone.id);
+  const late = await a.api.post(`/api/phones/${p2.res.data.phone.id}/verify`, { code: p2b.code });
+  assert.equal(late.status, 400);
+  assert.equal(late.data.error.code, 'bad_code');
+  const p2c = await requestCode(a, num, second);
+  assert.equal((await a.api.post(`/api/phones/${p2.res.data.phone.id}/verify`, { code: p2c.code })).status, 200);
+
+  // Limit.
+  const old = app.config.limits.phones;
+  app.config.limits.phones = 2;
+  try {
+    const over = await requestCode(a, num, realPhone());
+    assert.equal(over.res.status, 409);
+    assert.equal(over.res.data.error.code, 'limit_reached');
+  } finally {
+    app.config.limits.phones = old;
+  }
+
+  // The provider cannot send the code: nothing is linked and the charge comes back.
+  const balance = app.store.balance(a.id);
+  mock.failNext('sendText');
+  const failed = await requestCode(a, num, realPhone());
+  assert.equal(failed.res.status, 502);
+  assert.equal(app.store.balance(a.id), balance);
+  assert.equal((await a.api.get('/api/phones')).data.phones.length, 2);
+
+  // Delete clears the forwarding that used the phone.
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardTexts: true, forwardCalls: true });
+  assert.equal((await a.api.del(`/api/phones/${phone.id}`)).status, 204);
+  const after = (await a.api.get('/api/numbers')).data.numbers[0];
+  assert.equal(after.forwardPhoneId, null);
+  assert.equal(after.forwardTexts, false);
+  assert.equal(after.forwardCalls, false);
+  assert.equal((await a.api.del(`/api/phones/${phone.id}`)).status, 404);
+});
+
+test('forwarding: texts go to the verified phone and are charged; not when the balance is too low', async () => {
+  // Credits for the number, the code text, and exactly one forwarded text.
+  const a = await newAccount(app, { credits: 400 + 3 + 3 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  const stranger = await newAccount(app, { credits: 500 });
+  const sn = await buyNumber(stranger);
+  const foreign = await linkPhone(stranger, sn);
+
+  // The forward target must be a phone of this account.
+  assert.equal((await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: foreign.id })).status, 404);
+  assert.equal((await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: 'nope' })).status, 404);
+  assert.equal((await a.api.patch(`/api/numbers/${num.id}`, { forwardTexts: 'yes' })).status, 400);
+  const enc = b64u(randomBytes(20));
+  const set = await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardTexts: true, enc });
+  assert.equal(set.status, 200);
+  assert.equal(set.data.number.forwardPhoneId, phone.id);
+  assert.equal(set.data.number.forwardTexts, true);
+  assert.equal(set.data.number.forwardCalls, false);
+  assert.equal(set.data.number.enc, enc);
+
+  const from = outsider();
+  const first = remember('First message 5a5a');
+  const sent = mock.outbox.texts.length;
+  assert.equal((await hook('text', { to: num.plain, from, body: first })).status, 200);
+  assert.equal(mock.outbox.texts.length, sent + 1);
+  assert.deepEqual({ ...mock.outbox.texts.at(-1), at: 0 }, { from: num.plain, to: phone.plain, body: `${from}: ${first}`, at: 0 });
+  assert.equal(app.store.balance(a.id), 0);
+  assert.equal(ledger(a)[0], 'text:-3');
+
+  // The balance is 0 now: the text is stored but not forwarded.
+  const second = remember('Second message 6b6b');
+  assert.equal((await hook('text', { to: num.plain, from, body: second })).status, 200);
+  assert.equal(mock.outbox.texts.length, sent + 1);
+  assert.equal((await texts(a, num)).texts.length, 2);
+  assert.equal(await unread(a, num), 2);
+
+  // A text from the linked phone itself is not sent back to it.
+  app.store.credit(a.id, 100, 'topup');
+  assert.equal((await hook('text', { to: num.plain, from: phone.plain, body: 'from my own phone' })).status, 200);
+  assert.equal(mock.outbox.texts.length, sent + 1);
+  assert.equal(app.store.balance(a.id), 100);
+
+  // The provider refuses the forward: the text stays and the charge comes back.
+  mock.failNext('sendText');
+  assert.equal((await hook('text', { to: num.plain, from, body: 'third' })).status, 200);
+  assert.equal(app.store.balance(a.id), 100);
+  assert.equal((await texts(a, num)).texts.length, 4);
+
+  // Forwarding off: nothing goes out.
+  assert.equal((await a.api.patch(`/api/numbers/${num.id}`, { forwardTexts: false })).data.number.forwardTexts, false);
+  await hook('text', { to: num.plain, from, body: 'fourth' });
+  assert.equal(mock.outbox.texts.length, sent + 1);
+
+  // Clearing the phone also clears the switches.
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardTexts: true, forwardCalls: true });
+  const cleared = await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: null });
+  assert.equal(cleared.data.number.forwardPhoneId, null);
+  assert.equal(cleared.data.number.forwardTexts, false);
+  assert.equal(cleared.data.number.forwardCalls, false);
+});
+
+test('forwarding: an incoming call rings the verified phone; the status webhook writes the log and charges', async () => {
+  // After the number and the code text, 4 credits are left.
+  const a = await newAccount(app, { credits: 400 + 3 + 4 + 6 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  const caller = outsider();
+
+  // No forwarding yet: the caller hears a message, and a missed call is recorded.
+  const v0 = await hook('voice', { to: num.plain, from: caller, callId: 'call-0' });
+  assert.equal(v0.status, 200);
+  assert.deepEqual(v0.data.actions, NOT_AVAILABLE);
+  let log = await calls(a, num);
+  assert.equal(log.length, 1);
+  assert.deepEqual({ direction: log[0].direction, seconds: log[0].seconds, status: log[0].status }, { direction: 'in', seconds: 0, status: 'missed' });
+  assert.deepEqual(await openCall(a, log[0]), { peer: caller });
+  // A late status report for that call changes nothing.
+  await hook('status', { callId: 'call-0', status: 'answered', seconds: 500 });
+  assert.equal(app.store.balance(a.id), 10);
+
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardCalls: true });
+  const v1 = await hook('voice', { to: num.plain, from: caller, callId: 'call-1' });
+  assert.equal(v1.status, 200);
+  // The real phone rings for 25 seconds and shows the original caller.
+  assert.deepEqual(v1.data.actions, [{ dial: { number: phone.plain, callerId: caller, timeout: 25, actionUrl: STATUS_URL } }]);
+  assert.equal((await calls(a, num)).length, 1);
+
+  const st = await hook('status', { callId: 'call-1', status: 'answered', seconds: 61 });
+  assert.equal(st.status, 200);
+  assert.deepEqual(st.data.actions, [{ hangup: true }]);
+  log = await calls(a, num);
+  assert.equal(log.length, 2);
+  assert.deepEqual({ direction: log[0].direction, seconds: log[0].seconds, status: log[0].status }, { direction: 'in', seconds: 61, status: 'answered' });
+  assert.deepEqual(await openCall(a, log[0]), { peer: caller });
+  // 61 seconds are 2 minutes.
+  assert.equal(app.store.balance(a.id), 4);
+  assert.equal(ledger(a)[0], 'call:-6');
+
+  // The provider reports the end of the same call again: no second charge, no second row.
+  await hook('status', { callId: 'call-1', status: 'answered', seconds: 600 });
+  assert.equal(app.store.balance(a.id), 4);
+  assert.equal((await calls(a, num)).length, 2);
+  // A status for a call that never started does nothing.
+  await hook('status', { callId: 'call-unknown', status: 'answered', seconds: 600 });
+  assert.equal(app.store.balance(a.id), 4);
+
+  // A long call with a small balance: the charge is never more than the balance.
+  await hook('voice', { to: num.plain, from: caller, callId: 'call-2' });
+  await hook('status', { callId: 'call-2', status: 'answered', seconds: 240 });
+  assert.equal(app.store.balance(a.id), 0);
+  assert.equal(ledger(a)[0], 'call:-4');
+
+  // Balance below one minute: not forwarded, recorded as missed.
+  const v3 = await hook('voice', { to: num.plain, from: caller, callId: 'call-3' });
+  assert.deepEqual(v3.data.actions, NOT_AVAILABLE);
+  log = await calls(a, num);
+  assert.equal(log.length, 4);
+  assert.equal(log[0].status, 'missed');
+
+  // Forwarded but nobody answers: missed, no charge.
+  app.store.credit(a.id, 50, 'topup');
+  await hook('voice', { to: num.plain, from: caller, callId: 'call-4' });
+  await hook('status', { callId: 'call-4', status: 'missed', seconds: 0 });
+  log = await calls(a, num);
+  assert.equal(log[0].status, 'missed');
+  assert.equal(app.store.balance(a.id), 50);
+
+  // A hidden caller: forwarded with no caller ID.
+  const v5 = await hook('voice', { to: num.plain, from: 'anonymous', callId: 'call-5' });
+  assert.deepEqual(v5.data.actions, [{ dial: { number: phone.plain, callerId: null, timeout: 25, actionUrl: STATUS_URL } }]);
+  await hook('status', { callId: 'call-5', status: 'failed', seconds: 0 });
+  log = await calls(a, num);
+  assert.equal(log[0].status, 'failed');
+  assert.deepEqual(await openCall(a, log[0]), { peer: 'anonymous' });
+
+  // A call to a number that nobody has gets the same neutral answer, and nothing is stored.
+  const total = app.db.get('SELECT COUNT(*) AS n FROM calls').n;
+  const vx = await hook('voice', { to: '+14155559876', from: caller, callId: 'call-x' });
+  assert.equal(vx.status, 200);
+  assert.deepEqual(vx.data.actions, NOT_AVAILABLE);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM calls').n, total);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM live_calls').n, 0);
+
+  // Delete a call from the log.
+  assert.equal((await a.api.del(`/api/calls/${log[0].id}`)).status, 204);
+  assert.equal((await a.api.del(`/api/calls/${log[0].id}`)).status, 404);
+  assert.equal((await calls(a, num)).length, 5);
+});
+
+test('click-to-call: the real phone rings first, the bridge webhook connects it with the VoIP number as caller ID', async () => {
+  const a = await newAccount(app, { credits: 400 + 3 + 2 });
+  const num = await buyNumber(a);
+  const to = outsider();
+
+  // No verified phone on this number.
+  const early = await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to });
+  assert.equal(early.status, 409);
+  assert.equal(early.data.error.code, 'no_phone');
+
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id });
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to: 'abc' })).status, 400);
+
+  // 2 credits are less than one minute.
+  const poor = await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to });
+  assert.equal(poor.status, 402);
+  assert.equal(poor.data.error.needed, 3);
+  assert.equal(mock.ringing.size, 0);
+
+  app.store.credit(a.id, 98, 'topup');
+  const res = await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to });
+  assert.equal(res.status, 201);
+  assert.deepEqual(res.data, { ok: true });
+
+  // The provider calls the real phone from the VoIP number.
+  const first = mock.outbox.calls.at(-1);
+  assert.equal(first.from, num.plain);
+  assert.equal(first.to, phone.plain);
+  const ringing = mock.ringing.get(first.ref);
+  const answerUrl = new URL(ringing.answerUrl);
+  assert.equal(answerUrl.origin, PUBLIC);
+  assert.equal(answerUrl.pathname, '/api/hooks/phone/bridge');
+  assert.match(answerUrl.searchParams.get('t'), /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(ringing.statusUrl, STATUS_URL);
+  assert.equal((await calls(a, num)).length, 0);
+
+  // The real phone answers: the provider asks the bridge webhook what to do.
+  const wrongToken = await hook('bridge', { callId: first.ref }, undefined, '?t=' + 'A'.repeat(43));
+  assert.equal(wrongToken.status, 200);
+  assert.deepEqual(wrongToken.data.actions, [{ hangup: true }]);
+  assert.deepEqual((await hook('bridge', { callId: first.ref })).data.actions, [{ hangup: true }]);
+  const bridge = await hook('bridge', { callId: first.ref }, undefined, answerUrl.search);
+  assert.equal(bridge.status, 200);
+  assert.deepEqual(bridge.data.actions, [{ dial: { number: to, callerId: num.plain, timeout: 25, actionUrl: STATUS_URL } }]);
+
+  // The call ends after 130 seconds: 3 minutes.
+  const st = await hook('status', { callId: first.ref, status: 'answered', seconds: 130 });
+  assert.equal(st.status, 200);
+  const log = await calls(a, num);
+  assert.equal(log.length, 1);
+  assert.deepEqual({ direction: log[0].direction, seconds: log[0].seconds, status: log[0].status }, { direction: 'out', seconds: 130, status: 'answered' });
+  assert.deepEqual(await openCall(a, log[0]), { peer: to });
+  assert.equal(app.store.balance(a.id), 100 - 9);
+  assert.equal(ledger(a)[0], 'call:-9');
+
+  // The same flow with the mock helper; the destination does not answer.
+  await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to });
+  const ref2 = mock.outbox.calls.at(-1).ref;
+  const out = await mock.answerCall(ref2, { peerAnswered: false });
+  assert.equal(out.bridged, true);
+  assert.deepEqual({ ...mock.outbox.calls.at(-1), at: 0 }, { from: num.plain, to, at: 0, ref: ref2 });
+  assert.equal((await calls(a, num))[0].status, 'missed');
+  assert.equal(app.store.balance(a.id), 91);
+
+  // The real phone does not answer at all.
+  await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to });
+  await mock.answerCall(mock.outbox.calls.at(-1).ref, { answered: false });
+  assert.equal((await calls(a, num)).length, 3);
+  assert.equal(app.store.balance(a.id), 91);
+
+  // The provider cannot start the call.
+  mock.failNext('startCall');
+  const failed = await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to });
+  assert.equal(failed.status, 502);
+  assert.equal(failed.data.error.code, 'provider_error');
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM live_calls').n, 0);
+});
+
+test('delete: the number is released at the provider; its texts and calls go away', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const keep = await buyNumber(a);
+  await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: outsider(), body: 'bye' });
+  await hook('voice', { to: num.plain, from: outsider(), callId: 'del-1' });
+  assert.equal(countRows('texts', a.id), 1);
+  assert.equal(countRows('calls', a.id), 1);
+  const ref = [...mock.owned.entries()].find(([, n]) => n === num.plain)[0];
+
+  // The provider fails: 502, and the number stays.
+  mock.failNext('release');
+  const failed = await a.api.del(`/api/numbers/${num.id}`);
+  assert.equal(failed.status, 502);
+  assert.equal(failed.data.error.code, 'provider_error');
+  assert.equal((await a.api.get('/api/numbers')).data.numbers.length, 2);
+  assert.ok(mock.owned.has(ref));
+
+  assert.equal((await a.api.del(`/api/numbers/${num.id}`)).status, 204);
+  assert.ok(mock.released.includes(ref));
+  assert.ok(!mock.owned.has(ref));
+  assert.deepEqual((await a.api.get('/api/numbers')).data.numbers.map((n) => n.id), [keep.id]);
+  assert.equal(countRows('texts', a.id), 0);
+  assert.equal(countRows('calls', a.id), 0);
+  assert.equal((await a.api.del(`/api/numbers/${num.id}`)).status, 404);
+  assert.equal((await a.api.get(`/api/numbers/${num.id}/texts`)).status, 404);
+
+  // A text to the deleted number goes nowhere.
+  const total = app.db.get('SELECT COUNT(*) AS n FROM texts').n;
+  assert.equal((await hook('text', { to: num.plain, from: outsider(), body: 'anyone?' })).status, 200);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM texts').n, total);
+
+  // The provider does not know the number any more: that counts as released.
+  mock.failNext('release', new ProviderError('gone', { notFound: true, status: 404 }));
+  assert.equal((await a.api.del(`/api/numbers/${keep.id}`)).status, 204);
+  assert.deepEqual((await a.api.get('/api/numbers')).data.numbers, []);
+  // No refund for the rest of the month.
+  assert.equal(app.store.balance(a.id), 197);
+});
+
+test('renewal: charge when due, suspend without credits, expire after the grace period', async () => {
+  const a = await newAccount(app, { credits: 400 + 3 + 400 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardTexts: true, forwardCalls: true });
+  const state = async () => (await a.api.get('/api/numbers')).data.numbers.find((n) => n.id === num.id);
+
+  // Not due: nothing happens.
+  await app.runJobs('renew');
+  assert.equal(app.store.balance(a.id), 400);
+
+  // Due, and the balance is enough: one more period.
+  app.db.run('UPDATE numbers SET paid_until = ? WHERE id = ?', now() - 10, num.id);
+  await app.runJobs('renew');
+  assert.equal(app.store.balance(a.id), 0);
+  assert.equal(ledger(a)[0], 'number:-400');
+  assert.equal((await state()).status, 'active');
+  assert.ok(Math.abs((await state()).paidUntil - (now() + 30 * 86400)) < 60);
+
+  // Due again with no credits: suspended.
+  app.db.run('UPDATE numbers SET paid_until = ? WHERE id = ?', now() - 10, num.id);
+  await app.runJobs('renew');
+  assert.equal((await state()).status, 'suspended');
+
+  // A suspended number receives nothing and cannot send.
+  app.store.credit(a.id, 50, 'topup');
+  const sent = mock.outbox.texts.length;
+  assert.equal((await hook('text', { to: num.plain, from: outsider(), body: 'hello?' })).status, 200);
+  assert.equal((await texts(a, num)).texts.length, 0);
+  assert.equal(mock.outbox.texts.length, sent);
+  assert.deepEqual((await hook('voice', { to: num.plain, from: outsider(), callId: 'sus-1' })).data.actions, NOT_AVAILABLE);
+  assert.equal((await calls(a, num)).length, 0);
+  for (const path of ['texts', 'calls']) {
+    const res = await a.api.post(`/api/numbers/${num.id}/${path}`, { number: num.plain, to: outsider(), body: 'x' });
+    assert.equal(res.status, 409);
+    assert.equal(res.data.error.code, 'suspended');
+  }
+  const link = await requestCode(a, num, realPhone());
+  assert.equal(link.res.status, 409);
+  assert.equal(link.res.data.error.code, 'no_number');
+  assert.equal(app.store.balance(a.id), 50);
+
+  // New credits bring it back.
+  app.store.credit(a.id, 350, 'topup');
+  await app.renewables.run(a.id);
+  assert.equal((await state()).status, 'active');
+  assert.equal(app.store.balance(a.id), 0);
+  assert.equal((await hook('text', { to: num.plain, from: outsider(), body: 'hello again' })).status, 200);
+  assert.equal((await texts(a, num)).texts.length, 1);
+
+  // Suspended and still inside the grace period: the number stays.
+  const grace = app.config.graceDays * 86400;
+  app.db.run('UPDATE numbers SET paid_until = ? WHERE id = ?', now() - 10, num.id);
+  await app.runJobs('renew');
+  assert.equal((await state()).status, 'suspended');
+  app.db.run('UPDATE numbers SET paid_until = ? WHERE id = ?', now() - grace + 3600, num.id);
+  await app.runJobs('renew');
+  assert.equal((await state()).status, 'suspended');
+
+  // After the grace period: the provider fails first, so the row stays for the next run.
+  const ref = [...mock.owned.entries()].find(([, n]) => n === num.plain)[0];
+  app.db.run('UPDATE numbers SET paid_until = ? WHERE id = ?', now() - grace - 3600, num.id);
+  mock.failNext('release');
+  await app.runJobs('renew');
+  assert.ok(await state());
+  assert.ok(mock.owned.has(ref));
+  await app.runJobs('renew');
+  assert.equal(await state(), undefined);
+  assert.ok(mock.released.includes(ref));
+  assert.equal(countRows('texts', a.id), 0);
+});
+
+test('account delete: all numbers go back to the provider', async () => {
+  const a = await newAccount(app, { credits: 1300 });
+  const n1 = await buyNumber(a);
+  const n2 = await buyNumber(a);
+  const n3 = await buyNumber(a);
+  await linkPhone(a, n1);
+  await hook('text', { to: n1.plain, from: outsider(), body: 'before the end' });
+  const refOf = (n) => [...mock.owned.entries()].find(([, v]) => v === n.plain)[0];
+  const refs = [refOf(n1), refOf(n2), refOf(n3)];
+
+  // One release fails. The number is remembered (with no account) and a job tries again.
+  mock.failNext('release');
+  await app.deleteAccount(a.id);
+  assert.equal(refs.filter((r) => mock.released.includes(r)).length, 2);
+  for (const table of ['numbers', 'phones', 'texts', 'calls', 'live_calls']) assert.equal(countRows(table, a.id), 0);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM release_later').n, 1);
+  await app.runJobs('phone-cleanup');
+  assert.equal(refs.filter((r) => mock.released.includes(r)).length, 3);
+  assert.equal(app.db.get('SELECT COUNT(*) AS n FROM release_later').n, 0);
+  assert.equal((await a.api.get('/api/numbers')).status, 401);
+
+  // The numbers are free again.
+  const b = await newAccount(app, { credits: 500 });
+  const s = await b.api.get('/api/numbers/search?country=US&areaCode=415');
+  assert.ok(s.data.numbers.some((n) => n.number === n1.plain));
+});
+
+test('isolation: another account gets 404 for every ID', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const b = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  const bn = await buyNumber(b);
+  await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: outsider(), body: 'private' });
+  await hook('voice', { to: num.plain, from: outsider(), callId: 'iso-1' });
+  const textId = (await texts(a, num)).texts[0].id;
+  const callId = (await calls(a, num))[0].id;
+  const pending = await requestCode(a, num, realPhone());
+  const sent = mock.outbox.texts.length;
+
+  const tries = [
+    b.api.get(`/api/numbers/${num.id}/texts`),
+    b.api.get(`/api/numbers/${num.id}/calls`),
+    b.api.patch(`/api/numbers/${num.id}`, { forwardTexts: true }),
+    b.api.del(`/api/numbers/${num.id}`),
+    b.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+14155550001', body: 'spoof' }),
+    b.api.post(`/api/numbers/${num.id}/texts/seen`),
+    b.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to: '+14155550001' }),
+    b.api.del(`/api/texts/${textId}`),
+    b.api.del(`/api/calls/${callId}`),
+    b.api.post(`/api/phones/${pending.res.data.phone.id}/verify`, { code: pending.code }),
+    b.api.del(`/api/phones/${phone.id}`),
+    b.api.patch(`/api/numbers/${bn.id}`, { forwardPhoneId: phone.id }),
+    b.api.post('/api/phones', { number: realPhone(), via: { numberId: num.id, number: num.plain } }),
+    b.api.post('/api/dev/inbound-text', { numberId: num.id, number: num.plain, from: '+14155550001', body: 'x' }),
+  ];
+  for (const res of await Promise.all(tries)) {
+    assert.equal(res.status, 404);
+    assert.equal(res.data.error.code, 'not_found');
+  }
+  // Nothing of A changed, and nothing went out.
+  assert.equal(mock.outbox.texts.length, sent);
+  assert.equal((await texts(a, num)).texts.length, 1);
+  assert.equal((await calls(a, num)).length, 1);
+  assert.equal((await a.api.get('/api/phones')).data.phones.length, 2);
+  assert.equal((await a.api.get('/api/numbers')).data.numbers.length, 1);
+  assert.deepEqual((await b.api.get('/api/phones')).data.phones, []);
+  assert.equal((await b.api.get('/api/numbers')).data.numbers.length, 1);
+  // B cannot use A's plain number with its own number ID.
+  const spoof = await b.api.post(`/api/numbers/${bn.id}/texts`, { number: num.plain, to: '+14155550001', body: 'spoof' });
+  assert.equal(spoof.status, 400);
+  // No cookie at all.
+  for (const path of ['/api/numbers', '/api/phones', `/api/numbers/${num.id}/texts`, `/api/numbers/${num.id}/calls`, '/api/dev/phone-outbox']) {
+    assert.equal((await client(app).get(path)).status, 401);
+  }
+});
+
+test('dev routes: simulated text and call, and the outbox shows own entries only', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const b = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const bn = await buyNumber(b);
+  const phone = await linkPhone(a, num);
+  const from = outsider();
+  const body = remember('Simulated hello d00d');
+
+  assert.equal((await a.api.post('/api/dev/inbound-text', { numberId: num.id, number: num.plain, from, body })).status, 204);
+  const list = await texts(a, num);
+  assert.deepEqual(await openText(a, list.texts[0]), { peer: from, body });
+  assert.equal((await a.api.post('/api/dev/inbound-text', { numberId: num.id, number: bn.plain, from, body })).status, 400);
+
+  // Without forwarding the simulated call is missed.
+  assert.equal((await a.api.post('/api/dev/inbound-call', { numberId: num.id, number: num.plain, from })).status, 204);
+  assert.equal((await calls(a, num))[0].status, 'missed');
+  // With forwarding it is answered and charged.
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardCalls: true });
+  const before = app.store.balance(a.id);
+  assert.equal((await a.api.post('/api/dev/inbound-call', { numberId: num.id, number: num.plain, from, seconds: 90 })).status, 204);
+  const log = await calls(a, num);
+  assert.deepEqual({ seconds: log[0].seconds, status: log[0].status }, { seconds: 90, status: 'answered' });
+  assert.equal(app.store.balance(a.id), before - 6);
+
+  await b.api.post(`/api/numbers/${bn.id}/texts`, { number: bn.plain, to: outsider(), body: 'from B' });
+  const outA = await a.api.get('/api/dev/phone-outbox');
+  assert.equal(outA.status, 200);
+  // A sees its code text and its forwarded call, not the text of B.
+  assert.equal(outA.data.texts.length, 1);
+  assert.match(outA.data.texts[0].body, /^Your Postern code is \d{6}\./);
+  assert.deepEqual(Object.keys(outA.data.texts[0]).sort(), ['at', 'body', 'from', 'to']);
+  assert.deepEqual(outA.data.calls.map((k) => ({ from: k.from, to: k.to })), [{ from, to: phone.plain }]);
+  const outB = await b.api.get('/api/dev/phone-outbox');
+  assert.deepEqual(outB.data.texts.map((t) => t.body), ['from B']);
+  assert.deepEqual(outB.data.calls, []);
+});
+
+test('mock provider: a click-to-call ends by itself when auto answer is on', async () => {
+  const dev = await startTestApp({ phone: { provider: 'mock', mockAutoAnswer: 5 } });
+  try {
+    const m = dev.services.phone.mock;
+    const a = await newAccount(dev, { credits: 1000 });
+    const s = await a.api.get('/api/numbers/search?country=CA');
+    const made = await a.api.post('/api/numbers', { number: s.data.numbers[0].number });
+    const num = { ...made.data.number, plain: made.data.plain };
+    const number = '+16505550001';
+    const linked = await a.api.post('/api/phones', { number, via: { numberId: num.id, number: num.plain } });
+    const code = /code is (\d{6})/.exec(m.outbox.texts.at(-1).body)[1];
+    await a.api.post(`/api/phones/${linked.data.phone.id}/verify`, { code });
+    await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: linked.data.phone.id });
+    assert.equal((await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to: '+13055550001' })).status, 201);
+    let log = [];
+    for (let i = 0; i < 200 && log.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      log = (await a.api.get(`/api/numbers/${num.id}/calls`)).data.calls;
+    }
+    assert.equal(log.length, 1);
+    assert.equal(log[0].status, 'answered');
+    assert.equal(log[0].direction, 'out');
+  } finally {
+    await dev.stop();
+  }
+});
+
+test('provider off: lists work and are empty; search and create answer 503', async () => {
+  const off = await startTestApp({ phone: { provider: 'off' } });
+  try {
+    assert.equal(off.services.phone.provider, null);
+    const a = await newAccount(off, { credits: 1000 });
+    assert.deepEqual((await a.api.get('/api/numbers')).data, { numbers: [] });
+    assert.deepEqual((await a.api.get('/api/phones')).data, { phones: [] });
+    const tries = [
+      a.api.get('/api/numbers/search?country=US'),
+      a.api.post('/api/numbers', { number: '+14155550100' }),
+      a.api.post('/api/phones', { number: '+16505550001', via: { numberId: 'x', number: '+14155550100' } }),
+    ];
+    for (const res of await Promise.all(tries)) {
+      assert.equal(res.status, 503);
+      assert.equal(res.data.error.code, 'phone_off');
+    }
+    // No webhook and no development route without a provider.
+    assert.equal((await client(off).post('/api/hooks/phone/text', {})).status, 404);
+    assert.equal((await a.api.get('/api/dev/phone-outbox')).status, 404);
+    assert.equal(off.store.balance(a.id), 1000);
+  } finally {
+    await off.stop();
+  }
+});
+
+test('database file: no plain number and no message text on the disk', async () => {
+  // One more full round, so that every kind of row is in the file.
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardTexts: true, forwardCalls: true });
+  const peer = outsider();
+  const body = remember('The last secret text 0c0c');
+  await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: peer, body });
+  await hook('text', { to: num.plain, from: peer, body });
+  await mock.simulateCall({ to: num.plain, from: peer, seconds: 20 });
+  await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to: peer });
+  assert.ok(app.db.get('SELECT COUNT(*) AS n FROM live_calls').n >= 1);
+
+  app.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  const files = ['accounts.db', 'accounts.db-wal'].map((f) => join(app.config.dataDir, f)).filter(existsSync);
+  const bytes = Buffer.concat(files.map((f) => readFileSync(f)));
+  assert.ok(bytes.length > 50_000);
+  // The search works: the account ID is in the file in plain form.
+  assert.ok(bytes.includes(a.id));
+  assert.ok(secrets.length > 40);
+  for (const s of new Set(secrets)) {
+    assert.ok(!bytes.includes(s), 'found a plain value in the database file');
+    // Also without the "+" of a phone number.
+    if (s.startsWith('+')) assert.ok(!bytes.includes(s.slice(1)), 'found the digits of a number in the database file');
+  }
+  // The provider reference of a number is not there in plain form.
+  for (const ref of mock.owned.keys()) assert.ok(!bytes.includes(ref));
+});

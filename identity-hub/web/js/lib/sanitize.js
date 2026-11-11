@@ -60,7 +60,7 @@ export function sanitizeEmail(html, inlineImages = new Map()) {
       if (name === 'srcset' || name === 'imagesrcset') { note.blocked = true; el.removeAttribute(attr.name); continue; }
       if (!URL_ATTRS.includes(name)) continue;
 
-      const compact = value.replace(/[\u0000-  ]+/g, '');
+      const compact = value.replace(/[\x00-\x20\xa0]+/g, '');
       if (el.localName === 'a' && name === 'href') {
         if (!LINK_OK.test(compact)) el.removeAttribute('href');
         continue;

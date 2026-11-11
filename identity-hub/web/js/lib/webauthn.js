@@ -145,3 +145,21 @@ export async function passkeyAssertion() {
   const res = await api.post('/api/auth/passkey/verify', { challengeId, response: assertionJson(cred) });
   return { account: res.account, passkeyId: res.passkeyId, wrappedKey: res.wrappedKey || null, prf };
 }
+
+// Asks one existing passkey for its PRF value. This is a local request: the challenge
+// is random and nothing from the answer goes to the server. Returns Uint8Array or null.
+export async function passkeyPrf(credentialId) {
+  let got;
+  try {
+    got = await navigator.credentials.get({
+      publicKey: {
+        challenge: randomBytes(32),
+        allowCredentials: [{ type: 'public-key', id: buf(credentialId) }],
+        userVerification: 'required',
+        timeout: 60000,
+        extensions: { prf: { eval: { first: await prfSalt() } } },
+      },
+    });
+  } catch (err) { throw friendly(err); }
+  return got ? prfResult(got) : null;
+}

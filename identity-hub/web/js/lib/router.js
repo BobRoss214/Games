@@ -45,13 +45,15 @@ export function navigate(path, { replace = false } = {}) {
 // Renders the screen for the current URL.
 export function render({ force = false } = {}) {
   let m = match(location.pathname);
-  const redirected = resolver(m);
-  if (typeof redirected === 'string') {
-    if (redirected !== location.pathname) history.replaceState(null, '', redirected);
-    m = match(redirected);
-    const again = resolver(m);
-    if (typeof again === 'string') return; // guard against loops
+  // The resolver may send the person to another path, or swap the screen (unlock).
+  let resolved = resolver(m);
+  if (typeof resolved === 'string') {
+    if (resolved !== location.pathname) history.replaceState(null, '', resolved);
+    m = match(resolved);
+    resolved = resolver(m);
+    if (typeof resolved === 'string') return; // guard against loops
   }
+  if (resolved && resolved.route) m = resolved;
   // The same screen with new params can update in place (mail keeps its lists).
   if (!force && current && current.route.name === m.route.name && current.instance && typeof current.instance.update === 'function' && current.layout === m.route.layout) {
     current.params = m.params;

@@ -14,7 +14,7 @@
 //       voice instructions in the answer. `ref` is the call id that parseVoice/parseStatus return.
 //
 //   verifyWebhook(c, fullUrl) → boolean     c is the request context of core/http.js
-//   parseText(c)   → { to, from, body }
+//   parseText(c)   → { to, from, body, id }     id: message id of the provider, '' if it has none
 //   parseVoice(c)  → { to, from, callId }
 //   parseStatus(c) → { callId, status: 'answered' | 'missed' | 'failed' | null, seconds }
 //   voiceReply(actions) → { contentType, body }
@@ -165,7 +165,7 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
     },
     parseText(c) {
       const b = c.body || {};
-      return { to: str(b.to), from: str(b.from), body: str(b.body) };
+      return { to: str(b.to), from: str(b.from), body: str(b.body), id: str(b.id) };
     },
     parseVoice(c) {
       const b = c.body || {};

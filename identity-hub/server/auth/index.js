@@ -5,7 +5,7 @@ import { webcrypto } from 'node:crypto';
 import { fail, reply, need, b64u } from '../core/http.js';
 import { createPow } from './pow.js';
 import { registerPasskeys } from './passkeys.js';
-import { accountView, badLogin, notFound } from './shared.js';
+import { accountView, badLogin, notFound, startSession } from './shared.js';
 
 const ACCOUNT_ID = /^[0-9a-f]{32}$/;
 const SESSION_ID = /^[A-Za-z0-9_-]{22}$/;
@@ -50,7 +50,7 @@ export async function register(app) {
       throw fail(400, 'bad_pow', 'The sign-up check failed or is too old. Try again.');
     }
     const account = store.createAccount(input);
-    c.setSession(store.createSession(account.id));
+    startSession(store, c, account.id);
     return reply(201, { account: accountView(account) });
   });
 
@@ -59,7 +59,7 @@ export async function register(app) {
     const authKey = need.bytes(c.body.authKey, 'authKey', { min: 32, max: 32 });
     const account = store.verifyAuth(accountId, authKey);
     if (!account) throw badLogin();
-    c.setSession(store.createSession(account.id));
+    startSession(store, c, account.id);
     return { account: accountView(account) };
   });
 

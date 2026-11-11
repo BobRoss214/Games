@@ -14,7 +14,7 @@ import { newToken, blind, unblind, b64u, unb64u } from '/shared/blind.js';
 import { randomBytes } from '/shared/bytes.js';
 
 const VAULT_KEY = 'pending-purchases';
-const VAULT_SOFT_LIMIT = 180_000; // characters; the server limit is 256 KB
+const VAULT_SOFT_LIMIT = 250_000; // bytes; the server limit is 256 KB
 
 let infoCache = null;
 export async function payInfo({ fresh = false } = {}) {
@@ -94,7 +94,7 @@ export async function startPurchase({ units, method }) {
 
   // 1. Save the secrets first.
   const current = await readList();
-  const size = JSON.stringify([...current, entry]).length * 1.4;
+  const size = JSON.stringify([...current, entry]).length + 64;
   if (size > VAULT_SOFT_LIMIT) throw new Error('You have too many waiting payments. Finish or remove one first.');
   view.set(entry.localId, { status: 'starting' });
   await mutate((list) => [...list, entry]);

@@ -8,7 +8,7 @@ import { fail, reply, need, b64u } from '../core/http.js';
 import { today } from '../core/db.js';
 import { randomId, safeEqual } from '../core/keys.js';
 import { createTtlMap } from './ttl-map.js';
-import { accountView, badLogin, notFound } from './shared.js';
+import { accountView, badLogin, notFound, startSession } from './shared.js';
 
 const MAX_PASSKEYS = 10;
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -220,7 +220,7 @@ export function registerPasskeys(app) {
     // The counter must go up. A copy of the passkey with an old counter is refused by the check above.
     const updated = db.run('UPDATE passkeys SET counter = ? WHERE id = ? AND account_id = ? AND counter = ?', newCounter, row.id, account.id, row.counter).changes;
     if (!updated) throw badLogin(); // the passkey changed or was deleted during the check
-    c.setSession(store.createSession(account.id));
+    startSession(store, c, account.id);
     return { account: accountView(account), passkeyId: row.id, wrappedKey: b64u(row.wrapped_key) };
   });
 }

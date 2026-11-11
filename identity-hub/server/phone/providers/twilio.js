@@ -148,7 +148,7 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl } = {}) {
     },
     parseText(c) {
       const b = c.body || {};
-      return { to: str(b.To), from: str(b.From), body: str(b.Body) };
+      return { to: str(b.To), from: str(b.From), body: str(b.Body), id: str(b.MessageSid) };
     },
     parseVoice(c) {
       const b = c.body || {};

@@ -255,6 +255,19 @@ test('sessions: list, revoke one, revoke others', async () => {
   assert.equal(three.cookie, '');
 });
 
+test('sessions: an account keeps the newest 50', async () => {
+  const { api: first, keys, id } = await signUp();
+  const login = { accountId: id, authKey: b64u(keys.upload.authKey) };
+  let last;
+  for (let i = 0; i < 51; i++) {
+    last = client(app);
+    assert.equal((await last.post('/api/auth/login', login)).status, 200);
+  }
+  assert.equal(app.store.listSessions(id).length, 50);
+  assert.equal((await first.get('/api/account')).status, 401, 'the oldest session is gone');
+  assert.equal((await last.get('/api/sessions')).data.sessions.length, 50);
+});
+
 test('vault: put, get, list, delete, limits', async () => {
   const a = await newAccount(app);
   const box = await C.encryptJson(a.keys.vaultKey, { pending: [1, 2, 3] }, 'vault:pending-purchases');

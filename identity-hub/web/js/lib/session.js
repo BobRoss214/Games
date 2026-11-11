@@ -20,6 +20,9 @@ const sealedCache = new Map();
 // A passkey sign-in that gave a PRF value but had no stored key yet. Kept in memory
 // only, so that the unlock screen can save the wrapped key for the next time.
 let pendingPrf = null; // { passkeyId, prf: Uint8Array }
+// Why the unlock screen shows: 'passkey-no-prf' = the passkey signed in but cannot make a key.
+let lockReason = null;
+export const getLockReason = () => lockReason;
 
 export const getKeys = () => keys;
 export const isUnlocked = () => keys !== null;
@@ -39,6 +42,7 @@ function recall() {
 function forget() {
   keys = null;
   pendingPrf = null;
+  lockReason = null;
   sealedCache.clear();
   try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* nothing to remove */ }
 }
@@ -179,6 +183,7 @@ export async function finishPasskeySignIn({ account, passkeyId, wrappedKey, prf 
     } catch { /* fall through to the unlock screen */ }
   }
   pendingPrf = prf ? { passkeyId, prf } : null;
+  lockReason = prf ? 'passkey-no-key' : 'passkey-no-prf';
   store.set({ phase: 'locked' });
   return false;
 }
