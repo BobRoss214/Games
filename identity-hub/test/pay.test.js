@@ -137,7 +137,7 @@ test('full flow: blind, invoice without cookie, pay, signed values, unblind, red
   const billing = await a.api.get('/api/billing');
   assert.equal(billing.status, 200);
   assert.equal(billing.data.balance, 700);
-  assert.deepEqual(billing.data.prices, { mailboxMonth: 100, numberMonth: 400, textOut: 3, callMinute: 3 });
+  assert.deepEqual(billing.data.prices, { mailboxMonth: 100, numberMonth: 400, textOut: 3, callMinute: 3, voicemail: 5 });
   assert.equal(billing.data.ledger.length, 1);
   assert.deepEqual({ ...billing.data.ledger[0] }, { delta: 700, kind: 'topup', day: new Date().toISOString().slice(0, 10) });
   assert.equal((await anon.get('/api/billing')).status, 401);
