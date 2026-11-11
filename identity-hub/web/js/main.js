@@ -98,12 +98,13 @@ function featureScreen(route) {
     };
   };
 }
+// The menu item to mark: the one the route names, or the one whose path is the start of the route path.
 function navFor(route) {
   if (route.nav) return route.nav;
   const item = registered.navItems().find((n) => n.path === route.path || route.path.startsWith(`${n.path}/`));
   return item ? item.id : '';
 }
-onRoute((r) => defineRoutes([{ path: r.path, name: `feature:${r.path}`, title: r.title, layout: 'auto', nav: navFor(r), signedOut: r.signedOut, screen: featureScreen(r) }]));
+onRoute((r) => defineRoutes([{ path: r.path, name: `feature:${r.path}`, title: r.title, layout: 'auto', nav: () => navFor(r), signedOut: r.signedOut, screen: featureScreen(r) }]));
 
 // Which screen may show in which sign-in state.
 setResolver((m) => {
@@ -128,7 +129,7 @@ setOutlet((m, el) => {
   const hadFocus = document.activeElement && document.activeElement !== document.body;
   const inShell = store.get('phase') === 'in' && (m.route.layout === 'shell' || m.route.layout === 'auto');
   if (inShell) {
-    showInShell(root, el, m.route.nav || '');
+    showInShell(root, el, (typeof m.route.nav === 'function' ? m.route.nav() : m.route.nav) || '');
   } else {
     destroyShell();
     replace(root, el);

@@ -156,11 +156,14 @@ export function destroyShell() {
 }
 
 // Screens without the shell (welcome, sign-in, create account, unlock).
-export function bareLayout(content, { head = null, foot = null, wide = false } = {}) {
+// page: the content is a whole page (class "page") and not a narrow form column.
+export function bareLayout(content, { head = null, foot = null, wide = false, page = false } = {}) {
   return h('div', { class: 'bare' },
     testBanner(),
     h('header', { class: 'bare-head' }, brand('/'), head),
-    h('main', { class: 'bare-body', id: 'main', tabIndex: -1 }, h('div', { class: `bare-col ${wide ? 'bare-col-wide' : ''}`.trim() }, content)),
+    page
+      ? h('main', { class: 'bare-body bare-body-page', id: 'main', tabIndex: -1 }, content)
+      : h('main', { class: 'bare-body', id: 'main', tabIndex: -1 }, h('div', { class: `bare-col ${wide ? 'bare-col-wide' : ''}`.trim() }, content)),
     foot ? h('footer', { class: 'bare-foot' }, foot) : null,
   );
 }
