@@ -49,14 +49,19 @@ export function makePassword({ length = 20, symbols = true } = {}) {
   return shuffle(chars).join('');
 }
 
-// About how many bits of randomness a password from makePassword() has, rounded down.
-// The number is a little low on purpose: it counts the choices before the order is mixed.
+// How many bits of randomness a password from makePassword() has, rounded down.
+// It is the number for the most likely password (the "min-entropy"), so the label in the app
+// never promises more than the password has. It is a little below length x log2(all characters),
+// because one character of each kind is required.
 export function passwordStrength(length = 20, symbols = true) {
   checkLength(length);
   const classes = symbols ? [LOWER, UPPER, DIGITS, SYMBOLS] : [LOWER, UPPER, DIGITS];
+  const k = classes.length;
   const all = classes.reduce((n, c) => n + c.length, 0);
-  let bits = (length - classes.length) * Math.log2(all);
+  // The required characters: one of each kind, at k of the places. The rest: any character.
+  let bits = (length - k) * Math.log2(all) - k * Math.log2(length / k);
   for (const c of classes) bits += Math.log2(c.length);
+  for (let i = 0; i < k; i++) bits += Math.log2(length - i);
   return Math.floor(bits);
 }
 

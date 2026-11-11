@@ -4,6 +4,7 @@
 import { simpleParser } from 'mailparser';
 import { sealEnvelope } from '../../shared/crypto.js';
 import { quietError } from './errors.js';
+import { listInfo } from './listinfo.js';
 
 // The server does no conversion between text and HTML: `text` and `html` hold only what the
 // sender wrote. This keeps the work for a message from a stranger small.
@@ -107,6 +108,7 @@ function buildContent(mail) {
   const text = typeof mail.text === 'string' ? mail.text : '';
   const files = mail.attachments || [];
   const date = mail.date instanceof Date && !Number.isNaN(mail.date.getTime()) ? mail.date : new Date();
+  const list = listInfo(mail);
   const meta = {
     from: people(mail.from)[0] || { name: '', address: '' },
     to: people(mail.to),
@@ -115,6 +117,7 @@ function buildContent(mail) {
     date: date.toISOString(),
     snippet: makeSnippet(text, html),
     deliveredTo: '',
+    bulk: list.bulk,
     attachments: files.map((f, i) => {
       const item = { filename: safeFilename(f.filename, i), contentType: clip(f.contentType, 255).toLowerCase() || 'application/octet-stream', size: f.content.length };
       if (f.cid) item.cid = clip(f.cid, 255);
@@ -128,6 +131,7 @@ function buildContent(mail) {
     inReplyTo: clip(mail.inReplyTo, 998) || null,
     references: [].concat(mail.references || []).slice(0, 100).map((r) => clip(r, 998)),
     replyTo: people(mail.replyTo),
+    unsubscribe: list.unsubscribe,
   };
   return { meta, body, attachments: files.map((f) => f.content) };
 }
@@ -136,32 +140,50 @@ export function createInbound(app, data) {
   const { db, store, events } = app;
 
   // Tells if an address can get mail now. reason: 'unknown' | 'blocked' | 'suspended' | 'full'.
-  // An alias that is turned off, or past its end date, answers like an address that does not exist.
+  // An alias that is turned off, used up, or past its end date answers like an address that does not exist.
   // `sender` is the envelope sender, if there is one. The address can have a block for it.
+  // A refusal that is final for an address that exists has `countable: true` (see countRefusal).
   function check(address, sender = '') {
     if (typeof address !== 'string' || address.length < 3 || address.length > 254) return { ok: false, reason: 'unknown' };
     const row = data.route(address);
-    if (!row || !data.isOn(row)) return { ok: false, reason: 'unknown' };
+    if (!row) return { ok: false, reason: 'unknown' };
+    if (!data.isOn(row)) return { ok: false, reason: 'unknown', addressId: row.addressId, countable: true };
     // A block is final, so it is answered before the states that can change (suspended, full).
-    if (sender && data.isBlocked(row.addressId, sender)) return { ok: false, reason: 'blocked' };
+    if (sender && data.isBlocked(row.addressId, sender)) return { ok: false, reason: 'blocked', addressId: row.addressId, countable: true };
     if (row.status !== 'active') return { ok: false, reason: 'suspended' };
     if (!data.hasRoom(row.mailboxId)) return { ok: false, reason: 'full' };
     return { ok: true, addressId: row.addressId, accountId: row.accountId, mailboxId: row.mailboxId };
   }
 
+  // Counts one refused message for the address of a refusal. The caller calls it one time for each
+  // message and recipient. Nothing is counted for an unknown address or for a temporary refusal.
+  function countRefusal(verdict) {
+    if (verdict && verdict.countable && verdict.addressId) data.countRefused(verdict.addressId);
+  }
+
   // Stores the sealed message if the address can still get mail. The address can change
   // while the message is parsed and encrypted, so the check runs again in the transaction.
+  // A one-shot alias is turned off in the same transaction: a second message that arrives at the
+  // same moment finds it off. Returns { id, mailboxId, usedUp } or { off } if nothing was stored.
   function storeFor(target, env) {
     return db.tx(() => {
       const now = db.get(
-        `SELECT a.mailbox_id AS mailboxId, a.enabled, a.expires_at AS expiresAt, m.status FROM addresses a JOIN mailboxes m ON m.id = a.mailbox_id
-         WHERE a.id = ? AND a.account_id = ?`,
+        `SELECT a.mailbox_id AS mailboxId, a.enabled, a.expires_at AS expiresAt, a.one_shot AS oneShot, m.status
+         FROM addresses a JOIN mailboxes m ON m.id = a.mailbox_id WHERE a.id = ? AND a.account_id = ?`,
         target.addressId, target.accountId,
       );
-      if (!now || !data.isOn(now) || now.status !== 'active') return null;
+      if (!now) return { off: false };                       // deleted in the meantime
+      if (!data.isOn(now)) return { off: true };              // turned off, used up, or ended in the meantime
+      if (now.status !== 'active') return { off: false };     // suspended in the meantime
       const id = data.insertMessage({ accountId: target.accountId, mailboxId: now.mailboxId, addressId: target.addressId, direction: 'in', seen: false, env });
-      db.run('UPDATE addresses SET received = received + 1 WHERE id = ? AND account_id = ?', target.addressId, target.accountId);
-      return { id, mailboxId: now.mailboxId };
+      const usedUp = now.oneShot === 1;
+      db.run(
+        usedUp
+          ? 'UPDATE addresses SET received = received + 1, enabled = 0, used_up = 1 WHERE id = ? AND account_id = ?'
+          : 'UPDATE addresses SET received = received + 1 WHERE id = ? AND account_id = ?',
+        target.addressId, target.accountId,
+      );
+      return { id, mailboxId: now.mailboxId, usedUp };
     });
   }
 
@@ -177,7 +199,7 @@ export function createInbound(app, data) {
     for (const item of new Set([].concat(to || []).map((a) => String(a).toLowerCase()))) {
       const verdict = check(item, envelopeSender);
       if (verdict.ok) targets.push({ address: item, ...verdict });
-      else refuse(item, verdict.reason);
+      else { countRefusal(verdict); refuse(item, verdict.reason); }
     }
     if (targets.length === 0) return { accepted, rejected, reasons };
 
@@ -193,7 +215,11 @@ export function createInbound(app, data) {
     }
     for (const target of targets) {
       // The From line can name a different sender than the envelope. A block counts for both.
-      if (writers.some((sender) => data.isBlocked(target.addressId, sender))) { refuse(target.address, 'blocked'); continue; }
+      if (writers.some((sender) => data.isBlocked(target.addressId, sender))) {
+        data.countRefused(target.addressId);
+        refuse(target.address, 'blocked');
+        continue;
+      }
       const account = store.getAccount(target.accountId);
       if (!account) { refuse(target.address, 'unknown'); continue; }
       // Each recipient gets an own content key. One account cannot open the copy of another account.
@@ -201,12 +227,18 @@ export function createInbound(app, data) {
         meta: { ...content.meta, deliveredTo: target.address }, body: content.body, attachments: content.attachments,
       });
       const stored = storeFor(target, env);
-      if (!stored) { refuse(target.address, 'unknown'); continue; }
+      if (!stored.id) {
+        if (stored.off) data.countRefused(target.addressId);
+        refuse(target.address, 'unknown');
+        continue;
+      }
       accepted.push(target.address);
       events.publish(target.accountId, 'mail', { mailboxId: stored.mailboxId });
+      // The list of aliases shows a one-shot alias as used up now.
+      if (stored.usedUp) events.publish(target.accountId, 'aliases');
     }
     return { accepted, rejected, reasons };
   }
 
-  return { check, deliver };
+  return { check, countRefusal, deliver };
 }

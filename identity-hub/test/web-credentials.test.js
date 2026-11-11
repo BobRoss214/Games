@@ -88,8 +88,9 @@ test('shuffle: every order has the same chance', () => {
 });
 
 test('password strength: an honest number of bits', () => {
-  assert.equal(passwordStrength(20, true), 113);
-  assert.equal(passwordStrength(12, false), 64);
+  assert.equal(passwordStrength(20, true), 121);
+  assert.equal(passwordStrength(12, false), 68);
+  assert.equal(passwordStrength(12, true), 71);
   assert.equal(passwordStrength(), passwordStrength(20, true));
   // Longer is stronger. Symbols add a little.
   for (let length = 12; length < 64; length++) assert.ok(passwordStrength(length + 1, true) > passwordStrength(length, true));
@@ -98,7 +99,9 @@ test('password strength: an honest number of bits', () => {
     // Never more than the number for free choice of every character.
     assert.ok(passwordStrength(length, true) <= length * Math.log2(69));
     assert.ok(passwordStrength(length, false) <= length * Math.log2(56));
-    assert.ok(passwordStrength(length, true) >= length * 5);
+    assert.ok(passwordStrength(length, true) >= length * 5.5);
+    // Close to the free choice: the required characters cost less than 3 bits.
+    assert.ok(length * Math.log2(69) - passwordStrength(length, true) < 3);
   }
   assert.throws(() => passwordStrength(8, true), RangeError);
   assert.throws(() => passwordStrength(65, false), RangeError);

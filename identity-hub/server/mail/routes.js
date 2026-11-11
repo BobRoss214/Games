@@ -38,7 +38,7 @@ export function registerRoutes(app, { data }) {
   // ---- mailboxes ----
 
   const MAILBOX_SQL = `
-    SELECT m.id, m.enc, m.status, m.paid_until, m.created_day, m.retention_days, a.id AS address_id, a.sealed_address,
+    SELECT m.id, m.enc, m.status, m.paid_until, m.created_day, m.retention_days, a.id AS address_id, a.sealed_address, a.refused,
       (SELECT COUNT(*) FROM messages x WHERE x.mailbox_id = m.id AND x.direction = 'in' AND x.seen = 0) AS unread,
       (SELECT COUNT(*) FROM messages x WHERE x.mailbox_id = m.id) AS total,
       (SELECT COUNT(*) FROM address_blocks k WHERE k.address_id = a.id) AS blocks
@@ -47,7 +47,7 @@ export function registerRoutes(app, { data }) {
   const mailboxView = (r) => ({
     id: r.id, addressId: r.address_id, sealedAddress: b64u(r.sealed_address), enc: b64u(r.enc), status: r.status,
     paidUntil: r.paid_until, createdDay: r.created_day, unread: r.unread, total: r.total,
-    retentionDays: r.retention_days ?? null, blocks: r.blocks,
+    retentionDays: r.retention_days ?? null, blocks: r.blocks, refused: r.refused,
   });
   const getMailbox = (accountId, id) => {
     const row = db.get(`${MAILBOX_SQL} AND m.id = ?`, accountId, idParam(id));
@@ -126,6 +126,7 @@ export function registerRoutes(app, { data }) {
   const aliasView = (r) => ({
     id: r.id, mailboxId: r.mailbox_id, sealedAddress: b64u(r.sealed_address), enc: b64u(r.enc), enabled: r.enabled === 1,
     createdDay: r.created_day, received: r.received, expiresAt: r.expires_at ?? null, blocks: r.blocks,
+    oneShot: r.one_shot === 1, usedUp: r.used_up === 1, refused: r.refused,
   });
   const getAlias = (accountId, id) => {
     const row = db.get(`${ALIAS_SQL} AND a.id = ?`, accountId, idParam(id));
@@ -141,6 +142,8 @@ export function registerRoutes(app, { data }) {
     const accountId = c.account.id;
     const mailboxId = need.string(c.body.mailboxId, 'mailboxId', { min: 22, max: 22, pattern: ID });
     const enc = encField(c.body.enc);
+    // A one-shot alias stops working after the first message that arrives (see storeFor in inbound.js).
+    const oneShot = need.optional(c.body.oneShot, need.bool, 'oneShot') ? 1 : 0;
     if (!ownsMailbox(accountId, mailboxId)) throw notFound();
     const overLimit = () => config.limits.aliases > 0
       && db.get("SELECT COUNT(*) AS n FROM addresses WHERE account_id = ? AND kind = 'alias'", accountId).n >= config.limits.aliases;
@@ -153,8 +156,8 @@ export function registerRoutes(app, { data }) {
         if (!ownsMailbox(accountId, mailboxId)) throw notFound();
         if (overLimit()) throw limitReached('aliases');
         if (!data.isFree(address)) throw taken();
-        db.run('INSERT INTO addresses (id, account_id, mailbox_id, kind, address_hmac, sealed_address, enc, enabled, created_day) VALUES (?,?,?,?,?,?,?,1,?)',
-          id, accountId, mailboxId, 'alias', data.hmac(address), sealed, enc ?? null, today());
+        db.run('INSERT INTO addresses (id, account_id, mailbox_id, kind, address_hmac, sealed_address, enc, enabled, created_day, one_shot) VALUES (?,?,?,?,?,?,?,1,?,?)',
+          id, accountId, mailboxId, 'alias', data.hmac(address), sealed, enc ?? null, today(), oneShot);
       });
     } catch (err) {
       if (String(err.message).includes('UNIQUE')) throw taken();
@@ -168,9 +171,18 @@ export function registerRoutes(app, { data }) {
     const accountId = c.account.id;
     const row = getAlias(accountId, c.params.id);
     const b = c.body;
-    const next = { enabled: row.enabled, mailbox_id: row.mailbox_id, enc: row.enc, expires_at: row.expires_at };
-    if (!['enabled', 'mailboxId', 'enc', 'expiresAt'].some((key) => has(b, key))) throw fail(400, 'bad_request', 'Send a value to change.');
-    if (has(b, 'enabled')) next.enabled = need.bool(b.enabled, 'enabled') ? 1 : 0;
+    const next = { enabled: row.enabled, mailbox_id: row.mailbox_id, enc: row.enc, expires_at: row.expires_at, one_shot: row.one_shot, used_up: row.used_up };
+    if (!['enabled', 'mailboxId', 'enc', 'expiresAt', 'oneShot'].some((key) => has(b, key))) throw fail(400, 'bad_request', 'Send a value to change.');
+    // A normal alias has no "used up" state. To turn a used-up alias on again clears the state too:
+    // it is still one-shot and stops again after the next message.
+    if (has(b, 'oneShot')) {
+      next.one_shot = need.bool(b.oneShot, 'oneShot') ? 1 : 0;
+      if (!next.one_shot) next.used_up = 0;
+    }
+    if (has(b, 'enabled')) {
+      next.enabled = need.bool(b.enabled, 'enabled') ? 1 : 0;
+      if (next.enabled) next.used_up = 0;
+    }
     if (has(b, 'enc')) next.enc = encField(b.enc) ?? null;
     if (has(b, 'mailboxId')) {
       next.mailbox_id = need.string(b.mailboxId, 'mailboxId', { min: 22, max: 22, pattern: ID });
@@ -182,8 +194,8 @@ export function registerRoutes(app, { data }) {
       const now = nowSec();
       next.expires_at = b.expiresAt === null ? null : need.int(b.expiresAt, 'expiresAt', { min: now + 1, max: now + MAX_EXPIRY_SECONDS });
     }
-    db.run('UPDATE addresses SET enabled = ?, mailbox_id = ?, enc = ?, expires_at = ? WHERE account_id = ? AND id = ?',
-      next.enabled, next.mailbox_id, next.enc, next.expires_at, accountId, row.id);
+    db.run('UPDATE addresses SET enabled = ?, mailbox_id = ?, enc = ?, expires_at = ?, one_shot = ?, used_up = ? WHERE account_id = ? AND id = ?',
+      next.enabled, next.mailbox_id, next.enc, next.expires_at, next.one_shot, next.used_up, accountId, row.id);
     events.publish(accountId, 'aliases');
     return { alias: aliasView({ ...row, ...next }) };
   });
@@ -282,6 +294,21 @@ export function registerRoutes(app, { data }) {
     const seen = need.bool(c.body.seen, 'seen') ? 1 : 0;
     db.run('UPDATE messages SET seen = ? WHERE account_id = ? AND id = ?', seen, c.account.id, row.id);
     if (seen !== row.seen) events.publish(c.account.id, 'mail', { mailboxId: row.mailbox_id });
+  });
+
+  // "Burn": deletes every message of one address (an alias or the address of a mailbox), incoming and sent.
+  http.del('/api/addresses/:id/messages', { auth: true, rate: { max: 30, per: 60 } }, async (c) => {
+    const accountId = c.account.id;
+    const address = db.get('SELECT id FROM addresses WHERE account_id = ? AND id = ?', accountId, idParam(c.params.id));
+    if (!address) throw notFound();
+    // An alias that was moved can have messages in more than one mailbox.
+    const mailboxes = db.all('SELECT DISTINCT mailbox_id AS id FROM messages WHERE account_id = ? AND address_id = ?', accountId, address.id);
+    const deleted = await data.deleteMessages('account_id = ? AND address_id = ?', accountId, address.id);
+    if (deleted > 0) {
+      data.checkpoint();
+      for (const box of mailboxes) events.publish(accountId, 'mail', { mailboxId: box.id });
+    }
+    return { deleted };
   });
 
   http.del('/api/messages/:id', { auth: true }, (c) => {

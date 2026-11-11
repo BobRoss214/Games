@@ -115,11 +115,15 @@ export function registerSend(app, { data, inbound, compose, outbox }) {
     const local = recipients.filter((r) => ownDomains.has(r.domain)).map((r) => r.address);
     const external = recipients.filter((r) => !ownDomains.has(r.domain)).map((r) => r.address);
     if (external.length > 0 && !canSendOut) throw fail(503, 'no_relay', 'This server cannot send mail to other servers yet.');
+    let problem = null;
     for (const address of local) {
       const verdict = inbound.check(address, from.address);
       if (verdict.ok) continue;
-      throw fail(400, 'bad_recipient', RECIPIENT_PROBLEMS[verdict.reason](address));
+      // Every recipient that refuses counts the refused message. The answer names the first one.
+      inbound.countRefusal(verdict);
+      if (!problem) problem = RECIPIENT_PROBLEMS[verdict.reason](address);
     }
+    if (problem) throw fail(400, 'bad_recipient', problem);
 
     const raw = await compose({
       from: from.address, fromName: fields.fromName,

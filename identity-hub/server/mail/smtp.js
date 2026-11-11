@@ -41,6 +41,7 @@ export function createSmtp(app, inbound) {
   const memoryLimit = Math.max(maxBytes * 8, 64 * 1024 * 1024);
   let inMemory = 0;
   const badRecipients = new WeakMap(); // session -> count
+  const countedRefusals = new WeakMap(); // envelope of one message -> address ids that were counted
   // Open connections for each sender IP address. In memory only, never logged.
   const perAddress = new Map();
   const counted = new WeakMap(); // session -> the address that was counted
@@ -85,6 +86,13 @@ export function createSmtp(app, inbound) {
         return done(smtpError('busy'));
       }
       if (verdict.ok) return done();
+      // One refused message is counted one time for a recipient, also if the sender repeats the command.
+      // The envelope object lives for one message.
+      if (verdict.countable) {
+        let seen = countedRefusals.get(session.envelope);
+        if (!seen) { seen = new Set(); countedRefusals.set(session.envelope, seen); }
+        if (!seen.has(verdict.addressId)) { seen.add(verdict.addressId); inbound.countRefusal(verdict); }
+      }
       if (verdict.reason === 'unknown') {
         const n = (badRecipients.get(session) || 0) + 1;
         badRecipients.set(session, n);

@@ -29,7 +29,10 @@ CREATE TABLE IF NOT EXISTS addresses (
   enabled INTEGER NOT NULL DEFAULT 1,
   received INTEGER NOT NULL DEFAULT 0,
   created_day TEXT NOT NULL,
-  expires_at INTEGER                      -- an alias stops working at this time; NULL = no end
+  expires_at INTEGER,                     -- an alias stops working at this time; NULL = no end
+  one_shot INTEGER NOT NULL DEFAULT 0,    -- an alias that stops after the first message
+  used_up INTEGER NOT NULL DEFAULT 0,     -- a one-shot alias that got its message
+  refused INTEGER NOT NULL DEFAULT 0      -- how many messages were refused; one number, no sender and no time
 ) STRICT;
 CREATE INDEX IF NOT EXISTS addresses_account ON addresses(account_id);
 CREATE INDEX IF NOT EXISTS addresses_mailbox ON addresses(mailbox_id);
@@ -96,7 +99,12 @@ CREATE TABLE IF NOT EXISTS send_counts (
 const ADDED_COLUMNS = [
   ['mailboxes', 'retention_days', 'INTEGER'],
   ['addresses', 'expires_at', 'INTEGER'],
+  ['addresses', 'one_shot', 'INTEGER NOT NULL DEFAULT 0'],
+  ['addresses', 'used_up', 'INTEGER NOT NULL DEFAULT 0'],
+  ['addresses', 'refused', 'INTEGER NOT NULL DEFAULT 0'],
 ];
+
+const DELETE_BATCH = 500;
 
 function addMissingColumns(db) {
   for (const [table, column, type] of ADDED_COLUMNS) {
@@ -169,6 +177,29 @@ export function createMailData(app) {
         env.parts.forEach((part, idx) => db.run('INSERT INTO message_parts (message_id, idx, data) VALUES (?,?,?)', id, idx, part));
       });
       return id;
+    },
+
+    // Adds 1 to the count of refused messages of an address. This number is all that is kept about refused mail.
+    countRefused(addressId) {
+      db.run('UPDATE addresses SET refused = refused + 1 WHERE id = ?', addressId);
+    },
+
+    // Deletes all messages that match, with their parts. `where` is a fixed SQL condition.
+    // It works in batches, so that a large delete does not stop all other work for a long time.
+    // Returns the number of deleted messages. Call checkpoint() after the last delete of a job.
+    async deleteMessages(where, ...params) {
+      let deleted = 0;
+      for (;;) {
+        const n = db.run(`DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE ${where} LIMIT ${DELETE_BATCH})`, ...params).changes;
+        deleted += n;
+        if (n < DELETE_BATCH) return deleted;
+        await new Promise((resolve) => { setImmediate(resolve); });
+      }
+    },
+
+    // Deleted data must not stay in the write-ahead file.
+    checkpoint() {
+      try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* a later checkpoint does it */ }
     },
 
     // Writes tombstones for every address that matches. `where` is a fixed SQL condition.
