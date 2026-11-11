@@ -4,7 +4,7 @@
 # Use:   sudo sh backup.sh [TARGET-FOLDER]
 #
 # This script makes a safe copy of the two databases while Postern runs:
-#   accounts.db   accounts, mailboxes, messages, numbers (most of it encrypted)
+#   accounts.db   accounts, inboxes, messages, numbers (most of it encrypted)
 #   payments.db   payment requests and used credit tokens
 # It uses the SQLite ".backup" command. That command gives a complete,
 # consistent copy. A plain "cp" of a database that is in use can give a
@@ -26,8 +26,14 @@
 # The script also does not copy the .env file. Keep a copy of the .env file
 # offline too. It contains your provider keys.
 #
+# The script does not copy smtp-selfsigned.key and smtp-selfsigned.crt. This
+# is the certificate that Postern makes for incoming mail. A copy is not
+# necessary: Postern makes the two files again at the next start.
+#
 # A backup contains everything that was in the database at that time. Data
-# that a user deletes later stays in old backups until those backups are deleted.
+# that a user deletes later, and data that the automatic deletion removes
+# later, stay in old backups until those backups are deleted. With KEEP=7 and
+# one backup each night, this is 7 days.
 
 set -eu
 
@@ -97,7 +103,9 @@ docker compose run --rm --no-deps -T -v "$out:/backup" app sh -eu -c '
     echo "        It is NOT in this backup. To show it, run:"
     echo "        docker compose exec app cat /data/secret.key"
   fi
-  other=$(ls -A /data | grep -v -E "^(accounts|payments)\.db(-wal|-shm)?$|^secret\.key$" || true)
+  # Files that this script knows: the two databases with their work files, the
+  # server secret, and the certificate that Postern makes for incoming mail.
+  other=$(ls -A /data | grep -v -E "^(accounts|payments)\.db(-wal|-shm)?$|^secret\.key$|^smtp-selfsigned\.(key|crt)(\.new)?$" || true)
   if [ -n "$other" ]; then
     echo "  WARNING: the data volume has more files. They are NOT in this backup:"
     echo "$other" | sed "s/^/    /"
