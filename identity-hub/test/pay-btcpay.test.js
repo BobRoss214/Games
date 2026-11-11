@@ -17,7 +17,8 @@ const INVOICES = `/api/v1/stores/${STORE}/invoices`;
 function startFakeBtcpay() {
   const requests = [];
   const states = new Map(); // BTCPay invoice id -> state
-  const fake = { requests, states, down: false, nextLink: undefined };
+  const orders = new Map(); // BTCPay invoice id -> { amount, currency } as BTCPay reports them
+  const fake = { requests, states, orders, down: false, nextLink: undefined };
   const server = createServer((req, res) => {
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
@@ -36,6 +37,7 @@ function startFakeBtcpay() {
       if (req.method === 'POST' && url.pathname === INVOICES) {
         const id = 'BP' + randomBytes(10).toString('hex');
         states.set(id, 'New');
+        orders.set(id, { amount: json.amount, currency: json.currency });
         const checkoutLink = fake.nextLink === undefined ? `${fake.url}/i/${id}` : fake.nextLink;
         fake.nextLink = undefined;
         return send(200, { id, storeId: STORE, amount: json.amount, currency: json.currency, checkoutLink, status: 'New', additionalStatus: 'None', metadata: json.metadata });
@@ -43,7 +45,7 @@ function startFakeBtcpay() {
       if (req.method === 'GET' && url.pathname.startsWith(INVOICES + '/')) {
         const id = decodeURIComponent(url.pathname.slice(INVOICES.length + 1));
         if (!states.has(id)) return send(404, { code: 'invoice-not-found' });
-        return send(200, { id, storeId: STORE, status: states.get(id), additionalStatus: 'None' });
+        return send(200, { id, storeId: STORE, status: states.get(id), additionalStatus: 'None', ...orders.get(id) });
       }
       return send(404, { code: 'not-found' });
     });
@@ -308,7 +310,68 @@ test('BTCPay is down or refuses the key: plain errors, nothing is signed', async
   await assert.rejects(wrong.getStatus(ref), /status 401/);
   // An unknown state is never "paid".
   fake.states.set(ref, 'SomethingNew');
-  assert.equal(await app.services.pay.provider.getStatus(ref), 'pending');
+  assert.deepEqual(await app.services.pay.provider.getStatus(ref), { state: 'pending', amount: '5.00', currency: 'USD' });
+  fake.states.set(ref, 'constructor');
+  assert.equal((await app.services.pay.provider.getStatus(ref)).state, 'pending');
   const dead = createBtcpay({ url: 'http://127.0.0.1:1', apiKey: API_KEY, storeId: STORE, webhookSecret: SECRET }, { publicUrl: PUBLIC });
   await assert.rejects(dead.getStatus(ref), /did not answer/);
+});
+
+test('settle: the amount and the currency at BTCPay must be what we asked for', async () => {
+  const warnings = [];
+  const realWarn = app.log.warn;
+  app.log.warn = (message) => warnings.push(message);
+  try {
+    const wrong = [
+      { amount: '1.00', currency: 'USD' }, // a cheaper invoice
+      { amount: '4.99', currency: 'USD' },
+      { amount: '5.01', currency: 'USD' },
+      { amount: '50.00', currency: 'USD' },
+      { amount: '5.00', currency: 'EUR' }, // the right figure in a different currency
+      { amount: '5.00', currency: 'BTC' },
+      { amount: '5.00' }, // no currency in the answer
+      { currency: 'USD' }, // no amount in the answer
+      { amount: 'five', currency: 'USD' },
+      { amount: '5e0', currency: 'USD' },
+      { amount: '-5.00', currency: 'USD' },
+      {},
+    ];
+    const { id, ref, tokens } = await createInvoice(5);
+    fake.states.set(ref, 'Settled');
+    for (const order of wrong) {
+      fake.orders.set(ref, order);
+      // Every way to settle: the webhook, the function itself, a reader, the minute job.
+      assert.equal((await webhook(settledEvent(ref))).status, 200);
+      assert.equal(await app.services.pay.settle(id), 'mismatch');
+      app.paydb.run('UPDATE invoices SET checked_at = NULL WHERE id = ?', id);
+      assert.equal((await read(id)).status, 'pending');
+      await app.runJobs('pay-check');
+      // Nothing is signed and nothing is marked.
+      const r = row(id);
+      assert.equal(r.status, 'pending', JSON.stringify(order));
+      assert.equal(r.signed, null);
+      assert.equal(r.paid_at, null);
+    }
+    // One warning for this invoice, with the invoice id and nothing else that identifies anyone.
+    assert.equal(warnings.length, 1);
+    assert.ok(warnings[0].includes(id));
+    assert.match(warnings[0], /different amount or currency/);
+    assert.ok(!warnings[0].includes(ref));
+
+    // The same invoice with the right amount is signed. BTCPay can write the amount in more than one way.
+    fake.orders.set(ref, { amount: '5.00', currency: 'USD' });
+    assert.equal(await app.services.pay.settle(id), 'paid');
+    assert.equal(row(id).status, 'paid');
+    assert.equal((await read(id)).signed.length, 5);
+    assert.equal(tokens.length, 5);
+    for (const order of [{ amount: '6', currency: 'USD' }, { amount: 6, currency: 'usd' }, { amount: '6.0000', currency: 'USD' }]) {
+      const next = await createInvoice(6);
+      fake.states.set(next.ref, 'Settled');
+      fake.orders.set(next.ref, order);
+      assert.equal(await app.services.pay.settle(next.id), 'paid', JSON.stringify(order));
+    }
+    assert.equal(warnings.length, 1);
+  } finally {
+    app.log.warn = realWarn;
+  }
 });

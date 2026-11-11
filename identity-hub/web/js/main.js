@@ -72,7 +72,9 @@ setResolver((m) => {
 
 setOutlet((m, el) => {
   closeMenus();
-  const inShell = store.get('phase') === 'in' && (m.route.layout === 'shell' || (m.route.layout === 'auto'));
+  // Was the keyboard focus on the old screen? Then it moves to the new screen below.
+  const hadFocus = document.activeElement && document.activeElement !== document.body;
+  const inShell = store.get('phase') === 'in' && (m.route.layout === 'shell' || m.route.layout === 'auto');
   if (inShell) {
     showInShell(root, el, m.route.nav || '');
   } else {
@@ -80,9 +82,8 @@ setOutlet((m, el) => {
     replace(root, el);
   }
   root.removeAttribute('aria-busy');
-  // Move focus to the new screen for keyboard and screen-reader users.
   const main = document.getElementById('main');
-  if (main && document.activeElement && document.activeElement !== document.body && !main.contains(document.activeElement)) main.focus({ preventScroll: true });
+  if (main && hadFocus && !main.contains(document.activeElement)) main.focus({ preventScroll: true });
 });
 
 // What runs when the sign-in state changes.

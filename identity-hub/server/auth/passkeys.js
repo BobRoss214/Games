@@ -170,7 +170,8 @@ export function registerPasskeys(app) {
 
   http.patch('/api/passkeys/:id', { auth: true }, (c) => {
     const row = getOwn(c);
-    const enc = need.bytes(c.body.enc, 'enc', { min: 1, max: MAX_ENC_BYTES });
+    if (!Object.prototype.hasOwnProperty.call(c.body, 'enc')) throw fail(400, 'bad_request', 'The value "enc" is not valid.');
+    const enc = need.optional(c.body.enc, need.bytes, 'enc', { min: 1, max: MAX_ENC_BYTES }) ?? null; // null removes the label
     db.run('UPDATE passkeys SET enc = ? WHERE account_id = ? AND id = ?', enc, c.account.id, row.id);
     return { passkey: view({ ...row, enc }) };
   });

@@ -31,9 +31,6 @@ function match(pathname) {
   return { route: routes.find((r) => r.name === 'notfound'), params: {} };
 }
 
-export function currentPath() { return location.pathname; }
-export function currentRoute() { return current; }
-
 export function navigate(path, { replace = false } = {}) {
   if (path !== location.pathname) {
     if (replace) history.replaceState(null, '', path);

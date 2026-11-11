@@ -35,10 +35,6 @@ export function fullTime(at) {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, ${clock(d)}`;
 }
 
-export function isoTime(at) {
-  return at ? new Date(at * 1000).toISOString() : '';
-}
-
 // "2026-11-03" to "Nov 3, 2026".
 export function dayText(day) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
@@ -55,7 +51,7 @@ export function dayLabel(at) {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}${d.getFullYear() === now.getFullYear() ? '' : ', ' + d.getFullYear()}`;
 }
 
-export const E164 = /^\+[1-9]\d{6,14}$/;
+const E164 = /^\+[1-9]\d{6,14}$/;
 
 // Accepts "+1 (415) 555-0123" and gives "+14155550123". Returns '' if it is not a full number.
 export function cleanPhone(input) {

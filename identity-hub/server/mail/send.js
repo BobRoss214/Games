@@ -6,7 +6,7 @@ import { fail, reply, need } from '../core/http.js';
 import { nowSec, today } from '../core/db.js';
 import { safeEqual } from '../core/keys.js';
 import { parseAddress } from './address.js';
-import { MAX_RECIPIENTS, readMessageFields } from './compose.js';
+import { MAX_RECIPIENTS, readMessageFields, tooManyRecipients } from './compose.js';
 
 const ID = /^[A-Za-z0-9_-]{22}$/;
 const OUTBOX_MAX = 200;
@@ -88,7 +88,7 @@ export function registerSend(app, { data, inbound, compose, outbox }) {
     // All recipients, each one time.
     const recipients = [...new Map([...fields.to, ...fields.cc, ...fields.bcc].map((r) => [r.address, r])).values()];
     if (recipients.length === 0) throw fail(400, 'bad_recipient', 'Add a recipient.');
-    if (recipients.length > MAX_RECIPIENTS) throw fail(400, 'bad_recipient', `A message can have ${MAX_RECIPIENTS} recipients at most.`);
+    if (recipients.length > MAX_RECIPIENTS) throw tooManyRecipients();
 
     // The browser sends the plain address. The server has only its keyed hash and compares.
     const sender = db.get(

@@ -4,7 +4,7 @@ import { h, replace } from '../lib/dom.js';
 import { store } from '../lib/store.js';
 import { api } from '../lib/api.js';
 import { phoneText, fullTime, cleanPhone } from '../lib/format.js';
-import { button, field, selectField, checkbox, tabs, runBusy, emptyState, skeletonRows, tag, loadError, callout } from '../ui/components.js';
+import { button, field, selectField, checkbox, tabs, runBusy, emptyState, skeletonRows, loadError, callout } from '../ui/components.js';
 import { openDialog } from '../ui/dialog.js';
 import { toast } from '../ui/toast.js';
 import { allAddresses } from '../lib/data.js';
@@ -135,5 +135,3 @@ export function openTestTools(startTab = 'mail') {
   });
   dlg.closed.then(() => { open = null; });
 }
-
-export { tag };

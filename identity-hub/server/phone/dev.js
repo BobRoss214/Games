@@ -39,7 +39,8 @@ export function registerDevRoutes(app, ph) {
     );
     return {
       texts: mock.outbox.texts.filter(isMine).map((t) => ({ from: t.from, to: t.to, body: t.body, at: t.at })),
-      calls: mock.outbox.calls.filter(isMine).map((k) => ({ from: k.from, to: k.to, at: k.at })),
+      // say: what a verification call spoke (it has the code). Only on such calls.
+      calls: mock.outbox.calls.filter(isMine).map((k) => (k.say ? { from: k.from, to: k.to, at: k.at, say: k.say } : { from: k.from, to: k.to, at: k.at })),
     };
   });
 }

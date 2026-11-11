@@ -63,10 +63,12 @@ export function createBtcpay({ url, apiKey, storeId, webhookSecret, methods = []
 
     async getStatus(ref) {
       const { ok, status, data } = await call('GET', '/' + encodeURIComponent(ref));
-      if (status === 404) return 'expired'; // the invoice is gone at BTCPay
+      if (status === 404) return { state: 'expired', amount: '', currency: '' }; // the invoice is gone at BTCPay
       if (!ok || !data || data.id !== ref) throw new Error(`the payment provider did not show the invoice (status ${status})`);
-      // An unknown state is not "paid".
-      return STATES[data.status] || 'pending';
+      // An unknown state is not "paid". A missing amount or currency is an empty text, which
+      // is equal to nothing: the server then does not sign.
+      const text = (v) => (typeof v === 'string' || typeof v === 'number' ? String(v) : '');
+      return { state: Object.hasOwn(STATES, data.status) ? STATES[data.status] : 'pending', amount: text(data.amount), currency: text(data.currency) };
     },
 
     // raw: the request body as bytes. header: the BTCPay-Sig value.

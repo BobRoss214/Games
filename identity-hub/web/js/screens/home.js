@@ -3,7 +3,7 @@ import { h, region, replace, debounce } from '../lib/dom.js';
 import { store, bus } from '../lib/store.js';
 import { money, shortTime, phoneText, plural } from '../lib/format.js';
 import { icon } from '../ui/icons.js';
-import { button, chips, emptyState, skeletonRows, pageHeader, linkButton } from '../ui/components.js';
+import { button, chips, emptyState, skeletonRows, pageHeader, linkButton, copyButton } from '../ui/components.js';
 import { identityItems, identityList, matchesSearch } from '../ui/rows.js';
 import { openNewChooser, openNewAlias, openNewInbox, openGetNumber } from '../ui/identities.js';
 import { listMessages, personShort } from '../lib/mail.js';
@@ -79,7 +79,7 @@ export function homeScreen({ scope }) {
     const all = identityItems(state, aliasUnread);
     if (all.length === 0) {
       replace(listRegion, emptyState({
-        title: 'No addresses or numbers yet',
+        title: phoneOn ? 'No addresses or numbers yet' : 'No addresses yet',
         text: 'Make an inbox first. Then add an alias for each place that asks for your email.',
         action: button('Make inbox', { kind: 'primary', iconName: 'plus', onClick: () => openNewInbox() }),
       }));
@@ -105,10 +105,12 @@ export function homeScreen({ scope }) {
   };
   scope.add(store.subscribe(['mailboxes', 'aliases', 'numbers', 'phones'], paintList));
 
-  const searchInput = h('input', { class: 'input search-input', type: 'search', placeholder: 'Search addresses, numbers and labels', 'aria-label': 'Search addresses, numbers and labels', autocomplete: 'off', spellcheck: 'false' });
+  const phoneOn = !!store.get('config').features.phone;
+  const searchLabel = phoneOn ? 'Search addresses, numbers and labels' : 'Search addresses and labels';
+  const searchInput = h('input', { class: 'input search-input', type: 'search', placeholder: searchLabel, 'aria-label': searchLabel, autocomplete: 'off', spellcheck: 'false' });
   searchInput.addEventListener('input', debounce(() => { search = searchInput.value; paintList(); }, 80));
   const chipOptions = [{ value: 'all', label: 'All' }, { value: 'email', label: 'Email' }];
-  if (store.get('config').features.phone) chipOptions.push({ value: 'numbers', label: 'Numbers' });
+  if (phoneOn) chipOptions.push({ value: 'numbers', label: 'Numbers' });
   chipOptions.push({ value: 'off', label: 'Off' });
   const filterChips = chips({ label: 'Show', value: filter, options: chipOptions, onChange: (v) => { filter = v; paintList(); } });
 
@@ -117,7 +119,16 @@ export function homeScreen({ scope }) {
   const paintRecent = () => {
     if (recent === null && !recentError) { replace(recentRegion, skeletonRows(4, { tall: true })); return; }
     if (recentError && (!recent || !recent.length)) { replace(recentRegion, h('p', { class: 'recent-empty muted small' }, recentError)); return; }
-    if (!recent.length) { replace(recentRegion, h('p', { class: 'recent-empty muted small' }, 'Nothing yet. New mail and texts show here.')); return; }
+    if (!recent.length) {
+      const box = (store.get('mailboxes') || [])[0];
+      replace(recentRegion, h('div', { class: 'recent-empty stack stack-3' },
+        h('p', { class: 'muted small' }, box ? 'Nothing yet. New mail and texts show here. Give your address to someone to try it.' : 'Nothing yet. New mail and texts show here.'),
+        h('div', null, box
+          ? copyButton(() => box.address, 'Copy my address', { what: 'Address copied', withLabel: true, cls: 'btn-sm' })
+          : button('Make inbox', { size: 'sm', onClick: () => openNewInbox() })),
+      ));
+      return;
+    }
     replace(recentRegion, h('ul', { class: 'recent-list' }, recent.map((r) => h('li', null,
       h('a', { class: `recent-item ${r.unread ? 'is-unread' : ''}`.trim(), href: r.href, 'data-link': true },
         h('span', { class: 'recent-icon' }, icon(r.kind === 'mail' ? 'mail' : 'message', { size: 18, label: r.kind === 'mail' ? 'Email' : 'Text' })),
@@ -191,7 +202,7 @@ export function homeScreen({ scope }) {
     region(scope, store, ['mailboxes', 'aliases', 'numbers', 'balance'], stats),
     h('div', { class: 'home-grid' },
       h('section', { class: 'home-ids', 'aria-labelledby': 'ids-title' },
-        h('div', { class: 'section-head' }, h('h2', { class: 'section-title', id: 'ids-title' }, 'Addresses and numbers')),
+        h('div', { class: 'section-head' }, h('h2', { class: 'section-title', id: 'ids-title' }, phoneOn ? 'Addresses and numbers' : 'Addresses')),
         h('div', { class: 'id-tools' },
           h('div', { class: 'search-wrap' }, icon('search', { size: 16, cls: 'search-icon' }), searchInput),
           filterChips,

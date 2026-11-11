@@ -70,7 +70,9 @@
     height: calc(var(--topbar-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) var(--s-2) 0 var(--s-4);
     background: var(--bg); border-bottom: 1px solid var(--line);
   }
-  .topbar .brand { padding: 0; }
+  .topbar .brand, .bare-head .brand { padding: 0; min-height: var(--touch); align-items: center; }
+  .topbar .brand-name, .bare-head .brand-name { padding-bottom: 0; }
+  .back-link { min-height: var(--touch); margin-bottom: 0; }
   .topbar .brand-name { font-size: 1.25rem; }
   .topbar-actions { display: flex; align-items: center; gap: 0; }
   .topbar-balance { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 var(--s-2); color: var(--ink); text-decoration: none; font-size: var(--fs-sm); font-weight: 500; }
@@ -91,7 +93,8 @@
   .page-actions .btn { flex: 1 1 auto; }
   .section { margin-top: var(--s-6); }
   .banner { justify-content: space-between; text-align: left; padding: 0 var(--s-2) 0 var(--s-4); font-size: var(--fs-xs); }
-  .banner-btn { min-height: 2.25rem; padding: 0 var(--s-2); }
+  .banner { min-height: 2.25rem; }
+  .banner-btn { min-height: var(--touch); margin: -0.25rem 0; padding: 0 var(--s-2); position: relative; z-index: 31; }
 }
 
 /* ---------- screens without the shell (welcome, sign-in, create, unlock) ---------- */

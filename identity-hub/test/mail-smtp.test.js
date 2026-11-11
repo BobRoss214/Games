@@ -2,12 +2,13 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { connect } from 'node:net';
-import { startTestApp, newAccount, unb64u } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { X509Certificate, createPrivateKey } from 'node:crypto';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createApp } from '../server/app.js';
+import { startTestApp, newAccount, unb64u } from './helpers.js';
 import { newMailbox, newAlias, listMessages, smtpSend, openMessage, databaseHas, smtpTalk, smtpCertificate } from './mail-helpers.js';
 import * as C from '../shared/crypto.js';
 
@@ -300,6 +301,24 @@ function makeCertificate(dir, commonName) {
   }
 }
 
+// Starts an app that must fail at the start, and cleans up after it. Returns the error (null if the start worked).
+async function failedStart(mail) {
+  const dataDir = mkdtempSync(join(tmpdir(), 'postern-data-'));
+  const failing = await createApp({
+    dataDir, port: 0, host: '127.0.0.1', logLevel: 'silent',
+    mail: { smtpPort: 0, smtpHost: '127.0.0.1', ...mail }, phone: { provider: 'mock' }, pay: { provider: 'mock' },
+  }, {});
+  try {
+    await failing.start();
+    return null;
+  } catch (err) {
+    return err;
+  } finally {
+    await failing.stop();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+}
+
 test('smtp: a self-signed certificate is made one time, kept in the data folder, and used for STARTTLS', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'postern-data-'));
   const keyFile = join(dir, 'smtp-selfsigned.key');
@@ -326,6 +345,8 @@ test('smtp: a self-signed certificate is made one time, kept in the data folder,
     assert.equal(shown.fingerprint256, made.fingerprint256);
     assert.equal(shown.subject.CN, 'mx.generated.test');
     assert.match(shown.protocol, /^TLSv1\.[23]$/);
+    // TLS 1.2 is the lowest version. (Many builds of OpenSSL refuse TLS 1.1 anyway, so the setting is also read back.)
+    assert.deepEqual(first.services.mail.tlsStatus(), { source: 'generated', minVersion: 'TLSv1.2' });
     await assert.rejects(smtpCertificate(first, OLD_TLS), 'TLS 1.1 is refused');
     assert.equal((await smtpCertificate(first, { maxVersion: 'TLSv1.2' })).protocol, 'TLSv1.2');
 
@@ -338,12 +359,14 @@ test('smtp: a self-signed certificate is made one time, kept in the data folder,
     // Nothing changed on disk, so there is nothing to load again.
     assert.equal(first.services.mail.checkTls(), false);
 
-    // The next start uses the same files. It makes no new key.
+    // The next start uses the same files. It makes no new key. It also makes the key private again.
     const before = { key: readFileSync(keyFile), cert: readFileSync(certFile), time: statSync(certFile).mtimeMs };
     await stop();
+    chmodSync(keyFile, 0o644);
     const second = await start('mx.generated.test');
     assert.deepEqual(readFileSync(keyFile), before.key);
     assert.deepEqual(readFileSync(certFile), before.cert);
+    assert.equal(statSync(keyFile).mode & 0o777, 0o600);
     assert.equal(statSync(certFile).mtimeMs, before.time);
     assert.equal((await smtpCertificate(second)).fingerprint256, made.fingerprint256);
 
@@ -390,6 +413,7 @@ test('smtp: without the openssl program the server uses the library certificate 
 
     // Mail still arrives, also over STARTTLS. The certificate is the one from the library (made for "localhost").
     assert.equal((await smtpCertificate(fallback)).subject.CN, 'localhost');
+    assert.equal(fallback.services.mail.tlsStatus().source, 'default');
     assert.equal(fallback.services.mail.checkTls(), false);
     const a = await newAccount(fallback, { credits: 100 });
     const { address } = await newMailbox(a);
@@ -412,6 +436,7 @@ test('smtp: STARTTLS uses the configured key and certificate', async (t) => {
     assert.equal(shown.fingerprint256, certificateIn(join(dir, 'cert.pem')).fingerprint256);
     // No self-signed pair is made when the operator gave a certificate.
     assert.equal(existsSync(join(secured.config.dataDir, 'smtp-selfsigned.crt')), false);
+    assert.deepEqual(secured.services.mail.tlsStatus(), { source: 'configured', minVersion: 'TLSv1.2' });
     await assert.rejects(smtpCertificate(secured, OLD_TLS), 'TLS 1.1 is refused');
 
     const a = await newAccount(secured, { credits: 100 });
@@ -429,8 +454,8 @@ test('smtp: STARTTLS uses the configured key and certificate', async (t) => {
   try {
     makeCertificate(bad, 'mx.one.test');
     makeCertificate(other, 'mx.two.test');
-    await assert.rejects(startTestApp({ mail: { tlsKeyFile: join(other, 'key.pem'), tlsCertFile: join(bad, 'cert.pem') } }), /does not belong/);
-    await assert.rejects(startTestApp({ mail: { tlsKeyFile: join(bad, 'missing.pem'), tlsCertFile: join(bad, 'cert.pem') } }), /ENOENT/);
+    assert.match((await failedStart({ tlsKeyFile: join(other, 'key.pem'), tlsCertFile: join(bad, 'cert.pem') })).message, /does not belong/);
+    assert.equal((await failedStart({ tlsKeyFile: join(bad, 'missing.pem'), tlsCertFile: join(bad, 'cert.pem') })).code, 'ENOENT');
   } finally {
     rmSync(bad, { recursive: true, force: true });
     rmSync(other, { recursive: true, force: true });
@@ -466,7 +491,8 @@ test('smtp: a renewed certificate is loaded without a restart', async (t) => {
     assert.equal(await shownName(), 'mx.second.test');
     assert.equal((await smtpCertificate(renewed)).fingerprint256, certificateIn(join(next, 'cert.pem')).fingerprint256);
     assert.equal(check(), false, 'loaded one time only');
-    await assert.rejects(smtpCertificate(renewed, OLD_TLS), 'TLS 1.2 is still the lowest version after a reload');
+    assert.deepEqual(renewed.services.mail.tlsStatus(), { source: 'configured', minVersion: 'TLSv1.2' }, 'TLS 1.2 is still the lowest version after a reload');
+    await assert.rejects(smtpCertificate(renewed, OLD_TLS));
 
     // A file that is gone for a moment, or holds nonsense, changes nothing.
     rmSync(certFile);

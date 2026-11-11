@@ -4,13 +4,13 @@ import { store, bus } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
 import { shortTime, fullTime, bytesText, plural } from '../lib/format.js';
 import { icon } from '../ui/icons.js';
-import { button, iconButton, emptyState, skeletonRows, segmented, copyButton, tag, runBusy, reportError, loadError, linkButton } from '../ui/components.js';
+import { button, emptyState, skeletonRows, segmented, copyButton, tag, runBusy, reportError, loadError, linkButton } from '../ui/components.js';
 import { menuButton } from '../ui/menu.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { toast, copyText } from '../ui/toast.js';
 import { listMessages, getMessage, getAttachment, setSeen, deleteMessage, personShort, personText, downloadBlob } from '../lib/mail.js';
 import { sanitizeEmail, inlineImageUrl, cidKey, htmlToText, INLINE_IMAGE_MAX } from '../lib/sanitize.js';
-import { loadMailboxes, updateAlias, mailboxName, findMailbox } from '../lib/data.js';
+import { loadMailboxes, updateAlias, findMailbox } from '../lib/data.js';
 import { openNewInbox } from '../ui/identities.js';
 import { openCompose } from './compose.js';
 import { openTestTools } from './testtools.js';
@@ -54,7 +54,7 @@ export function mailScreen({ params, scope }) {
   const listBody = h('div', { class: 'mail-list-body' });
   const listPane = h('section', { class: 'mail-list', 'aria-label': 'Messages' }, listHead, listBody);
   const viewPane = h('section', { class: 'mail-view', 'aria-label': 'Message' });
-  const el = h('div', { class: 'mail', dataset: { view: 'list' } }, boxesPane, listPane, viewPane);
+  const el = h('div', { class: 'mail', dataset: { view: 'list' } }, h('h1', { class: 'sr-only' }, 'Mail'), boxesPane, listPane, viewPane);
 
   const boxes = () => store.get('mailboxes');
   const currentBox = () => findMailbox(mailboxId);
@@ -65,7 +65,7 @@ export function mailScreen({ params, scope }) {
     if (all === null) { replace(boxesPane, skeletonRows(3)); return; }
     replace(boxesPane,
       h('div', { class: 'mail-boxes-head' },
-        h('h1', { class: 'mail-title' }, 'Mail'),
+        h('h2', { class: 'mail-title' }, 'Inboxes'),
         button('Write', { kind: 'primary', iconName: 'edit', size: 'sm', onClick: () => openCompose({ mailboxId }) }),
       ),
       h('ul', { class: 'box-list' }, all.map((m) => h('li', null,
@@ -143,7 +143,7 @@ export function mailScreen({ params, scope }) {
         ? emptyState({
           title: 'No mail yet', compact: true,
           text: 'Mail to this address and to its aliases shows here.',
-          action: dev ? button('Send a test message', { onClick: () => openTestTools('mail') }) : null,
+          action: dev ? button('Send a test message', { onClick: () => openTestTools('mail') }) : copyButton(() => box.address, 'Copy address', { what: 'Address copied', withLabel: true }),
         })
         : emptyState({ title: 'Nothing sent yet', compact: true, text: 'Messages you send from this inbox show here.', action: button('Write a message', { onClick: () => openCompose({ mailboxId }) }) }));
       return;

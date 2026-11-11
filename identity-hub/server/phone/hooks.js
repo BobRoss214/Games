@@ -1,4 +1,5 @@
-// Provider webhooks: incoming texts, incoming calls, click-to-call bridge, call status.
+// Provider webhooks: incoming texts, status of sent texts, incoming calls, click-to-call
+// bridge, spoken code, call status.
 // There is no cookie on these requests. The provider signature is mandatory.
 // The mock provider runs these same handlers when it simulates a text or a call.
 import { fail, reply } from '../core/http.js';
@@ -49,18 +50,19 @@ export function createHooks(app, ph) {
     const real = forwardTarget(num);
     // A text from the linked phone itself is not sent back to it.
     if (!real || real === peer) return;
-    const price = config.prices.textOut;
-    if (!store.canAfford(num.account_id, price)) return;
+    if (!store.canAfford(num.account_id, config.prices.textOut)) return;
     if (http.limiter.hit(http.limiter.key('forward-text', num.id), FORWARDS_PER_MINUTE, 60)) return;
-    try { store.charge(num.account_id, price, 'text'); } catch { return; }
+    let sent;
     try {
-      await provider.sendText({ from: voipNumber, to: real, body: `${peer}: ${body}`.slice(0, TEXT_MAX) });
-    } catch {
-      store.credit(num.account_id, price, 'refund');
-      log.warn('a text could not be forwarded');
+      sent = await ph.sendPaidText({ accountId: num.account_id, from: voipNumber, to: real, body: `${peer}: ${body}`.slice(0, TEXT_MAX) });
+    } catch (err) {
+      // The charge came back already. The balance can also be gone since the check above (402).
+      if (err.code !== 'insufficient_funds') log.warn('a text could not be forwarded');
       return;
     }
-    if (price > 0) events.publish(num.account_id, 'balance');
+    // The forwarded copy has no row. If the provider reports later that it failed, the charge comes back.
+    ph.trackSend({ ref: sent.ref, status: sent.status, accountId: num.account_id, charged: sent.price });
+    if (sent.price > 0) events.publish(num.account_id, 'balance');
   }
 
   // An unknown or suspended number gets the same silent answer as a good one.
@@ -88,7 +90,7 @@ export function createHooks(app, ph) {
     const key = keys.indexHmac('call', callId);
     // This call is in the log already: the provider sent the webhook a second time.
     if (db.get('SELECT 1 AS x FROM calls WHERE call_hmac = ?', key)) return NOT_AVAILABLE;
-    const real = num.forward_calls && num.voice ? forwardTarget(num) : null;
+    const real = num.forward_calls && ph.hasVoice(num) ? forwardTarget(num) : null;
     if (real && real !== peer && store.canAfford(num.account_id, config.prices.callMinute)) {
       // The status webhook finds the call again with this row.
       db.run('INSERT OR IGNORE INTO live_calls (call_hmac, account_id, number_id, direction, at, sealed) VALUES (?,?,?,?,?,?)',
@@ -137,12 +139,33 @@ export function createHooks(app, ph) {
     if (done.cost > 0) events.publish(done.accountId, 'balance');
   }
 
+  // Phone link by call: the real phone answered. Speak the code two times, then end the call.
+  function speakCode(token) {
+    const s = ph.getSayCode(token);
+    if (!s) return [{ hangup: true }];
+    const line = `Your ${config.appName} code is ${s.code.split('').join(', ')}.`;
+    return [{ say: line }, { say: line }, { hangup: true }];
+  }
+
   const hooks = {
-    paths: { text: '/api/hooks/phone/text', voice: '/api/hooks/phone/voice', bridge: '/api/hooks/phone/bridge', status: '/api/hooks/phone/status' },
+    paths: {
+      text: '/api/hooks/phone/text', textStatus: '/api/hooks/phone/text-status', voice: '/api/hooks/phone/voice',
+      bridge: '/api/hooks/phone/bridge', sayCode: '/api/hooks/phone/say-code', status: '/api/hooks/phone/status',
+    },
     async text(c) {
       check(c);
       await receiveText(provider.parseText(c));
       return answer(provider.textReply());
+    },
+    // The provider reports what happened to a text that we sent.
+    async textStatus(c) {
+      check(c);
+      ph.reportTextStatus(provider.parseTextStatus(c));
+      return answer(provider.textReply());
+    },
+    async sayCode(c) {
+      check(c);
+      return answer(provider.voiceReply(speakCode(c.query.token)));
     },
     async voice(c) {
       check(c);
@@ -162,8 +185,13 @@ export function createHooks(app, ph) {
 
   const opts = { body: provider.webhookBody };
   http.post(hooks.paths.text, opts, hooks.text);
-  http.post(hooks.paths.voice, opts, hooks.voice);
-  http.post(hooks.paths.bridge, opts, hooks.bridge);
-  http.post(hooks.paths.status, opts, hooks.status);
+  http.post(hooks.paths.textStatus, opts, hooks.textStatus);
+  // A provider with no voice has no call webhooks.
+  if (ph.capabilities.voice) {
+    http.post(hooks.paths.voice, opts, hooks.voice);
+    http.post(hooks.paths.bridge, opts, hooks.bridge);
+    http.post(hooks.paths.sayCode, opts, hooks.sayCode);
+    http.post(hooks.paths.status, opts, hooks.status);
+  }
   return hooks;
 }

@@ -7,8 +7,11 @@
 //   createInvoice({ id, amountUsd, method, minutes }) → { ref, checkoutUrl }
 //       id: our invoice id. amountUsd: text like "10.00". minutes: time until the invoice expires.
 //       ref: the invoice id of the provider. checkoutUrl: the payment page, or null.
-//   getStatus(ref) → 'pending' | 'processing' | 'paid' | 'expired'
+//   getStatus(ref) → { state, amount, currency }
+//       state: 'pending' | 'processing' | 'paid' | 'expired'.
 //       'processing': a payment was seen and is not final yet. Only 'paid' lets the server sign.
+//       amount, currency: what the provider has for this invoice, for example "10.00" and "USD".
+//       The server signs only if they are equal to what it asked for. null: the provider does not say.
 //
 // The functions throw an Error when the provider cannot be reached.
 import { randomBytes } from 'node:crypto';
@@ -20,16 +23,20 @@ export function createMockPay() {
   // so that development invoices survive a restart of the server.
   const paid = new Set();
   const created = [];
+  const amounts = new Map(); // ref -> amount of the order, for the invoices of this run
   return {
     name: 'mock',
     methods: Object.entries(METHOD_LABELS).map(([id, label]) => ({ id, label })),
     created, // what createInvoice got, for tests
     async createInvoice(order) {
       created.push(order);
-      return { ref: 'mock_' + randomBytes(12).toString('hex'), checkoutUrl: null };
+      const ref = 'mock_' + randomBytes(12).toString('hex');
+      amounts.set(ref, order.amountUsd);
+      return { ref, checkoutUrl: null };
     },
     async getStatus(ref) {
-      return paid.has(ref) ? 'paid' : 'pending';
+      const known = amounts.has(ref);
+      return { state: paid.has(ref) ? 'paid' : 'pending', amount: known ? amounts.get(ref) : null, currency: known ? 'USD' : null };
     },
     // Test and development helper: the simulated customer pays.
     markPaid(ref) { paid.add(ref); },

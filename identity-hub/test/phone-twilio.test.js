@@ -13,7 +13,10 @@ const SID = 'ACtest0123456789abcdef0123456789ab';
 const TOKEN = 'test-auth-token-5f2c';
 const PUBLIC = 'http://localhost:8080';
 const API = `/2010-04-01/Accounts/${SID}`;
-const HOOK = { text: '/api/hooks/phone/text', voice: '/api/hooks/phone/voice', status: '/api/hooks/phone/status', bridge: '/api/hooks/phone/bridge' };
+const HOOK = {
+  text: '/api/hooks/phone/text', textStatus: '/api/hooks/phone/text-status', voice: '/api/hooks/phone/voice',
+  status: '/api/hooks/phone/status', bridge: '/api/hooks/phone/bridge', sayCode: '/api/hooks/phone/say-code',
+};
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8"?>';
 const NOT_AVAILABLE_XML = `${XML_HEAD}<Response><Say>The person you called is not available.</Say><Hangup/></Response>`;
 const HANGUP_XML = `${XML_HEAD}<Response><Hangup/></Response>`;
@@ -132,7 +135,7 @@ async function linkPhone(acct, num) {
   assert.equal(res.status, 201);
   const sent = fake.last();
   assert.equal(sent.path, '/Messages.json');
-  assert.deepEqual({ From: sent.form.From, To: sent.form.To }, { From: num.plain, To: number });
+  assert.deepEqual({ From: sent.form.From, To: sent.form.To, StatusCallback: sent.form.StatusCallback }, { From: num.plain, To: number, StatusCallback: PUBLIC + HOOK.textStatus });
   const code = /^Your Postern code is (\d{6})\. Do not share it\.$/.exec(sent.form.Body)[1];
   const v = await acct.api.post(`/api/phones/${res.data.phone.id}/verify`, { code });
   assert.equal(v.status, 200);
@@ -409,7 +412,9 @@ test('end to end: search, buy, signed incoming text, send, refusal with refund, 
   const sent = await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: from, body: 'Thanks!' });
   assert.equal(sent.status, 201);
   assert.equal(fake.last().fullPath, `${API}/Messages.json`);
-  assert.deepEqual(fake.last().form, { From: num.plain, To: from, Body: 'Thanks!' });
+  // Twilio is told where to report the result of the message.
+  assert.deepEqual(fake.last().form, { From: num.plain, To: from, Body: 'Thanks!', StatusCallback: PUBLIC + HOOK.textStatus });
+  assert.equal(sent.data.text.status, 'queued');
   assert.equal(app.store.balance(a.id), 1000 - 400 - 3);
 
   // Twilio refuses (21610): 502 with a plain message, and the charge comes back.
@@ -618,6 +623,172 @@ test('end to end: a text is forwarded to the real phone through Twilio', async (
   assert.equal(res.status, 200);
   assert.equal(fake.requests.length, count + 1);
   assert.equal(fake.last().fullPath, `${API}/Messages.json`);
-  assert.deepEqual(fake.last().form, { From: num.plain, To: phone.plain, Body: `${from}: Your parcel is here` });
+  assert.deepEqual(fake.last().form, { From: num.plain, To: phone.plain, Body: `${from}: Your parcel is here`, StatusCallback: PUBLIC + HOOK.textStatus });
   assert.equal(app.store.balance(a.id), 500 - 400 - 3 - 3);
+});
+
+test('adapter: status callback for texts, and what the adapter can do', async () => {
+  const twilio = createTwilioProvider({ accountSid: SID, authToken: TOKEN, baseUrl: fake.url });
+  assert.deepEqual(twilio.capabilities, { voice: true, asyncText: true, searchByArea: true });
+  assert.deepEqual(app.services.phone.capabilities, { voice: true, asyncText: true, searchByArea: true });
+
+  // The address for status reports goes to Twilio with the message. A new message is "queued".
+  const sent = await twilio.sendText({ from: '+12125551000', to: '+13055550100', body: 'Hi', statusUrl: PUBLIC + HOOK.textStatus });
+  assert.deepEqual(fake.last().form, { From: '+12125551000', To: '+13055550100', Body: 'Hi', StatusCallback: PUBLIC + HOOK.textStatus });
+  assert.match(sent.ref, /^SM[0-9a-f]{32}$/);
+  assert.equal(sent.status, 'queued');
+  fake.failNext('POST', '/Messages.json', 201, { sid: 'SM2', status: 'sent', error_code: null });
+  assert.equal((await twilio.sendText({ from: '+12125551000', to: '+13055550100', body: 'Hi' })).status, 'sent');
+  fake.failNext('POST', '/Messages.json', 201, { sid: 'SM3', status: 'accepted', error_code: null });
+  assert.equal((await twilio.sendText({ from: '+12125551000', to: '+13055550100', body: 'Hi' })).status, 'queued');
+
+  const parse = (body) => twilio.parseTextStatus({ body });
+  const statusOf = (MessageStatus) => parse({ MessageSid: 'SM1', MessageStatus }).status;
+  assert.deepEqual(['accepted', 'scheduled', 'queued'].map(statusOf), ['queued', 'queued', 'queued']);
+  assert.deepEqual(['sending', 'sent'].map(statusOf), ['sent', 'sent']);
+  assert.deepEqual(['delivered', 'read'].map(statusOf), ['delivered', 'delivered']);
+  assert.deepEqual(['undelivered', 'failed', 'canceled'].map(statusOf), ['failed', 'failed', 'failed']);
+  // Words that are no result, and names of built-in object fields.
+  assert.deepEqual(['receiving', 'received', 'constructor', '__proto__', '', undefined].map(statusOf), [null, null, null, null, null, null]);
+  assert.deepEqual(parse({ MessageSid: 'SM1', MessageStatus: 'undelivered', ErrorCode: '30034' }), { ref: 'SM1', status: 'failed', errorText: 'Twilio error 30034' });
+  // An error code that is not a short number is dropped: it could be anything.
+  assert.deepEqual(parse({ MessageSid: 'SM1', MessageStatus: 'failed', ErrorCode: 'call +13055550100' }), { ref: 'SM1', status: 'failed', errorText: '' });
+  assert.deepEqual(parse({}), { ref: '', status: null, errorText: '' });
+});
+
+test('end to end: Twilio reports the result of a text with a signed status callback', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const to = outsider();
+  const statusOf = async (id) => (await a.api.get(`/api/numbers/${num.id}/texts`)).data.texts.find((t) => t.id === id).status;
+  const send = async (sid, body) => {
+    // Fix the message id that the fake returns, so that the test can report on that message.
+    fake.failNext('POST', '/Messages.json', 201, { sid, status: 'queued', error_code: null });
+    const res = await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body });
+    assert.equal(res.status, 201);
+    assert.equal(res.data.text.status, 'queued');
+    return res.data.text;
+  };
+  // The status callback as Twilio posts it.
+  const report = (sid, status, extra = {}) => twilioPost(HOOK.textStatus, {
+    AccountSid: SID, ApiVersion: '2010-04-01', From: num.plain, To: to, MessageSid: sid, SmsSid: sid, MessageStatus: status, SmsStatus: status, ...extra,
+  });
+  const warnings = [];
+  const realWarn = app.log.warn;
+  app.log.warn = (message) => warnings.push(message);
+  try {
+    const sid1 = 'SM' + '1'.repeat(32);
+    const t1 = await send(sid1, 'One');
+    assert.equal(app.store.balance(a.id), 97);
+
+    // A bad or missing signature: 403, and nothing changes.
+    const fields = { MessageSid: sid1, MessageStatus: 'failed', ErrorCode: '30034' };
+    for (const sig of ['AAAAAAAAAAAAAAAAAAAAAAAAAAA=', sign(PUBLIC + HOOK.text, fields), sign(app.url + HOOK.textStatus, fields), null]) {
+      assert.equal((await twilioPost(HOOK.textStatus, fields, sig)).status, 403);
+    }
+    assert.equal(await statusOf(t1.id), 'queued');
+    assert.equal(app.store.balance(a.id), 97);
+
+    const first = await report(sid1, 'sent');
+    assert.equal(first.status, 200);
+    assert.match(first.type, /^text\/xml/);
+    assert.equal(first.text, `${XML_HEAD}<Response/>`);
+    assert.equal(await statusOf(t1.id), 'sent');
+    // Twilio can deliver reports in the wrong order. The status does not go back.
+    await report(sid1, 'sending');
+    await report(sid1, 'queued');
+    assert.equal(await statusOf(t1.id), 'sent');
+    await report(sid1, 'delivered');
+    assert.equal(await statusOf(t1.id), 'delivered');
+    // "delivered" is final: a later "failed" changes nothing and pays nothing back.
+    await report(sid1, 'failed', { ErrorCode: '30008' });
+    await report(sid1, 'sent');
+    assert.equal(await statusOf(t1.id), 'delivered');
+    assert.equal(app.store.balance(a.id), 97);
+    assert.deepEqual(warnings, []);
+
+    // The carrier blocks a text after Twilio accepted it (error 30034): failed, and the charge comes back.
+    const sid2 = 'SM' + '2'.repeat(32);
+    const t2 = await send(sid2, 'Two');
+    assert.equal(app.store.balance(a.id), 94);
+    await report(sid2, 'undelivered', { ErrorCode: '30034', ErrorMessage: `Message to ${to} blocked` });
+    assert.equal(await statusOf(t2.id), 'failed');
+    assert.equal(app.store.balance(a.id), 97);
+    assert.equal(ledger(a)[0], 'refund:3');
+    // Exactly one time.
+    await report(sid2, 'undelivered', { ErrorCode: '30034' });
+    await report(sid2, 'failed', { ErrorCode: '30034' });
+    assert.equal(app.store.balance(a.id), 97);
+    assert.equal(ledger(a).filter((l) => l === 'refund:3').length, 1);
+    // The operator sees the error code in the log, and no phone number.
+    assert.deepEqual(warnings, ['the provider did not deliver a text (Twilio error 30034)']);
+
+    // A report for a message that is not ours, and a status that is no result.
+    assert.equal((await report('SM' + '9'.repeat(32), 'failed')).status, 200);
+    const sid3 = 'SM' + '3'.repeat(32);
+    const t3 = await send(sid3, 'Three');
+    assert.equal((await report(sid3, 'receiving')).status, 200);
+    assert.equal(await statusOf(t3.id), 'queued');
+    assert.equal(app.store.balance(a.id), 94);
+  } finally {
+    app.log.warn = realWarn;
+  }
+});
+
+test('end to end: phone link by a call; Twilio gets TwiML that speaks the code', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const number = realPhone();
+  const messages = fake.requests.filter((r) => r.path === '/Messages.json').length;
+
+  const res = await a.api.post('/api/phones', { number, method: 'call', via: { numberId: num.id, number: num.plain } });
+  assert.equal(res.status, 201);
+  assert.equal(res.data.phone.verified, false);
+  // Twilio calls the real phone from the VoIP number. No text is sent.
+  const req = fake.last();
+  assert.equal(req.fullPath, `${API}/Calls.json`);
+  assert.deepEqual({ ...req.form, Url: '' }, { To: number, From: num.plain, Url: '', Method: 'POST', StatusCallback: PUBLIC + HOOK.status, StatusCallbackMethod: 'POST' });
+  assert.equal(fake.requests.filter((r) => r.path === '/Messages.json').length, messages);
+  const answerUrl = new URL(req.form.Url);
+  assert.equal(answerUrl.origin + answerUrl.pathname, PUBLIC + HOOK.sayCode);
+  assert.match(answerUrl.searchParams.get('token'), /^[A-Za-z0-9_-]{43}$/);
+  // One fixed charge.
+  assert.equal(app.store.balance(a.id), 500 - 400 - 3);
+  assert.equal(ledger(a)[0], 'call:-3');
+
+  // The phone answers. Twilio asks the say-code address, signed for the full URL with its query string.
+  const path = answerUrl.pathname + answerUrl.search;
+  const parent = { AccountSid: SID, CallSid: 'CA' + 'd'.repeat(32), From: num.plain, To: number, CallStatus: 'in-progress', Direction: 'outbound-api' };
+  assert.equal((await twilioPost(path, parent, sign(PUBLIC + HOOK.sayCode, parent))).status, 403);
+  assert.equal((await twilioPost(path, parent, null)).status, 403);
+  const unknown = await twilioPost(HOOK.sayCode + '?token=' + 'A'.repeat(43), parent);
+  assert.equal(unknown.text, HANGUP_XML);
+  const spoken = await twilioPost(path, parent);
+  assert.equal(spoken.status, 200);
+  assert.match(spoken.type, /^text\/xml/);
+  const m = /^<\?xml version="1\.0" encoding="UTF-8"\?><Response><Say>Your Postern code is (\d(?:, \d){5})\.<\/Say><Say>Your Postern code is (\d(?:, \d){5})\.<\/Say><Hangup\/><\/Response>$/.exec(spoken.text);
+  assert.ok(m, spoken.text);
+  assert.equal(m[1], m[2]);
+  const code = m[1].replace(/\D/g, '');
+  // The code was not in the request that started the call. Twilio gets it only when the phone answers.
+  assert.ok(!req.raw.includes(code));
+
+  // The end of this call makes no line in the call log and no more charge.
+  await twilioPost(HOOK.status, { ...parent, CallStatus: 'completed', CallDuration: '14' });
+  assert.equal((await calls(a, num)).length, 0);
+  assert.equal(app.store.balance(a.id), 97);
+
+  const wrong = code === '000000' ? '000001' : '000000';
+  assert.equal((await a.api.post(`/api/phones/${res.data.phone.id}/verify`, { code: wrong })).status, 400);
+  const good = await a.api.post(`/api/phones/${res.data.phone.id}/verify`, { code });
+  assert.equal(good.status, 200);
+  assert.equal(good.data.phone.verified, true);
+
+  // Twilio refuses to start the call: the charge comes back.
+  fake.failNext('POST', '/Calls.json', 400, { code: 21215, message: 'Geo permission', status: 400 });
+  const no = await a.api.post('/api/phones', { number: realPhone(), method: 'call', via: { numberId: num.id, number: num.plain } });
+  assert.equal(no.status, 502);
+  assert.equal(no.data.error.message, 'The telephone provider refused this call.');
+  assert.equal(app.store.balance(a.id), 97);
+  assert.equal((await a.api.get('/api/phones')).data.phones.length, 1);
 });

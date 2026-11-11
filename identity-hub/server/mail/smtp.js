@@ -2,7 +2,7 @@
 // It accepts mail for our own addresses only (no relay) and has no login.
 import { SMTPServer } from 'smtp-server';
 import { safeError } from './errors.js';
-import { chooseTlsFiles, fileStamp, readPair } from './tls.js';
+import { MIN_TLS_VERSION, chooseTlsFiles, fileStamp, readPair } from './tls.js';
 
 const MAX_RECIPIENTS = 20;
 const MAX_CLIENTS = 50;
@@ -133,6 +133,7 @@ export function createSmtp(app, inbound) {
 
   // ---- TLS for STARTTLS (see tls.js) ----
   let tlsFiles = null;   // { source, keyFile, certFile }, or null for the certificate of the library
+  let inUse = null;      // { key, cert } that the server shows now
   let loadedStamp = '';  // state of the files that are in use now
   let refusedStamp = ''; // state of files that could not be loaded, so that the log gets one line only
 
@@ -150,8 +151,8 @@ export function createSmtp(app, inbound) {
     }
     loadedStamp = fileStamp(tlsFiles.keyFile, tlsFiles.certFile);
     const pair = readPair(tlsFiles.keyFile, tlsFiles.certFile);
-    // Old protocol versions are refused. A sender that cannot do TLS 1.2 sends without TLS or not at all.
-    server.updateSecureContext({ key: pair.key, cert: pair.cert, minVersion: 'TLSv1.2' });
+    inUse = { key: pair.key, cert: pair.cert };
+    server.updateSecureContext({ ...inUse, minVersion: MIN_TLS_VERSION });
   }
 
   // Loads the key and the certificate again if the files changed on disk (a renewed certificate).
@@ -165,15 +166,25 @@ export function createSmtp(app, inbound) {
       return false; // a file is missing for a moment while it is replaced
     }
     if (stamp === loadedStamp || stamp === refusedStamp) return false;
+    let pair;
     try {
-      const pair = readPair(tlsFiles.keyFile, tlsFiles.certFile);
-      server.updateSecureContext({ key: pair.key, cert: pair.cert });
+      pair = readPair(tlsFiles.keyFile, tlsFiles.certFile);
     } catch {
       // For example: the new certificate is on disk and the new key is not yet. The old pair stays in use.
       refusedStamp = stamp;
       log.warn('The changed SMTP certificate files could not be loaded. The old certificate stays in use.');
       return false;
     }
+    try {
+      server.updateSecureContext({ key: pair.key, cert: pair.cert });
+    } catch (err) {
+      // readPair() checked the pair, so this is not expected. Put the old pair back: the server must not stay without one.
+      server.updateSecureContext(inUse);
+      refusedStamp = stamp;
+      log.error('The SMTP certificate could not be changed', safeError(err));
+      return false;
+    }
+    inUse = { key: pair.key, cert: pair.cert };
     loadedStamp = stamp;
     refusedStamp = '';
     log.info('The SMTP certificate was loaded again from disk.');
@@ -192,6 +203,8 @@ export function createSmtp(app, inbound) {
       });
     },
     checkTls,
+    // Which certificate is in use and the lowest TLS version, read back from the SMTP server object.
+    tlsStatus: () => ({ source: tlsFiles ? tlsFiles.source : 'default', minVersion: server.options.minVersion || null }),
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }

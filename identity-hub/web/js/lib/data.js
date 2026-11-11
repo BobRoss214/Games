@@ -4,8 +4,6 @@ import { api } from './api.js';
 import { store, bus } from './store.js';
 import { decLabel, encLabel, openSealed, isUnlocked, vaultGet, vaultPut } from './session.js';
 
-const byCreated = (a, b) => String(a.createdDay || '').localeCompare(String(b.createdDay || ''));
-
 // Lists are reloaded often (every live event). The store changes only when the
 // content is different, so that screens do not repaint for nothing.
 function setList(key, value) {
@@ -272,4 +270,3 @@ export function stopEvents() {
   reloadTimers = new Map();
 }
 
-export { byCreated };

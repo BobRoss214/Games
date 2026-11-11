@@ -54,8 +54,6 @@ export function replace(el, ...children) {
   return append(el, ...children);
 }
 
-export const text = (v) => document.createTextNode(String(v ?? ''));
-export const frag = (...children) => append(document.createDocumentFragment(), ...children);
 
 // A scope collects clean-up functions for one screen. The router disposes it on navigation.
 export function createScope() {

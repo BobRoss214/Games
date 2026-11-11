@@ -566,7 +566,7 @@ test('send: checks; a refused message sends nothing', async () => {
   await expectError(send({ to: 'ok@elsewhere.example' }), 400, 'bad_request');
   const many = Array.from({ length: 21 }, (_, i) => `r${i}@elsewhere.example`);
   await expectError(send({ to: many.slice(0, 10), cc: many.slice(10, 20), bcc: many.slice(20) }), 400, 'bad_recipient');
-  await expectError(send({ to: many }), 400, 'bad_request');
+  await expectError(send({ to: many }), 400, 'bad_recipient');
 
   // An unknown address on our own domain: the error names it and nothing is sent, also not to the other recipients.
   const unknown = await expectError(send({ to: ['ok@elsewhere.example', boxB.address], cc: ['nobody.home123@postern.test'] }), 400, 'bad_recipient');
@@ -631,7 +631,7 @@ test('send: size limits', async () => {
     assert.equal(encoded.status, 413);
     assert.equal(errorCode(encoded), 'too_large');
     // The content alone is over the limit.
-    assert.equal((await send({ text: 'x'.repeat(101 * 1024) })).status, 400);
+    assert.equal((await send({ text: 'x'.repeat(101 * 1024) })).status, 413);
     assert.equal((await send({ text: 'x'.repeat(60 * 1024), html: 'y'.repeat(60 * 1024) })).status, 413);
     // The whole request is over the limit of the route (1.5 times the message limit).
     assert.equal((await send({ attachments: file(140 * 1024) })).status, 413);

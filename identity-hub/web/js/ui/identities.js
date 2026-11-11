@@ -4,7 +4,7 @@ import { store } from '../lib/store.js';
 import { navigate } from '../lib/router.js';
 import { money, phoneText, countryName, plural } from '../lib/format.js';
 import { icon } from './icons.js';
-import { button, field, selectField, copyButton, callout, runBusy, reportError, needFunds, tag, skeletonRows, emptyState } from './components.js';
+import { button, field, selectField, copyButton, runBusy, reportError, needFunds, tag, skeletonRows, emptyState } from './components.js';
 import { openDialog, formDialog, confirmDialog } from './dialog.js';
 import { toast } from './toast.js';
 import {
@@ -269,5 +269,3 @@ export async function confirmDeleteItem(item) {
   if (!ok) return false;
   try { await releaseNumber(item.id); toast('Number released', { kind: 'ok' }); return true; } catch (err) { reportError(err); return false; }
 }
-
-export { callout };

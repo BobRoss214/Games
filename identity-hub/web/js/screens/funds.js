@@ -45,7 +45,7 @@ export function fundsScreen({ scope }) {
       status.textContent = 'Making a private payment. This takes a moment…';
       runBusy(submit, async () => {
         const made = await startPurchase({ units, method });
-        if (made.checkoutUrl) toast('Payment made. Open the payment page to pay.', { kind: 'ok' });
+        if (made.checkoutUrl) toast('Invoice made. Open the payment page to pay.', { kind: 'ok' });
       }).finally(() => { status.hidden = true; });
     } },
       h('div', { class: 'stack stack-2' },
@@ -77,6 +77,8 @@ export function fundsScreen({ scope }) {
   const purchasesSlot = h('div', { class: 'section-slot' });
   function purchaseRow(p) {
     const label = methodLabels[p.method] || p.method;
+    // Only a normal web address is used as a link.
+    const payUrl = /^https?:\/\//i.test(p.checkoutUrl || '') ? p.checkoutUrl : '';
     let state;
     let actions = null;
     const remove = (title, message) => button('Remove', { size: 'sm', onClick: async () => {
@@ -88,8 +90,8 @@ export function fundsScreen({ scope }) {
     else if (p.status === 'waiting') {
       state = h('span', { class: 'pay-state' }, spinner('Waiting'), 'Waiting for payment');
       actions = [
-        p.checkoutUrl ? h('a', { class: 'btn btn-primary btn-sm', href: p.checkoutUrl, target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 16 }), h('span', null, 'Open payment page')) : null,
-        mock ? button('Simulate payment (test mode)', { size: 'sm', kind: p.checkoutUrl ? '' : 'primary', onClick: (e, btn) => runBusy(btn, () => simulatePayment(p.localId)) }) : null,
+        payUrl ? h('a', { class: 'btn btn-primary btn-sm', href: payUrl, target: '_blank', rel: 'noopener noreferrer' }, icon('external', { size: 16 }), h('span', null, 'Open payment page')) : null,
+        mock ? button('Simulate payment (test mode)', { size: 'sm', kind: payUrl ? '' : 'primary', onClick: (e, btn) => runBusy(btn, () => simulatePayment(p.localId)) }) : null,
         remove('Remove this payment?', 'If you paid this invoice already, wait until the credit arrives. If you remove it now, that money is lost.'),
       ];
     } else if (p.status === 'paid' || p.status === 'redeeming') state = h('span', { class: 'pay-state' }, spinner(), 'Paid — adding credit');
@@ -168,7 +170,7 @@ export function fundsScreen({ scope }) {
   );
 
   const el = h('div', { class: 'page' },
-    pageHeader({ title: 'Funds', lede: 'Your credit pays for inboxes, numbers, texts and calls.' }),
+    pageHeader({ title: 'Funds', lede: config.features.phone ? 'Your credit pays for inboxes, numbers, texts and calls.' : 'Your credit pays for inboxes.' }),
     h('div', { class: 'funds-grid' },
       h('div', { class: 'funds-main' },
         h('div', { class: 'balance' },
@@ -182,7 +184,7 @@ export function fundsScreen({ scope }) {
       ),
       h('aside', { class: 'funds-side' },
         section({ title: 'Prices' }, h('div', { class: 'sheet' }, prices), h('p', { class: 'hint prices-hint' }, 'When your balance is too low to renew, the inbox or number is paused. It is not deleted at once.')),
-        section({ title: 'Why payments are private' },
+        !payOn ? null : section({ title: 'Why payments are private' },
           h('div', { class: 'private-note' },
             icon('shield', { size: 20 }),
             h('p', { class: 'read small' }, 'You pay an invoice that has no link to your account. When it is paid, your browser gets credit tokens that only it can open, and adds them to your balance. The payment system never learns which account the money went to. The account system never learns which invoice paid for it.'),

@@ -549,6 +549,10 @@ test('passkeys: label change, limit of 10, same passkey cannot be added twice', 
   assert.equal(patched.data.passkey.enc, b64u(label));
   assert.equal(patched.data.passkey.id, id);
   assert.equal((await a.api.patch(`/api/passkeys/${id}`, {})).status, 400);
+  assert.equal((await a.api.patch(`/api/passkeys/${id}`, { enc: 'not+base64' })).status, 400);
+  // null removes the label, like for a mailbox or an alias.
+  assert.equal((await a.api.patch(`/api/passkeys/${id}`, { enc: null })).data.passkey.enc, null);
+  assert.equal((await a.api.get('/api/passkeys')).data.passkeys[0].enc, null);
   assert.equal((await a.api.patch('/api/passkeys/unknown', { enc: b64u(label) })).status, 404);
 
   // The id in the answer must match the id inside the signed data.

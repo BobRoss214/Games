@@ -28,13 +28,14 @@ export function registerRoutes(app, ph) {
 
   const NUMBER_COLS = `n.*, (SELECT COUNT(*) FROM texts t WHERE t.number_id = n.id AND t.direction = 'in' AND t.seen = 0) AS unread`;
   const numberView = (r) => ({
-    id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), country: r.country, sms: r.sms === 1, voice: r.voice === 1,
+    id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), country: r.country, sms: r.sms === 1, voice: ph.hasVoice(r),
     status: r.status, paidUntil: r.paid_until, createdDay: r.created_day,
     forwardPhoneId: r.forward_phone_id, forwardTexts: r.forward_texts === 1, forwardCalls: r.forward_calls === 1, unread: r.unread || 0,
   });
   const loadNumber = (accountId, id) => numberView(db.get(`SELECT ${NUMBER_COLS} FROM numbers n WHERE n.id = ? AND n.account_id = ?`, id, accountId));
   const phoneView = (r) => ({ id: r.id, sealedNumber: b64u(r.sealed_number), enc: b64u(r.enc), verified: r.verified === 1, createdDay: r.created_day });
-  const textView = (r) => ({ id: r.id, direction: r.direction, at: r.at, seen: r.seen === 1, sealed: b64u(r.sealed) });
+  // status: the delivery status of a text that we sent. An incoming text has none.
+  const textView = (r) => ({ id: r.id, direction: r.direction, at: r.at, seen: r.seen === 1, sealed: b64u(r.sealed), status: r.direction === 'out' ? r.status || 'sent' : null });
   const callView = (r) => ({ id: r.id, direction: r.direction, at: r.at, seconds: r.seconds, status: r.status, sealed: b64u(r.sealed) });
 
   function ownPhone(accountId, id) {
@@ -66,14 +67,18 @@ export function registerRoutes(app, ph) {
     ph.requireOn();
     const country = need.string(c.query.country || config.phone.countries[0], 'country', { min: 2, max: 2, pattern: /^[A-Za-z]{2}$/ }).toUpperCase();
     if (!config.phone.countries.includes(country)) throw fail(400, 'bad_request', 'Numbers in this country are not available.');
-    const areaCode = need.optional(c.query.areaCode || undefined, need.string, 'areaCode', { max: 6, pattern: /^\d{1,6}$/ });
+    let areaCode = need.optional(c.query.areaCode || undefined, need.string, 'areaCode', { max: 6, pattern: /^\d{1,6}$/ });
+    if (!ph.capabilities.searchByArea) areaCode = undefined;
     let found;
     try { found = await provider.search({ country, areaCode, limit: 20 }); } catch (err) { throw ph.providerFail(err); }
     const numbers = [];
     for (const n of found) {
       if (numbers.length >= 20) break;
       if (typeof n.number !== 'string' || !E164.test(n.number) || ph.numberByPlain(n.number)) continue;
-      const item = { number: n.number, locality: String(n.locality || ''), region: String(n.region || ''), country: String(n.country || country), sms: Boolean(n.sms), voice: Boolean(n.voice) };
+      const item = {
+        number: n.number, locality: String(n.locality || ''), region: String(n.region || ''), country: String(n.country || country),
+        sms: Boolean(n.sms), voice: Boolean(n.voice) && ph.capabilities.voice,
+      };
       numbers.push(item);
       // Only a number from a search of this account can be bought.
       ph.addOffer(c.account.id, item);
@@ -141,6 +146,7 @@ export function registerRoutes(app, ph) {
     if (enc) { sets.push('enc = ?'); args.push(enc); }
     const texts = need.optional(b.forwardTexts, need.bool, 'forwardTexts');
     const calls = need.optional(b.forwardCalls, need.bool, 'forwardCalls');
+    if (calls === true) ph.requireVoice(num);
     if (b.forwardPhoneId === null) {
       // No phone, no forwarding. A phone that is linked later must not start to ring by surprise.
       sets.push('forward_phone_id = NULL', 'forward_texts = 0', 'forward_calls = 0');
@@ -176,7 +182,7 @@ export function registerRoutes(app, ph) {
 
   http.get('/api/numbers/:id/texts', { auth: true }, (c) => {
     const num = ph.ownNumber(c.account.id, c.params.id);
-    const { rows, more } = page('texts', 'id, direction, at, seen, sealed', c.account.id, num.id, c.query, { def: 100, max: 200 });
+    const { rows, more } = page('texts', 'id, direction, at, seen, sealed, status', c.account.id, num.id, c.query, { def: 100, max: 200 });
     return { texts: rows.map(textView), more };
   });
 
@@ -190,22 +196,21 @@ export function registerRoutes(app, ph) {
     ph.matchPlain(num, number);
     ph.requireActive(num);
     if (!num.sms) throw fail(409, 'conflict', 'This number cannot send texts.');
+    ph.checkDestination(to);
 
     const sealed = await store.sealJsonFor(accountId, { peer: to, body }, 'text');
-    const price = config.prices.textOut;
-    store.charge(accountId, price, 'text');
-    try {
-      await provider.sendText({ from: number, to, body });
-    } catch (err) {
-      // The text did not go out. The user gets the credits back.
-      store.credit(accountId, price, 'refund');
-      throw ph.providerFail(err);
-    }
-    const row = { id: randomId(), direction: 'out', at: nowSec(), seen: 1, sealed };
-    db.run('INSERT INTO texts (id, account_id, number_id, direction, at, seen, sealed) VALUES (?,?,?,?,?,?,?)', row.id, accountId, num.id, row.direction, row.at, row.seen, row.sealed);
+    let sent;
+    // If the provider refuses the text at once, the charge comes back inside sendPaidText.
+    try { sent = await ph.sendPaidText({ accountId, from: number, to, body }); } catch (err) { throw ph.providerFail(err); }
+    const row = { id: randomId(), direction: 'out', at: nowSec(), seen: 1, sealed, status: sent.status };
+    db.run('INSERT INTO texts (id, account_id, number_id, direction, at, seen, sealed, status) VALUES (?,?,?,?,?,?,?,?)',
+      row.id, accountId, num.id, row.direction, row.at, row.seen, row.sealed, row.status);
+    // A later status report of the provider finds the row through this. A late failure returns the charge.
+    ph.trackSend({ ref: sent.ref, status: sent.status, accountId, textId: row.id, charged: sent.price });
     events.publish(accountId, 'text', { numberId: num.id });
-    if (price > 0) events.publish(accountId, 'balance');
-    return reply(201, { text: textView(row) });
+    if (sent.price > 0) events.publish(accountId, 'balance');
+    // The row can have a newer status already, if the report was faster than this request.
+    return reply(201, { text: textView(db.get('SELECT id, direction, at, seen, sealed, status FROM texts WHERE id = ? AND account_id = ?', row.id, accountId) || row) });
   });
 
   http.post('/api/numbers/:id/texts/seen', { auth: true }, (c) => {
@@ -240,7 +245,8 @@ export function registerRoutes(app, ph) {
     const to = e164(c.body.to, 'to');
     ph.matchPlain(num, number);
     ph.requireActive(num);
-    if (!num.voice) throw fail(409, 'conflict', 'This number cannot make calls.');
+    ph.requireVoice(num);
+    ph.checkDestination(to);
     const phone = num.forward_phone_id
       ? db.get('SELECT number_srv FROM phones WHERE id = ? AND account_id = ? AND verified = 1', num.forward_phone_id, accountId)
       : null;
@@ -278,13 +284,16 @@ export function registerRoutes(app, ph) {
     phones: db.all('SELECT * FROM phones WHERE account_id = ? ORDER BY rowid', c.account.id).map(phoneView),
   }));
 
-  // Links a real phone. A code goes to it by text from one of the account's VoIP numbers.
+  // Links a real phone. A code goes to it from one of the account's VoIP numbers: by text,
+  // or by a call that speaks the code (US numbers cannot send texts without carrier registration).
   // The same request for a phone that is not verified yet sends a new code.
   http.post('/api/phones', { auth: true, rate: { max: 5, per: 3600 } }, async (c) => {
     ph.requireOn();
     const accountId = c.account.id;
     const number = e164(c.body.number, 'number');
     const enc = encOf(c.body.enc);
+    const method = c.body.method === undefined || c.body.method === null ? 'text' : c.body.method;
+    if (method !== 'text' && method !== 'call') throw fail(400, 'bad_request', 'The value "method" is not valid.');
     const active = db.get("SELECT COUNT(*) AS n FROM numbers WHERE account_id = ? AND status = 'active'", accountId).n;
     if (!active) throw fail(409, 'no_number', 'Get a phone number first. The code comes from it.');
     const via = c.body.via;
@@ -293,11 +302,14 @@ export function registerRoutes(app, ph) {
     const viaNumber = e164(via.number, 'via.number');
     ph.matchPlain(viaRow, viaNumber);
     if (viaRow.status !== 'active') throw fail(409, 'no_number', 'This number is suspended. Choose an active number.');
-    if (!viaRow.sms) throw fail(409, 'conflict', 'This number cannot send texts.');
+    if (method === 'call') ph.requireVoice(viaRow);
+    else if (!viaRow.sms) throw fail(409, 'conflict', 'This number cannot send texts.');
     // A VoIP number of the account as its own "real phone" can make a forwarding loop.
     if (db.get('SELECT 1 AS x FROM numbers WHERE account_id = ? AND number_hmac = ?', accountId, keys.indexHmac('num', number))) {
       throw fail(400, 'bad_request', 'Enter your real phone number, not one of your numbers here.');
     }
+    // Texts and calls are forwarded to this phone later. It must be a destination that the server allows.
+    ph.checkDestination(number);
 
     return ph.lock(accountId, async () => {
       const hmac = keys.indexHmac('phone', number);
@@ -310,13 +322,30 @@ export function registerRoutes(app, ph) {
       const sealedNumber = old ? old.sealed_number : await store.sealJsonFor(accountId, { number }, 'phone');
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
 
-      const price = config.prices.textOut;
-      store.charge(accountId, price, 'text');
-      try {
-        await provider.sendText({ from: viaNumber, to: number, body: `Your ${config.appName} code is ${code}. Do not share it.` });
-      } catch (err) {
-        store.credit(accountId, price, 'refund');
-        throw ph.providerFail(err);
+      let price;
+      if (method === 'call') {
+        // One fixed charge for the call. The say-code webhook speaks the code when the phone answers.
+        price = config.prices.callMinute;
+        store.charge(accountId, price, 'call');
+        const token = randomToken();
+        ph.addSayCode(token, { accountId, code });
+        try {
+          await provider.startCall({ from: viaNumber, to: number, answerUrl: ph.urls.sayCode(token), statusUrl: ph.urls.status });
+        } catch (err) {
+          ph.sayCodes.delete(token);
+          store.credit(accountId, price, 'refund');
+          throw ph.providerFail(err);
+        }
+      } else {
+        let sent;
+        try {
+          sent = await ph.sendPaidText({ accountId, from: viaNumber, to: number, body: `Your ${config.appName} code is ${code}. Do not share it.` });
+        } catch (err) {
+          throw ph.providerFail(err);
+        }
+        price = sent.price;
+        // The code text has no row. If the provider reports later that it failed, the charge comes back.
+        ph.trackSend({ ref: sent.ref, status: sent.status, accountId, charged: sent.price });
       }
       // Only a hash of the code is stored. The phone ID in the hash ties the code to this phone.
       const codeHash = sha256(`${id}:${code}`);
@@ -340,7 +369,7 @@ export function registerRoutes(app, ph) {
     const row = ownPhone(accountId, c.params.id);
     if (row.verified) return { phone: phoneView(row) };
     const code = typeof c.body.code === 'string' ? c.body.code.replace(/\s+/g, '') : '';
-    if (!/^\d{6}$/.test(code)) throw fail(400, 'bad_code', 'Enter the 6 digits from the text.');
+    if (!/^\d{6}$/.test(code)) throw fail(400, 'bad_code', 'Enter the 6 digits of the code.');
     if (!row.code_hash || row.code_expires <= nowSec()) throw fail(400, 'bad_code', 'This code is too old. Send a new code.');
     // Count the try before the comparison. Parallel requests cannot get extra tries.
     const counted = db.run('UPDATE phones SET code_tries = code_tries + 1 WHERE id = ? AND account_id = ? AND code_tries < ?', row.id, accountId, CODE_TRIES).changes;

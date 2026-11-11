@@ -1,12 +1,13 @@
 // Mail: read (decrypt) and send (with a browser-encrypted Sent copy).
 import { api, query } from './api.js';
 import { store } from './store.js';
-import { getKeys } from './session.js';
+import { getKeys, onForget } from './session.js';
 import { b64u, unb64u } from '/shared/bytes.js';
 import { openContentKey, openMeta, openBody, openAttachment, sealEnvelope } from '/shared/crypto.js';
 
-// message id -> content key (CryptoKey). Memory only.
+// message id -> content key (CryptoKey). Memory only. Emptied on lock and on sign-out.
 const contentKeys = new Map();
+onForget(() => contentKeys.clear());
 
 async function contentKey(msg) {
   if (contentKeys.has(msg.id)) return contentKeys.get(msg.id);

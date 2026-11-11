@@ -15,11 +15,13 @@ const CONTENT_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+
 const MESSAGE_ID = /^<[\x21-\x3b\x3d\x3f-\x7e]{1,300}>$/;
 
 const badRecipient = (message) => fail(400, 'bad_recipient', message);
+export const tooManyRecipients = () => badRecipient(`A message can have ${MAX_RECIPIENTS} recipients at most.`);
 const tooLarge = () => fail(413, 'too_large', 'The message is too large.');
 
 function addressList(value, name) {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.length > MAX_RECIPIENTS) throw fail(400, 'bad_request', `The value "${name}" is not valid.`);
+  if (!Array.isArray(value)) throw fail(400, 'bad_request', `The value "${name}" is not valid.`);
+  if (value.length > MAX_RECIPIENTS) throw tooManyRecipients();
   return value.map((item) => {
     const parsed = parseAddress(item);
     // The text is not repeated in the error: it did not pass the check and can hold anything.
@@ -66,8 +68,9 @@ export function readMessageFields(body, maxBytes) {
     cc: addressList(body.cc, 'cc'),
     bcc: addressList(body.bcc, 'bcc'),
     subject: need.optional(body.subject, need.string, 'subject', { min: 0, max: 998, pattern: NO_CONTROL }) || '',
-    text: need.optional(body.text, need.string, 'text', { min: 0, max: maxBytes }) || '',
-    html: need.optional(body.html, need.string, 'html', { min: 0, max: maxBytes }) || null,
+    // No length limit here: the size check below answers 413 for content that is too large.
+    text: need.optional(body.text, need.string, 'text', { min: 0, max: Number.MAX_SAFE_INTEGER }) || '',
+    html: need.optional(body.html, need.string, 'html', { min: 0, max: Number.MAX_SAFE_INTEGER }) || null,
     inReplyTo: messageIds(body.inReplyTo, 'inReplyTo')[0] || null,
     references: messageIds(body.references, 'references'),
     attachments: attachmentList(body.attachments, maxBytes),

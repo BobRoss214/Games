@@ -4,24 +4,36 @@
 //
 //   name                          'mock' | 'twilio'
 //   webhookBody                   'json' | 'form': how the provider encodes its webhook requests
+//   capabilities                  { voice, asyncText, searchByArea }, all boolean
+//       voice: the provider can make and receive calls. If false, the "voice only" functions
+//              below are not necessary, and the module refuses calls with 409 no_voice.
+//       asyncText: the result of a text can arrive after sendText() has returned.
+//       searchByArea: search() can filter by area code.
 //
 //   search({ country, areaCode, limit }) → [{ number, locality, region, country, sms, voice }]
 //   buy(number, { textUrl, voiceUrl, statusUrl }) → { ref }
 //   release(ref) → void           throws ProviderError with notFound = true if the number is gone
-//   sendText({ from, to, body }) → { ref }
-//   startCall({ from, to, answerUrl, statusUrl }) → { ref }
-//       Calls `to`. When `to` answers, the provider POSTs to answerUrl and follows the
-//       voice instructions in the answer. `ref` is the call id that parseVoice/parseStatus return.
+//   sendText({ from, to, body, statusUrl }) → { ref, status }
+//       status: 'queued' (the provider will try later) or 'sent'. `ref` is the message id.
+//       The provider reports later changes for `ref`: by a POST to statusUrl (see parseTextStatus),
+//       or in its own way through app.services.phone.reportTextStatus({ ref, status, errorText }).
 //
 //   verifyWebhook(c, fullUrl) → boolean     c is the request context of core/http.js
 //   parseText(c)   → { to, from, body, id }     id: message id of the provider, '' if it has none
+//   parseTextStatus(c) → { ref, status: 'queued' | 'sent' | 'delivered' | 'failed' | null, errorText }
+//       errorText: a short reason or code for the log. No phone number, no message text.
+//   textReply() → { contentType, body }     the answer to a text webhook
+//
+//   Voice only:
+//   startCall({ from, to, answerUrl, statusUrl }) → { ref }
+//       Calls `to`. When `to` answers, the provider POSTs to answerUrl and follows the
+//       voice instructions in the answer. `ref` is the call id that parseVoice/parseStatus return.
 //   parseVoice(c)  → { to, from, callId }
 //   parseStatus(c) → { callId, status: 'answered' | 'missed' | 'failed' | null, seconds }
 //   voiceReply(actions) → { contentType, body }
 //       actions: [{ say: 'text' }, { dial: { number, callerId, timeout, timeLimit, actionUrl } }, { hangup: true }]
 //       timeout: seconds to ring. timeLimit: the provider ends the connected call after this many seconds.
 //       actionUrl: the provider POSTs the result of the dial there (see parseStatus).
-//   textReply() → { contentType, body }     the answer to a text webhook
 //
 // All async functions throw ProviderError (see errors.js) with a plain message.
 //
@@ -61,7 +73,8 @@ function fakeNumber(country, areaCode, i) {
 // sign(rawBody) → string. isTaken(number) → true if an account on this server has the number.
 // autoAnswerMs: if set, a click-to-call is answered automatically after this time (development).
 export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs = null } = {}) {
-  let hooks = null; // { text, voice, bridge, status, paths }: the handlers of the webhook routes
+  let hooks = null; // { text, textStatus, voice, bridge, sayCode, status, paths }: the handlers of the webhook routes
+  let queueNext = false; // test hook: the next text is only "queued"
   const owned = new Map(); // ref -> number
   const ringing = new Map(); // call ref -> { from, to, answerUrl, statusUrl }
   const outbox = { texts: [], calls: [] };
@@ -86,6 +99,13 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
     const u = new URL(url, 'http://mock.invalid');
     return { raw, body: payload, headers: { 'x-mock-signature': sign(raw) }, query: Object.fromEntries(u.searchParams), req: { url: u.pathname + u.search } };
   }
+  // Runs the handler of the webhook route that has this address, as a POST from the provider would.
+  function post(url, payload) {
+    const path = new URL(url, 'http://mock.invalid').pathname;
+    const name = Object.keys(hooks.paths).find((k) => hooks.paths[k] === path);
+    if (!name) throw new Error('the mock provider has no webhook at this address');
+    return hooks[name](request(url, payload));
+  }
   const actionsOf = (out) => JSON.parse(String(out.body)).actions || [];
   const dialOf = (actions) => (actions.find((a) => a.dial) || {}).dial || null;
   // A real provider cuts the call at the time limit of the dial.
@@ -94,6 +114,8 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
   const provider = {
     name: 'mock',
     webhookBody: 'json',
+    // A test can set voice to false to act like a provider with no calls.
+    capabilities: { voice: true, asyncText: false, searchByArea: true },
     outbox,
     released,
     owned,
@@ -139,19 +161,32 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
 
     async sendText({ from, to, body }) {
       failIfPlanned('sendText');
-      keep(outbox.texts, { from, to, body, at: now() });
+      const ref = newRef('MT');
+      const status = queueNext ? 'queued' : 'sent';
+      queueNext = false;
+      keep(outbox.texts, { from, to, body, at: now(), ref, status });
       // A text to a number of this server arrives there, so that two accounts can text each other.
       if (hooks && isTaken(to)) {
-        try { await hooks.text(request(hooks.paths.text, { to, from, body })); } catch { /* the sender must not see a failure of the receiver */ }
+        try { await post(hooks.paths.text, { to, from, body }); } catch { /* the sender must not see a failure of the receiver */ }
       }
-      return { ref: newRef('MT') };
+      return { ref, status };
+    },
+    // Test hook: the next text is accepted as "queued". Its result comes later with reportText().
+    queueNextText() { queueNext = true; },
+    // Test hook: the provider reports what happened to a text. ref: from the outbox entry.
+    // status: 'sent' | 'delivered' | 'failed'. It runs the same handler as the text-status webhook.
+    async reportText(ref, status, errorText = '') {
+      const entry = outbox.texts.find((t) => t.ref === ref);
+      if (entry) entry.status = status;
+      await post(hooks.paths.textStatus, { ref, status, errorText });
     },
 
     async startCall({ from, to, answerUrl, statusUrl }) {
       failIfPlanned('startCall');
       const ref = newRef('MC');
-      ringing.set(ref, { from, to, answerUrl, statusUrl });
-      keep(outbox.calls, { from, to, at: now(), ref });
+      const entry = { from, to, at: now(), ref };
+      ringing.set(ref, { from, to, answerUrl, statusUrl, entry });
+      keep(outbox.calls, entry);
       if (autoAnswerMs !== null) {
         const t = setTimeout(() => {
           timers.delete(t);
@@ -170,6 +205,11 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
     parseText(c) {
       const b = c.body || {};
       return { to: str(b.to), from: str(b.from), body: str(b.body), id: str(b.id) };
+    },
+    parseTextStatus(c) {
+      const b = c.body || {};
+      const status = ['queued', 'sent', 'delivered', 'failed'].includes(b.status) ? b.status : null;
+      return { ref: str(b.ref), status, errorText: str(b.errorText) };
     },
     parseVoice(c) {
       const b = c.body || {};
@@ -191,42 +231,46 @@ export function createMockProvider({ sign, isTaken = () => false, autoAnswerMs =
 
     // A text from `from` arrives at the VoIP number `to`.
     async simulateText({ to, from, body }) {
-      await hooks.text(request(hooks.paths.text, { to, from, body }));
+      await post(hooks.paths.text, { to, from, body });
     },
 
     // A full incoming call. If the server forwards it, the real phone answers
     // (answered = true) and the call lasts `seconds`. Returns what happened.
     async simulateCall({ to, from, seconds = 30, answered = true }) {
       const callId = newRef('MC');
-      const actions = actionsOf(await hooks.voice(request(hooks.paths.voice, { to, from, callId })));
+      const actions = actionsOf(await post(hooks.paths.voice, { to, from, callId }));
       const dial = dialOf(actions);
       if (!dial) return { callId, forwarded: false, actions };
       keep(outbox.calls, { from: dial.callerId || from, to: dial.number, at: now(), ref: callId });
       const status = answered ? { callId, status: 'answered', seconds: cut(seconds, dial) } : { callId, status: 'missed', seconds: 0 };
-      await hooks.status(request(dial.actionUrl, status));
+      await post(dial.actionUrl, status);
       return { callId, forwarded: true, actions };
     },
 
-    // The real phone reacts to a click-to-call that startCall() started.
-    // answered: the real phone answers. peerAnswered: the destination answers.
+    // The phone that startCall() called reacts. The provider asks the answer address what to do.
+    // answered: the phone answers. peerAnswered: the destination of a click-to-call answers.
+    // Returns { bridged, actions, say }. say: the text that the phone heard, '' if none.
     async answerCall(ref, { answered = true, peerAnswered = true, seconds = 30 } = {}) {
       const call = ringing.get(ref);
-      if (!call) return { bridged: false, actions: [] };
+      if (!call) return { bridged: false, actions: [], say: '' };
       ringing.delete(ref);
       if (!answered) {
-        await hooks.status(request(call.statusUrl, { callId: ref, status: 'missed', seconds: 0 }));
-        return { bridged: false, actions: [] };
+        await post(call.statusUrl, { callId: ref, status: 'missed', seconds: 0 });
+        return { bridged: false, actions: [], say: '' };
       }
-      const actions = actionsOf(await hooks.bridge(request(call.answerUrl, { callId: ref, from: call.from, to: call.to })));
+      const actions = actionsOf(await post(call.answerUrl, { callId: ref, from: call.from, to: call.to }));
+      const say = actions.filter((a) => typeof a.say === 'string').map((a) => a.say).join(' ');
+      // The spoken text goes into the outbox entry of the call. A test or a developer reads a code there.
+      if (say) call.entry.say = say;
       const dial = dialOf(actions);
       if (!dial) {
-        await hooks.status(request(call.statusUrl, { callId: ref, status: 'failed', seconds: 0 }));
-        return { bridged: false, actions };
+        await post(call.statusUrl, say ? { callId: ref, status: 'answered', seconds: 10 } : { callId: ref, status: 'failed', seconds: 0 });
+        return { bridged: false, actions, say };
       }
       keep(outbox.calls, { from: dial.callerId, to: dial.number, at: now(), ref });
       const status = peerAnswered ? { callId: ref, status: 'answered', seconds: cut(seconds, dial) } : { callId: ref, status: 'missed', seconds: 0 };
-      await hooks.status(request(dial.actionUrl, status));
-      return { bridged: true, actions };
+      await post(dial.actionUrl, status);
+      return { bridged: true, actions, say };
     },
   };
   return provider;

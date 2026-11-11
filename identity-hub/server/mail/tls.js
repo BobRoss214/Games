@@ -11,11 +11,14 @@
 // who only reads the traffic.
 import { execFile } from 'node:child_process';
 import { X509Certificate, createPrivateKey } from 'node:crypto';
-import { closeSync, openSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, closeSync, openSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { createSecureContext } from 'node:tls';
 
 export const SELF_SIGNED_KEY = 'smtp-selfsigned.key';
 export const SELF_SIGNED_CERT = 'smtp-selfsigned.crt';
+// Old protocol versions are refused. A sender that cannot do TLS 1.2 sends without TLS, or not at all.
+export const MIN_TLS_VERSION = 'TLSv1.2';
 const VALID_DAYS = 3650; // 10 years
 const RENEW_BEFORE_MS = 30 * 86400 * 1000;
 const OPENSSL_TIMEOUT_MS = 15_000;
@@ -28,6 +31,8 @@ export function readPair(keyFile, certFile) {
   const cert = readFileSync(certFile);
   const x509 = new X509Certificate(cert); // the first certificate in the file
   if (!x509.checkPrivateKey(createPrivateKey(key))) throw new Error('The TLS key does not belong to the certificate.');
+  // The TLS library must accept the pair too (it refuses, for example, a key that is too short).
+  createSecureContext({ key, cert, minVersion: MIN_TLS_VERSION });
   return { key, cert, x509 };
 }
 
@@ -110,6 +115,8 @@ export async function chooseTlsFiles({ config }) {
   const hostname = String(config.mail.hostname || '').toLowerCase();
   const commonName = HOST_NAME.test(hostname) ? hostname : 'localhost';
   if (selfSignedIsGood(keyFile, certFile, commonName) || await makeSelfSigned(keyFile, certFile, commonName)) {
+    // Only the server user may read the key, also after a copy or a restore changed the mode.
+    try { chmodSync(keyFile, 0o600); } catch { /* not possible on this file system */ }
     return { source: 'generated', keyFile, certFile };
   }
   return null;

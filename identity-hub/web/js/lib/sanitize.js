@@ -33,7 +33,7 @@ function cleanCss(css, note) {
   return out;
 }
 
-const cidKey = (v) => String(v || '').trim().replace(/^cid:/i, '').replace(/^<|>$/g, '').toLowerCase();
+export const cidKey = (v) => String(v || '').trim().replace(/^cid:/i, '').replace(/^<|>$/g, '').toLowerCase();
 
 // html: string from the decrypted message.
 // inlineImages: Map from content id to a data: URL (made from decrypted attachments).
@@ -41,7 +41,10 @@ const cidKey = (v) => String(v || '').trim().replace(/^cid:/i, '').replace(/^<|>
 export function sanitizeEmail(html, inlineImages = new Map()) {
   const note = { blocked: false };
   const wanted = new Set();
-  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  // <base> is taken out of the text first. The parser would refuse it anyway (the page
+  // policy has base-uri 'none'), but each refusal writes an error to the console.
+  const source = String(html || '').replace(/<base\b[^>]*>/gi, '');
+  const doc = new DOMParser().parseFromString(source, 'text/html');
 
   // Style elements: a style element with @import is removed. Others are cleaned.
   for (const el of [...doc.querySelectorAll('style')]) {
@@ -121,7 +124,7 @@ export function sanitizeEmail(html, inlineImages = new Map()) {
     'span[data-blocked-image]{display:inline-block;border:1px dashed #b9b2a0;border-radius:3px;font:12px/1.4 system-ui,sans-serif;color:#666960;padding:2px 6px;margin:2px 0}',
     'table{max-width:100%}',
     'pre{white-space:pre-wrap}',
-    'a{color:#1f5e4b}',
+    'a[href]{color:#1f5e4b}',
     'blockquote{margin:0 0 0 12px;padding-left:12px;border-left:2px solid #dcd6c7;color:#4a4d46}',
   ].join('');
   head.insertBefore(base, head.firstChild);
@@ -141,11 +144,9 @@ export function inlineImageUrl(bytes, contentType) {
   return `data:${type};base64,${b64}${'='.repeat((4 - (b64.length % 4)) % 4)}`;
 }
 
-export { cidKey };
-
 // Plain text from HTML, for messages that have no text part.
 export function htmlToText(html) {
-  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  const doc = new DOMParser().parseFromString(String(html || '').replace(/<base\b[^>]*>/gi, ''), 'text/html');
   for (const el of [...doc.querySelectorAll('script,style,head,title,template,noscript')]) el.remove();
   for (const el of [...doc.querySelectorAll('br')]) el.replaceWith('\n');
   for (const el of [...doc.querySelectorAll('p,div,tr,li,h1,h2,h3,h4,h5,h6,blockquote')]) el.append('\n');

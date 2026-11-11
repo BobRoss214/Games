@@ -109,18 +109,40 @@ export async function register(app) {
   }
   const ours = (row) => Boolean(provider) && row.provider === provider.name;
 
+  // The provider must have the invoice for exactly what we asked: units x 1.00 USD.
+  // null for both values means that the provider does not report them (the mock after a restart).
+  function sameAmount(info, units) {
+    if (info.amount === null && info.currency === null) return true;
+    const amount = typeof info.amount === 'string' && /^\d{1,9}(\.\d{1,8})?$/.test(info.amount) ? Number(info.amount) : NaN;
+    return amount === units && String(info.currency).toUpperCase() === 'USD';
+  }
+  // One warning for each invoice, not one for each check of it.
+  const warned = new Set();
+  function warnMismatch(invoiceId) {
+    if (warned.has(invoiceId)) return;
+    if (warned.size >= 1000) warned.clear();
+    warned.add(invoiceId);
+    log.warn(`invoice ${invoiceId}: the payment provider reports a different amount or currency than we asked for; nothing was signed`);
+  }
+
   // The ONLY place that signs blinded values.
   // 1. The provider itself must say that the invoice is settled. A webhook or a caller is not enough.
+  //    The amount and the currency at the provider must be what we asked for.
   // 2. Sign every blinded value of the invoice.
   // 3. Store the signatures and the status 'paid' in one transaction.
   // It is safe to call this many times: a paid invoice is left alone.
-  // Returns 'paid', or the state that the provider gave, or null.
+  // Returns 'paid', or the state that the provider gave, or 'mismatch', or null.
   async function settle(invoiceId) {
     const row = getInvoice(invoiceId);
     if (!row || !ours(row)) return null;
     if (row.status === 'paid') return 'paid';
-    const state = await provider.getStatus(row.provider_ref);
-    if (state !== 'paid') return state;
+    const info = await provider.getStatus(row.provider_ref);
+    if (info.state !== 'paid') return info.state;
+    if (!sameAmount(info, row.units)) {
+      // Settled, but not for our price. Leave the invoice as it is. A person must look at it.
+      warnMismatch(row.id);
+      return 'mismatch';
+    }
     const key = signers.get(row.key_id);
     if (!key) throw new Error('the signing key of an invoice is missing');
     const signed = Buffer.concat(split(row.blinded, key.len).map((b) => key.signer.sign(b)));

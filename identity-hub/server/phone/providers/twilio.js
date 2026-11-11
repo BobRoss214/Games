@@ -17,6 +17,14 @@ const REFUSED = {
 };
 // Twilio error codes that mean "you cannot have this number".
 const NOT_FOR_SALE = new Set([21421, 21422, 21452]);
+// The MessageStatus values of Twilio in the four words of the provider interface.
+const TEXT_STATUS = {
+  accepted: 'queued', scheduled: 'queued', queued: 'queued',
+  sending: 'sent', sent: 'sent',
+  delivered: 'delivered', read: 'delivered',
+  undelivered: 'failed', failed: 'failed', canceled: 'failed',
+};
+const textStatus = (v) => (typeof v === 'string' && Object.hasOwn(TEXT_STATUS, v) ? TEXT_STATUS[v] : null);
 
 // The value of the X-Twilio-Signature header:
 // Base64(HMAC-SHA1(authToken, url + name + value for each POST field, sorted by name)).
@@ -97,6 +105,8 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl, messaging
   return {
     name: 'twilio',
     webhookBody: 'form',
+    // Twilio accepts a text first and reports the result later (see parseTextStatus).
+    capabilities: { voice: true, asyncText: true, searchByArea: true },
 
     async search({ country, areaCode, limit = 20 }) {
       const query = { SmsEnabled: 'true', VoiceEnabled: 'true', PageSize: String(limit) };
@@ -144,16 +154,19 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl, messaging
       await call('release', 'DELETE', `/IncomingPhoneNumbers/${encodeURIComponent(ref)}.json`);
     },
 
-    async sendText({ from, to, body }) {
+    async sendText({ from, to, body, statusUrl }) {
       const form = { From: from, To: to, Body: body };
       // With both values Twilio sends from this number as a member of the service (the registered campaign).
       if (messagingServiceSid) form.MessagingServiceSid = messagingServiceSid;
+      // Twilio reports each change of the message there: sent, delivered, failed.
+      if (statusUrl) form.StatusCallback = statusUrl;
       const data = await call('sendText', 'POST', '/Messages.json', { form });
       // Twilio can accept the request and report the refusal in the answer.
       if (!data || typeof data.sid !== 'string' || data.error_code || data.status === 'failed' || data.status === 'undelivered') {
         throw new ProviderError(REFUSED.sendText, { code: data && Number.isInteger(data.error_code) ? data.error_code : 0 });
       }
-      return { ref: data.sid };
+      // A new message is "queued" at Twilio. The carrier result comes later.
+      return { ref: data.sid, status: textStatus(data.status) === 'sent' ? 'sent' : 'queued' };
     },
 
     async startCall({ from, to, answerUrl, statusUrl }) {
@@ -173,6 +186,12 @@ export function createTwilioProvider({ accountSid, authToken, baseUrl, messaging
     parseText(c) {
       const b = c.body || {};
       return { to: str(b.To), from: str(b.From), body: str(b.Body), id: str(b.MessageSid) };
+    },
+    // The StatusCallback of a message: MessageSid, MessageStatus, and ErrorCode if it failed.
+    parseTextStatus(c) {
+      const b = c.body || {};
+      const code = /^\d{1,6}$/.test(str(b.ErrorCode)) ? b.ErrorCode : '';
+      return { ref: str(b.MessageSid), status: textStatus(b.MessageStatus), errorText: code ? `Twilio error ${code}` : '' };
     },
     parseVoice(c) {
       const b = c.body || {};

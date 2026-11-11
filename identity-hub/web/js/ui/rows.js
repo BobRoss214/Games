@@ -1,6 +1,5 @@
 // One row for an inbox, an alias or a number. Used on Home, Aliases and Numbers.
 import { h } from '../lib/dom.js';
-import { store } from '../lib/store.js';
 import { phoneText, plural } from '../lib/format.js';
 import { icon } from './icons.js';
 import { toggle, copyButton, tag } from './components.js';
@@ -42,6 +41,14 @@ export function matchesSearch(item, q) {
   return digits.length >= 3 && item.kind === 'number' && item.value.includes(digits);
 }
 
+// An address may wrap after a dot and before the @ sign, not in the middle of a word.
+export function breakable(address) {
+  const out = [];
+  for (const part of String(address).split(/(?<=\.)|(?=@)/)) { out.push(part); out.push(document.createElement('wbr')); }
+  out.pop();
+  return out;
+}
+
 export function identityRow(item, { showReceived = false } = {}) {
   const menuItems = () => [
     { label: 'Rename', icon: 'edit', onSelect: () => openRename(item) },
@@ -64,7 +71,7 @@ export function identityRow(item, { showReceived = false } = {}) {
   return h('li', { class: `id-row ${item.off ? 'is-off' : ''}`.trim(), dataset: { kind: item.kind, id: item.id } },
     h('span', { class: 'id-icon', title: KIND_NAME[item.kind] }, icon(KIND_ICON[item.kind], { size: 20, label: KIND_NAME[item.kind] })),
     h('div', { class: 'id-main' },
-      h('a', { class: 'id-value mono', href: item.href, 'data-link': true, title: item.display }, item.display),
+      h('a', { class: 'id-value mono', href: item.href, 'data-link': true, title: item.display }, item.kind === 'number' ? item.display : breakable(item.display)),
       h('div', { class: 'id-sub' },
         item.label ? h('span', { class: 'id-label' }, item.label) : h('span', { class: 'id-label is-empty' }, 'No label'),
         item.kind === 'alias' && !item.enabled ? tag('Off') : null,
@@ -88,8 +95,3 @@ export function identityRow(item, { showReceived = false } = {}) {
 export function identityList(items, opts) {
   return h('ul', { class: 'id-list' }, items.map((it) => identityRow(it, opts)));
 }
-
-export const hasAnyIdentity = () => {
-  const s = store.get();
-  return (s.mailboxes || []).length + (s.aliases || []).length + (s.numbers || []).length > 0;
-};

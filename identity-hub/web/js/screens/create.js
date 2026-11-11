@@ -42,6 +42,16 @@ export function createScreen({ scope }) {
 
   // ---- step 1 ----
   function stepOne() {
+    if ((store.get('config') || {}).signup === 'closed') {
+      replace(body,
+        h('div', { class: 'stack stack-3' },
+          h('h1', null, 'New accounts are closed'),
+          h('p', { class: 'read' }, 'This server does not take new accounts now. If you have an account, sign in.'),
+        ),
+        h('div', null, h('a', { class: 'btn btn-primary btn-lg', href: '/sign-in', 'data-link': true }, 'Sign in')),
+      );
+      return;
+    }
     const err = errorBox();
     const bar = h('div', { class: 'progress-bar' });
     const progress = h('div', { class: 'progress', role: 'progressbar', 'aria-label': 'Making your keys', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0', hidden: true }, bar);
@@ -65,9 +75,10 @@ export function createScreen({ scope }) {
       steps(1),
       h('div', { class: 'stack stack-3' },
         h('h1', null, 'Create your account'),
-        h('p', { class: 'read' }, 'Your browser makes a secret recovery key. It locks your account, and only you have it. The server never sees the key, and it cannot read your mail or your labels.'),
+        h('p', { class: 'read' }, 'Your browser makes a secret recovery key that locks your account, and only you have it.'),
       ),
       h('ul', { class: 'plain-list' },
+        h('li', null, icon('check', { size: 18 }), h('span', null, 'The server never sees the key. It cannot read your mail or your labels.')),
         h('li', null, icon('check', { size: 18 }), h('span', null, 'We ask for no name, no email address and no phone number.')),
         h('li', null, icon('check', { size: 18 }), h('span', null, 'There is no CAPTCHA and no tracking. Your browser solves a small puzzle to show that it is not a robot.')),
       ),

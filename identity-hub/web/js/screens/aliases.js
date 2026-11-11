@@ -41,8 +41,12 @@ export function aliasesScreen({ scope }) {
     );
   }
 
+  const newButton = button('New alias', { kind: 'primary', iconName: 'plus', onClick: () => openNewAlias({ mailboxId: box !== 'all' ? box : '' }) });
+
   function paint() {
     const state = store.get();
+    // The empty states have their own button. Two buttons for one action would be noise.
+    newButton.hidden = !state.aliases || state.aliases.length === 0;
     if (state.mailboxes === null || state.aliases === null) { tools.hidden = true; replace(listRegion, skeletonRows(5)); return; }
     if (state.mailboxes.length === 0) {
       tools.hidden = true;
@@ -86,7 +90,7 @@ export function aliasesScreen({ scope }) {
     pageHeader({
       title: 'Aliases',
       lede: 'An alias is an extra address. Mail to it lands in your inbox. Turn it off when you get spam.',
-      actions: button('New alias', { kind: 'primary', iconName: 'plus', onClick: () => openNewAlias({ mailboxId: box !== 'all' ? box : '' }) }),
+      actions: newButton,
     }),
     tools,
     listRegion,

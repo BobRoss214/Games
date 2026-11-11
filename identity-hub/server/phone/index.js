@@ -13,12 +13,15 @@ import { safeEqual } from '../core/keys.js';
 import { createMockProvider } from './providers/mock.js';
 import { createTwilioProvider } from './providers/twilio.js';
 import { ProviderError } from './providers/errors.js';
+import { createDelivery } from './delivery.js';
 import { createHooks } from './hooks.js';
 import { registerRoutes } from './routes.js';
 import { registerDevRoutes } from './dev.js';
 import { E164 } from './common.js';
 
-const SCHEMA = `
+// The tables. A column that was added after the first version is also in MIGRATIONS below,
+// because CREATE TABLE IF NOT EXISTS does not change a table that exists already.
+const TABLES = `
 CREATE TABLE IF NOT EXISTS phones (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -60,12 +63,11 @@ CREATE TABLE IF NOT EXISTS texts (
   at INTEGER NOT NULL,
   seen INTEGER NOT NULL DEFAULT 0,
   sealed BLOB NOT NULL,               -- { peer, body }, sealed to the account
-  msg_hmac BLOB                       -- incoming only: HMAC of the provider's message id
+  msg_hmac BLOB,                      -- incoming only: HMAC of the provider's message id
+  status TEXT                         -- outgoing only: 'queued' | 'sent' | 'delivered' | 'failed'
 ) STRICT;
 CREATE INDEX IF NOT EXISTS texts_number ON texts(number_id, at);
 CREATE INDEX IF NOT EXISTS texts_account ON texts(account_id);
--- A provider can deliver one webhook two times. The second copy must not be stored or forwarded again.
-CREATE UNIQUE INDEX IF NOT EXISTS texts_msg ON texts(msg_hmac) WHERE msg_hmac IS NOT NULL;
 CREATE TABLE IF NOT EXISTS calls (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -79,8 +81,6 @@ CREATE TABLE IF NOT EXISTS calls (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS calls_number ON calls(number_id, at);
 CREATE INDEX IF NOT EXISTS calls_account ON calls(account_id);
--- One call has one line in the log, also when the provider reports it two times.
-CREATE UNIQUE INDEX IF NOT EXISTS calls_call ON calls(call_hmac) WHERE call_hmac IS NOT NULL;
 -- Calls that started and did not end yet. The status webhook moves a row to "calls"
 -- and charges it. A second status report for the same call finds no row and does nothing.
 CREATE TABLE IF NOT EXISTS live_calls (
@@ -100,16 +100,54 @@ CREATE TABLE IF NOT EXISTS release_later (
   provider_ref BLOB NOT NULL,
   since INTEGER NOT NULL
 ) STRICT;
+-- Texts that the provider accepted and that wait for their final status (see delivery.js).
+-- The final status removes the row.
+CREATE TABLE IF NOT EXISTS text_sends (
+  ref_hmac BLOB PRIMARY KEY,          -- keys.indexHmac('sent', message id of the provider)
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  text_id TEXT,                       -- the row in "texts"; NULL for a forwarded text or a code text
+  charged INTEGER NOT NULL,           -- credits that go back to the account if the text fails
+  status TEXT NOT NULL,               -- 'queued' | 'sent'
+  at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS text_sends_account ON text_sends(account_id);
+`;
+// Columns that an older database does not have: [table, column, type].
+const MIGRATIONS = [
+  ['texts', 'msg_hmac', 'BLOB'],
+  ['calls', 'call_hmac', 'BLOB'],
+  ['texts', 'status', 'TEXT'],
+];
+// Indexes on those columns. They can be made only after the columns exist.
+const INDEXES = `
+-- A provider can deliver one webhook two times. The second copy must not be stored or forwarded again.
+CREATE UNIQUE INDEX IF NOT EXISTS texts_msg ON texts(msg_hmac) WHERE msg_hmac IS NOT NULL;
+-- One call has one line in the log, also when the provider reports it two times.
+CREATE UNIQUE INDEX IF NOT EXISTS calls_call ON calls(call_hmac) WHERE call_hmac IS NOT NULL;
 `;
 
 const OFFER_SECONDS = 30 * 60;
 const OFFERS_MAX = 20_000;
 const BRIDGE_SECONDS = 5 * 60;
+const SAY_CODE_SECONDS = 5 * 60;
 const LIVE_CALL_SECONDS = 12 * 3600;
+const TEXT_SEND_SECONDS = 7 * 86400;
+const NO_CAPABILITIES = { voice: false, asyncText: false, searchByArea: false };
+
+function migrate(db) {
+  db.exec(TABLES);
+  for (const [table, column, type] of MIGRATIONS) {
+    if (db.all(`PRAGMA table_info(${table})`).some((c) => c.name === column)) continue;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    // Outgoing texts from before the status column went to the provider without an error.
+    if (table === 'texts' && column === 'status') db.exec("UPDATE texts SET status = 'sent' WHERE direction = 'out'");
+  }
+  db.exec(INDEXES);
+}
 
 export async function register(app) {
   const { config, db, keys, log } = app;
-  db.exec(SCHEMA);
+  migrate(db);
 
   const name = config.phone.provider;
   const off = name === 'off';
@@ -140,7 +178,11 @@ export async function register(app) {
   // Click-to-call: token -> { accountId, numberId, number, to, expires }. The plain numbers
   // stay in memory for a few minutes only.
   const bridges = new Map();
+  // Phone link by call: token -> { accountId, code, expires }. The say-code webhook speaks the code.
+  const sayCodes = new Map();
   const queues = new Map();
+  // "+1" and "1" mean the same prefix. An empty entry would match every number: drop it.
+  const prefixes = (list) => (Array.isArray(list) ? list : []).map((p) => String(p).trim()).filter(Boolean).map((p) => (p.startsWith('+') ? p : '+' + p));
 
   function sweep(map, now) {
     for (const [k, v] of map) if (v.expires <= now) map.delete(k);
@@ -151,12 +193,17 @@ export async function register(app) {
     provider,
     off,
     bridges,
+    sayCodes,
+    // What the provider can do. With no provider, nothing.
+    capabilities: provider ? provider.capabilities : NO_CAPABILITIES,
     // Webhook addresses come from the configuration. The Host header is never used.
     urls: {
       text: `${config.publicUrl}/api/hooks/phone/text`,
+      textStatus: `${config.publicUrl}/api/hooks/phone/text-status`,
       voice: `${config.publicUrl}/api/hooks/phone/voice`,
       status: `${config.publicUrl}/api/hooks/phone/status`,
       bridge: (token) => `${config.publicUrl}/api/hooks/phone/bridge?t=${encodeURIComponent(token)}`,
+      sayCode: (token) => `${config.publicUrl}/api/hooks/phone/say-code?token=${encodeURIComponent(token)}`,
     },
     numberByPlain,
 
@@ -175,6 +222,22 @@ export async function register(app) {
     },
     requireActive(row) {
       if (row.status !== 'active') throw fail(409, 'suspended', 'This number is suspended. Add funds to use it again.');
+    },
+    // Calls need a provider with voice and a number with voice.
+    hasVoice(row) {
+      return ph.capabilities.voice === true && row.voice === 1;
+    },
+    requireVoice(row) {
+      if (!ph.hasVoice(row)) throw fail(409, 'no_voice', 'This number cannot make or get calls through Postern.');
+    },
+    // A number that the user wants to text, call, or link. The operator pays the provider
+    // for each text and call, so expensive destinations can be closed in the configuration.
+    checkDestination(number) {
+      const allowed = prefixes(config.phone.allowedPrefixes);
+      const blocked = prefixes(config.phone.blockedPrefixes);
+      if ((allowed.length > 0 && !allowed.some((p) => number.startsWith(p))) || blocked.some((p) => number.startsWith(p))) {
+        throw fail(400, 'bad_destination', 'You cannot text or call this number from here.');
+      }
     },
     // Turns an adapter error into an answer for the browser.
     providerFail(err) {
@@ -214,6 +277,15 @@ export async function register(app) {
       const b = typeof token === 'string' ? bridges.get(token) : null;
       return b && b.expires > nowSec() ? b : null;
     },
+    addSayCode(token, entry) {
+      const now = nowSec();
+      sweep(sayCodes, now);
+      sayCodes.set(token, { ...entry, expires: now + SAY_CODE_SECONDS });
+    },
+    getSayCode(token) {
+      const s = typeof token === 'string' ? sayCodes.get(token) : null;
+      return s && s.expires > nowSec() ? s : null;
+    },
 
     // Gives the number back to the provider. "Not found" means that it is gone already.
     async releaseAtProvider(row) {
@@ -230,9 +302,16 @@ export async function register(app) {
     },
   };
 
+  // Charge, send, and delivery status of outgoing texts.
+  const delivery = createDelivery(app, ph);
+  ph.sendPaidText = delivery.sendPaidText;
+  ph.trackSend = delivery.trackSend;
+  ph.reportTextStatus = delivery.reportTextStatus;
+
   registerRoutes(app, ph);
 
-  const service = { provider, name };
+  // reportTextStatus is for a provider that learns the result of a text in its own way (not by our webhook).
+  const service = { provider, name, capabilities: ph.capabilities, reportTextStatus: delivery.reportTextStatus };
   app.services.phone = service;
   if (off) return;
 
@@ -245,6 +324,7 @@ export async function register(app) {
     service.simulateText = provider.simulateText;
     service.simulateCall = provider.simulateCall;
     service.answerCall = provider.answerCall;
+    service.reportText = provider.reportText;
     service.outbox = provider.outbox;
     if (config.dev) registerDevRoutes(app, ph);
   }
@@ -278,12 +358,17 @@ export async function register(app) {
       }
     }
     for (const [token, b] of bridges) if (b.accountId === accountId) bridges.delete(token);
+    for (const [token, s] of sayCodes) if (s.accountId === accountId) sayCodes.delete(token);
   });
 
   app.every('phone-cleanup', 3600, async () => {
     const now = nowSec();
     sweep(offers, now);
     sweep(bridges, now);
+    sweep(sayCodes, now);
+    delivery.sweep();
+    // A text with no final status after a week will not get one.
+    db.run('DELETE FROM text_sends WHERE at < ?', now - TEXT_SEND_SECONDS);
     // A call with no status report after many hours will not get one.
     db.run('DELETE FROM live_calls WHERE at < ?', now - LIVE_CALL_SECONDS);
     for (const row of db.all('SELECT id, provider_ref FROM release_later ORDER BY RANDOM() LIMIT 50')) {

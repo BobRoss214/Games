@@ -469,9 +469,10 @@ Notes:
 ### D3. Optional: a certificate for incoming mail
 
 Other mail servers encrypt the connection to your server if your server offers encryption (STARTTLS).
-Without this part, Postern offers encryption with a test certificate and writes a warning in its log at each start.
-The key of the test certificate is public: it is part of a software library. It gives weak protection.
-This part gives Postern the certificate that Caddy got for `mail.example.com`.
+Without this part, Postern makes its own certificate on the first start and keeps it in the data folder.
+This is sufficient for most mail servers, because they do not examine the certificate.
+This part gives Postern the certificate that Caddy got for `mail.example.com`. Some strict mail servers prefer such a certificate.
+Postern reads changed certificate files again without a restart. This takes a maximum of 10 minutes.
 
 **Check this:** the authors did not test this part. It works only if `MAIL_HOSTNAME` is the same name as in `PUBLIC_URL`.
 

@@ -8,7 +8,7 @@ import { store } from './store.js';
 import { b64u, unb64u } from '/shared/bytes.js';
 import {
   createAccountKeys, deriveFromRecoveryKey, unlockWithAccountKey, unlockWithRecoveryKey,
-  prfKek, wrapAccountKey, unwrapAccountKey, encryptJson, decryptJson, sealJson, openJson,
+  prfKek, wrapAccountKey, unwrapAccountKey, encryptJson, decryptJson, openJson,
 } from '/shared/crypto.js';
 import { generateRecoveryKey, parseRecoveryKey } from '/shared/recovery.js';
 import { solvePow } from '/shared/pow.js';
@@ -28,7 +28,6 @@ export const getKeys = () => keys;
 export const isUnlocked = () => keys !== null;
 export const getPendingPrf = () => pendingPrf;
 export const clearPendingPrf = () => { pendingPrf = null; };
-export const setPendingPrf = (v) => { pendingPrf = v; };
 
 function remember(accountKey) {
   try { sessionStorage.setItem(STORAGE_KEY, b64u(accountKey)); } catch { /* private mode: stay in memory */ }
@@ -39,7 +38,13 @@ function recall() {
     return v ? unb64u(v) : null;
   } catch { return null; }
 }
+// Other modules keep decrypted keys in memory too (for example message keys).
+// They register here and are emptied on lock and on sign-out.
+const forgetHooks = new Set();
+export function onForget(fn) { forgetHooks.add(fn); }
+
 function forget() {
+  for (const fn of forgetHooks) { try { fn(); } catch { /* keep going */ } }
   keys = null;
   pendingPrf = null;
   lockReason = null;
@@ -269,5 +274,3 @@ export async function vaultDelete(key) {
   try { await api.del(`/api/vault/${key}`); } catch (err) { if (err.status !== 404) throw err; }
   vaultKeyList = (vaultKeyList || []).filter((k) => k !== key);
 }
-
-export { sealJson };

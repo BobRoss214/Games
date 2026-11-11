@@ -339,6 +339,21 @@ test('invoices: the provider is asked at most one time in 10 seconds for one rea
   } finally {
     pay.provider.getStatus = real;
   }
+  // The provider says "paid", but for a different amount or currency: nothing is signed.
+  for (const info of [{ state: 'paid', amount: '1.00', currency: 'USD' }, { state: 'paid', amount: '5.00', currency: 'EUR' }, { state: 'paid', amount: '', currency: '' }]) {
+    pay.provider.getStatus = async () => info;
+    try {
+      assert.equal(await pay.settle(id), 'mismatch');
+      await app.runJobs('pay-check');
+    } finally {
+      pay.provider.getStatus = real;
+    }
+    assert.equal(invoiceRow(id).status, 'pending');
+    assert.equal(invoiceRow(id).signed, null);
+  }
+  // The mock reports the amount of the order.
+  assert.deepEqual(await pay.provider.getStatus(invoiceRow(id).provider_ref), { state: 'pending', amount: '5.00', currency: 'USD' });
+
   // The minute job finds the payment without any reader.
   pay.provider.markPaid(invoiceRow(id).provider_ref);
   assert.equal(invoiceRow(id).status, 'pending');

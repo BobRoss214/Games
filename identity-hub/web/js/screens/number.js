@@ -149,7 +149,7 @@ export function numberScreen({ params, scope }) {
         : threads.length === 0 ? emptyState({
           title: 'No texts yet', compact: true,
           text: 'Texts to this number show here.',
-          action: config.dev && config.features.mockPhone ? button('Simulate a text', { size: 'sm', onClick: () => openTestTools('text') }) : null,
+          action: config.dev && config.features.mockPhone ? button('Simulate a text', { size: 'sm', onClick: () => openTestTools('text') }) : copyButton(() => number.number, 'Copy number', { what: 'Number copied', withLabel: true, cls: 'btn-sm' }),
         })
         : h('ul', { class: 'threads' }, threads.map((th) => {
           const unread = th.texts.filter((t) => unreadIds.has(t.id)).length;

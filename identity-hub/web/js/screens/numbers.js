@@ -110,8 +110,11 @@ export function numbersScreen({ scope }) {
   const numbersRegion = h('div', { class: 'sheet id-sheet' });
   const phonesRegion = h('div', { class: 'sheet id-sheet' });
 
+  const getButton = button('Get a number', { kind: 'primary', iconName: 'plus', onClick: () => openGetNumber() });
+
   function paint() {
     const state = store.get();
+    getButton.hidden = !state.numbers || state.numbers.length === 0; // the empty state has its own button
     if (state.numbers === null) replace(numbersRegion, skeletonRows(3));
     else if (state.numbers.length === 0) {
       replace(numbersRegion, emptyState({
@@ -136,7 +139,7 @@ export function numbersScreen({ scope }) {
     pageHeader({
       title: 'Numbers',
       lede: 'Phone numbers for texts and calls. Read texts here, or forward them to your real phone.',
-      actions: button('Get a number', { kind: 'primary', iconName: 'plus', onClick: () => openGetNumber() }),
+      actions: getButton,
     }),
     numbersRegion,
     section({

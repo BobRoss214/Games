@@ -1,9 +1,12 @@
 // Phone module with the mock provider: numbers, texts, calls, linked phones, webhooks.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { startTestApp, client, newAccount, b64u, unb64u } from './helpers.js';
+import { createApp } from '../server/app.js';
 import { openJson } from '../shared/crypto.js';
 import { randomBytes } from '../shared/bytes.js';
 import { ProviderError } from '../server/phone/providers/errors.js';
@@ -527,7 +530,8 @@ test('forwarding: texts go to the verified phone and are charged; not when the b
   const sent = mock.outbox.texts.length;
   assert.equal((await hook('text', { to: num.plain, from, body: first })).status, 200);
   assert.equal(mock.outbox.texts.length, sent + 1);
-  assert.deepEqual({ ...mock.outbox.texts.at(-1), at: 0 }, { from: num.plain, to: phone.plain, body: `${from}: ${first}`, at: 0 });
+  const forwarded = mock.outbox.texts.at(-1);
+  assert.deepEqual({ from: forwarded.from, to: forwarded.to, body: forwarded.body }, { from: num.plain, to: phone.plain, body: `${from}: ${first}` });
   assert.equal(app.store.balance(a.id), 0);
   assert.equal(ledger(a)[0], 'text:-3');
 
@@ -981,6 +985,414 @@ test('dev routes: simulated text and call, and the outbox shows own entries only
   const outB = await b.api.get('/api/dev/phone-outbox');
   assert.deepEqual(outB.data.texts.map((t) => t.body), ['from B']);
   assert.deepEqual(outB.data.calls, []);
+});
+
+test('texts: delivery status moves forward only; a failed text gives its charge back one time', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const to = outsider();
+  const send = async (body) => (await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body })).data.text;
+  const statusOf = async (id) => (await texts(a, num)).texts.find((t) => t.id === id).status;
+  const refOf = (body) => mock.outbox.texts.findLast((t) => t.body === body).ref;
+  const refunds = () => ledger(a).filter((l) => l === 'refund:3').length;
+
+  // The mock sends at once. An incoming text has no status.
+  const t1 = await send('one');
+  assert.equal(t1.status, 'sent');
+  await hook('text', { to: num.plain, from: to, body: 'incoming' });
+  const list = (await texts(a, num)).texts;
+  assert.equal(list.find((t) => t.direction === 'in').status, null);
+  assert.equal(list.find((t) => t.id === t1.id).status, 'sent');
+  assert.equal(app.db.get('SELECT status FROM texts WHERE direction = ? AND account_id = ?', 'in', a.id).status, null);
+
+  // The provider reports the delivery.
+  await mock.reportText(refOf('one'), 'delivered');
+  assert.equal(await statusOf(t1.id), 'delivered');
+  // "delivered" is final. A later report changes nothing, and a late "failed" pays nothing back.
+  let balance = app.store.balance(a.id);
+  for (const s of ['sent', 'queued', 'failed', 'delivered']) await mock.reportText(refOf('one'), s);
+  assert.equal(await statusOf(t1.id), 'delivered');
+  assert.equal(app.store.balance(a.id), balance);
+  assert.equal(refunds(), 0);
+
+  // A text that the provider only queued. The hook is for one text.
+  mock.queueNextText();
+  const t2 = await send('two');
+  assert.equal(t2.status, 'queued');
+  assert.equal(await statusOf(t2.id), 'queued');
+  const t3 = await send('three');
+  assert.equal(t3.status, 'sent');
+  await mock.reportText(refOf('two'), 'sent');
+  assert.equal(await statusOf(t2.id), 'sent');
+  // Not backwards.
+  await mock.reportText(refOf('two'), 'queued');
+  assert.equal(await statusOf(t2.id), 'sent');
+
+  // The carrier refuses it: the status is "failed" and the charge comes back.
+  balance = app.store.balance(a.id);
+  await mock.reportText(refOf('two'), 'failed', 'carrier error 30034');
+  assert.equal(await statusOf(t2.id), 'failed');
+  assert.equal(app.store.balance(a.id), balance + 3);
+  assert.equal(ledger(a)[0], 'refund:3');
+  // The same report again, and a late "delivered": no second refund, no change.
+  await mock.reportText(refOf('two'), 'failed');
+  await mock.reportText(refOf('two'), 'delivered');
+  assert.equal(app.services.phone.reportTextStatus({ ref: refOf('two'), status: 'failed' }), false);
+  assert.equal(await statusOf(t2.id), 'failed');
+  assert.equal(app.store.balance(a.id), balance + 3);
+  assert.equal(refunds(), 1);
+
+  // The webhook route over HTTP: a valid signature works, a bad one gets 403.
+  const ok = await hook('text-status', { ref: refOf('three'), status: 'delivered' });
+  assert.equal(ok.status, 200);
+  assert.equal(await statusOf(t3.id), 'delivered');
+  const t4 = await send('four');
+  for (const sig of ['AAAA', null]) {
+    const bad = await hook('text-status', { ref: refOf('four'), status: 'failed' }, sig);
+    assert.equal(bad.status, 403);
+  }
+  // An id that we never sent, and a status word that does not exist.
+  assert.equal((await hook('text-status', { ref: 'MTunknown', status: 'failed' })).status, 200);
+  assert.equal((await hook('text-status', { ref: refOf('four'), status: 'exploded' })).status, 200);
+  assert.equal(app.services.phone.reportTextStatus({ ref: refOf('four'), status: 'exploded' }), false);
+  assert.equal(app.services.phone.reportTextStatus({}), false);
+  assert.equal(await statusOf(t4.id), 'sent');
+  assert.equal(refunds(), 1);
+
+  // The user deleted the text. A failure after that still gives the charge back.
+  assert.equal((await a.api.del(`/api/texts/${t4.id}`)).status, 204);
+  balance = app.store.balance(a.id);
+  assert.equal(app.services.phone.reportTextStatus({ ref: refOf('four'), status: 'failed' }), true);
+  assert.equal(app.store.balance(a.id), balance + 3);
+  assert.equal(refunds(), 2);
+
+  // The report is faster than our own request: it arrives before the send call has returned.
+  const realSend = mock.sendText;
+  mock.sendText = async (args) => {
+    const out = await realSend(args);
+    await mock.reportText(out.ref, 'failed');
+    return out;
+  };
+  try {
+    balance = app.store.balance(a.id);
+    const res = await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body: 'five' });
+    assert.equal(res.status, 201);
+    assert.equal(res.data.text.status, 'failed');
+    assert.equal(app.store.balance(a.id), balance);
+    assert.deepEqual(ledger(a).slice(0, 2), ['refund:3', 'text:-3']);
+  } finally {
+    mock.sendText = realSend;
+  }
+  // Every text of this test has its final status. Nothing waits any more.
+  assert.equal(countRows('text_sends', a.id), 0);
+  // A send with no final status waits, and the cleanup job removes it after a week.
+  await send('six');
+  assert.equal(countRows('text_sends', a.id), 1);
+  await app.runJobs('phone-cleanup');
+  assert.equal(countRows('text_sends', a.id), 1);
+  app.db.run('UPDATE text_sends SET at = ? WHERE account_id = ?', now() - 8 * 86400, a.id);
+  await app.runJobs('phone-cleanup');
+  assert.equal(countRows('text_sends', a.id), 0);
+});
+
+test('texts: a code text or a forwarded text that fails later gives its charge back', async () => {
+  const a = await newAccount(app, { credits: 500 });
+  const num = await buyNumber(a);
+  const number = realPhone();
+
+  // The code text. It has no row in the list of texts.
+  const { res, code, sent } = await requestCode(a, num, number);
+  assert.equal(res.status, 201);
+  assert.equal(app.store.balance(a.id), 97);
+  await mock.reportText(sent.ref, 'failed');
+  assert.equal(app.store.balance(a.id), 100);
+  assert.equal(ledger(a)[0], 'refund:3');
+  await mock.reportText(sent.ref, 'failed');
+  assert.equal(app.store.balance(a.id), 100);
+  assert.equal((await texts(a, num)).texts.length, 0);
+  assert.equal((await a.api.post(`/api/phones/${res.data.phone.id}/verify`, { code })).status, 200);
+
+  // Forwarded copies.
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: res.data.phone.id, forwardTexts: true });
+  const from = outsider();
+  await hook('text', { to: num.plain, from, body: 'first' });
+  const copy1 = mock.outbox.texts.at(-1);
+  assert.equal(copy1.to, number);
+  assert.equal(app.store.balance(a.id), 97);
+  await mock.reportText(copy1.ref, 'delivered');
+  await mock.reportText(copy1.ref, 'failed');
+  assert.equal(app.store.balance(a.id), 97);
+
+  await hook('text', { to: num.plain, from, body: 'second' });
+  const copy2 = mock.outbox.texts.at(-1);
+  assert.equal(app.store.balance(a.id), 94);
+  await mock.reportText(copy2.ref, 'failed');
+  await mock.reportText(copy2.ref, 'failed');
+  assert.equal(app.store.balance(a.id), 97);
+  assert.deepEqual(ledger(a).slice(0, 2), ['refund:3', 'text:-3']);
+  // The two incoming texts are stored, with no status.
+  assert.deepEqual((await texts(a, num)).texts.map((t) => t.status), [null, null]);
+  assert.equal(countRows('text_sends', a.id), 0);
+});
+
+test('capabilities: a provider with no voice refuses every call with 409 no_voice', async () => {
+  assert.deepEqual(app.services.phone.capabilities, { voice: true, asyncText: false, searchByArea: true });
+  const a = await newAccount(app, { credits: 2000 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id, forwardCalls: true });
+  const to = outsider();
+  const noVoice = (res) => {
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.data.error, { code: 'no_voice', message: 'This number cannot make or get calls through Postern.' });
+  };
+  let second;
+  const callsBefore = mock.outbox.calls.length;
+
+  mock.capabilities.voice = false;
+  try {
+    assert.equal(app.services.phone.capabilities.voice, false);
+    // Numbers show no voice, in the search and in the list.
+    const s = await a.api.get('/api/numbers/search?country=US&areaCode=206');
+    assert.ok(s.data.numbers.every((n) => n.voice === false && n.sms === true));
+    assert.equal((await a.api.get('/api/numbers')).data.numbers[0].voice, false);
+
+    noVoice(await a.api.patch(`/api/numbers/${num.id}`, { forwardCalls: true }));
+    noVoice(await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to }));
+    noVoice(await a.api.post('/api/phones', { number: realPhone(), method: 'call', via: { numberId: num.id, number: num.plain } }));
+    assert.equal(mock.outbox.calls.length, callsBefore);
+    // To switch call forwarding off is still possible. Texts work as before.
+    assert.equal((await a.api.patch(`/api/numbers/${num.id}`, { forwardCalls: false, forwardTexts: true })).status, 200);
+    assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body: 'texts work' })).status, 201);
+    assert.equal((await requestCode(a, num, realPhone())).res.status, 201);
+
+    // A number that was set to forward calls before: the call is not forwarded.
+    app.db.run('UPDATE numbers SET forward_calls = 1 WHERE id = ?', num.id);
+    assert.deepEqual((await hook('voice', { to: num.plain, from: to, callId: 'novoice-1' })).data.actions, NOT_AVAILABLE);
+    assert.equal((await calls(a, num))[0].status, 'missed');
+
+    // A number that is bought now is stored as a number with no voice.
+    const made = await a.api.post('/api/numbers', { number: s.data.numbers[0].number });
+    assert.equal(made.status, 201);
+    assert.equal(made.data.number.voice, false);
+    second = { ...made.data.number, plain: remember(made.data.plain) };
+    assert.equal(app.db.get('SELECT voice FROM numbers WHERE id = ?', second.id).voice, 0);
+  } finally {
+    mock.capabilities.voice = true;
+  }
+  // Voice is back. The first number can call again. The second number has no voice of its own.
+  const list = (await a.api.get('/api/numbers')).data.numbers;
+  assert.equal(list.find((n) => n.id === num.id).voice, true);
+  assert.equal(list.find((n) => n.id === second.id).voice, false);
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to })).status, 201);
+  noVoice(await a.api.post(`/api/numbers/${second.id}/calls`, { number: second.plain, to }));
+  noVoice(await a.api.patch(`/api/numbers/${second.id}`, { forwardPhoneId: phone.id, forwardCalls: true }));
+  noVoice(await a.api.post('/api/phones', { number: realPhone(), method: 'call', via: { numberId: second.id, number: second.plain } }));
+  assert.deepEqual((await hook('voice', { to: second.plain, from: to, callId: 'novoice-2' })).data.actions, NOT_AVAILABLE);
+
+  // A provider that cannot search by area code gets no area code.
+  mock.capabilities.searchByArea = false;
+  try {
+    const s = await a.api.get('/api/numbers/search?country=US&areaCode=206');
+    assert.ok(s.data.numbers.every((n) => n.number.startsWith('+1415')));
+  } finally {
+    mock.capabilities.searchByArea = true;
+  }
+});
+
+test('phones: link with a call that speaks the code', async () => {
+  const a = await newAccount(app, { credits: 400 + 3 + 3 + 2 });
+  const num = await buyNumber(a);
+  const number = realPhone();
+  const via = { numberId: num.id, number: num.plain };
+  const texts0 = mock.outbox.texts.length;
+
+  assert.equal((await a.api.post('/api/phones', { number, method: 'fax', via })).status, 400);
+  assert.equal((await a.api.post('/api/phones', { number, method: 7, via })).status, 400);
+
+  const res = await a.api.post('/api/phones', { number, method: 'call', via });
+  assert.equal(res.status, 201);
+  assert.equal(res.data.phone.verified, false);
+  // One fixed charge of one call minute. No text went out.
+  assert.equal(app.store.balance(a.id), 5);
+  assert.equal(ledger(a)[0], 'call:-3');
+  assert.equal(mock.outbox.texts.length, texts0);
+
+  // The provider calls the real phone from the VoIP number.
+  const entry = mock.outbox.calls.at(-1);
+  assert.deepEqual({ from: entry.from, to: entry.to, say: entry.say }, { from: num.plain, to: number, say: undefined });
+  const ringing = mock.ringing.get(entry.ref);
+  const answerUrl = new URL(ringing.answerUrl);
+  assert.equal(answerUrl.origin + answerUrl.pathname, PUBLIC + '/api/hooks/phone/say-code');
+  assert.match(answerUrl.searchParams.get('token'), /^[A-Za-z0-9_-]{43}$/);
+
+  // The webhook over HTTP: a bad signature is refused, an unknown token ends the call.
+  assert.equal((await hook('say-code', { callId: entry.ref }, 'AAAA', answerUrl.search)).status, 403);
+  assert.deepEqual((await hook('say-code', { callId: entry.ref }, undefined, '?token=' + 'A'.repeat(43))).data.actions, [{ hangup: true }]);
+  assert.deepEqual((await hook('say-code', { callId: entry.ref })).data.actions, [{ hangup: true }]);
+  const spoken = await hook('say-code', { callId: entry.ref }, undefined, answerUrl.search);
+  assert.equal(spoken.status, 200);
+  const line = spoken.data.actions[0].say;
+  // The code is spoken digit by digit, two times. Then the call ends.
+  assert.match(line, /^Your Postern code is \d, \d, \d, \d, \d, \d\.$/);
+  assert.deepEqual(spoken.data.actions, [{ say: line }, { say: line }, { hangup: true }]);
+
+  // The phone answers (mock helper). The outbox entry of the call has the spoken text.
+  const heard = await mock.answerCall(entry.ref);
+  assert.equal(heard.bridged, false);
+  assert.equal(heard.say, `${line} ${line}`);
+  assert.equal(entry.say, `${line} ${line}`);
+  const code = line.replace(/\D/g, '');
+  assert.equal(code.length, 6);
+  // The development outbox shows it to the owner only.
+  const outbox = (await a.api.get('/api/dev/phone-outbox')).data.calls;
+  assert.deepEqual(outbox.map((k) => ({ from: k.from, to: k.to, say: k.say })), [{ from: num.plain, to: number, say: `${line} ${line}` }]);
+  // A verification call is not in the call log and costs nothing more, also after its status report.
+  assert.equal((await calls(a, num)).length, 0);
+  assert.equal(app.store.balance(a.id), 5);
+
+  // The same code rules as for a text.
+  const wrong = code === '000000' ? '000001' : '000000';
+  assert.equal((await a.api.post(`/api/phones/${res.data.phone.id}/verify`, { code: wrong })).data.error.code, 'bad_code');
+  const good = await a.api.post(`/api/phones/${res.data.phone.id}/verify`, { code });
+  assert.equal(good.status, 200);
+  assert.equal(good.data.phone.verified, true);
+
+  // A new call for a second phone gives a new code. The provider cannot start the next one: refund.
+  const other = realPhone();
+  const again = await a.api.post('/api/phones', { number: other, method: 'call', via });
+  assert.equal(again.status, 201);
+  assert.equal(app.store.balance(a.id), 2);
+  const line2 = (await mock.answerCall(mock.outbox.calls.at(-1).ref)).say;
+  assert.match(line2, /^Your Postern code is (\d, ){5}\d\. Your Postern code is (\d, ){5}\d\.$/);
+  // 2 credits are less than one call minute.
+  const poor = await a.api.post('/api/phones', { number: other, method: 'call', via });
+  assert.equal(poor.status, 402);
+  assert.equal(poor.data.error.needed, 3);
+  app.store.credit(a.id, 10, 'topup');
+  mock.failNext('startCall');
+  const failed = await a.api.post('/api/phones', { number: other, method: 'call', via });
+  assert.equal(failed.status, 502);
+  assert.equal(app.store.balance(a.id), 12);
+  assert.deepEqual(ledger(a).slice(0, 2), ['refund:3', 'call:-3']);
+  // The code of the call that worked is still the valid one.
+  assert.equal((await a.api.post(`/api/phones/${again.data.phone.id}/verify`, { code: line2.slice(0, 40).replace(/\D/g, '') })).status, 200);
+});
+
+test('destinations: only allowed prefixes, and no blocked prefix', async () => {
+  const a = await newAccount(app, { credits: 1000 });
+  const num = await buyNumber(a);
+  const phone = await linkPhone(a, num);
+  await a.api.patch(`/api/numbers/${num.id}`, { forwardPhoneId: phone.id });
+  const via = { numberId: num.id, number: num.plain };
+  const refused = (res) => {
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.data.error, { code: 'bad_destination', message: 'You cannot text or call this number from here.' });
+  };
+  const tries = (to) => [
+    a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to, body: 'hello' }),
+    a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to }),
+    a.api.post('/api/phones', { number: to, via }),
+    a.api.post('/api/phones', { number: to, method: 'call', via }),
+  ];
+  const balance = app.store.balance(a.id);
+  const sent = mock.outbox.texts.length;
+  const called = mock.outbox.calls.length;
+
+  // The default configuration: +1 only, and not the premium and Caribbean codes inside +1.
+  assert.deepEqual(app.config.phone.allowedPrefixes, ['+1']);
+  assert.ok(app.config.phone.blockedPrefixes.includes('+1900'));
+  for (const to of ['+447700900123', '+4915112345678', '+19005550100', '+19765550100', '+18765550100', '+12425550100']) {
+    for (const res of await Promise.all(tries(to))) refused(res);
+  }
+  // Nothing was charged, sent, or called, and no phone was added.
+  assert.equal(app.store.balance(a.id), balance);
+  assert.equal(mock.outbox.texts.length, sent);
+  assert.equal(mock.outbox.calls.length, called);
+  assert.equal((await a.api.get('/api/phones')).data.phones.length, 1);
+  // A normal +1 number works.
+  assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+12125550100', body: 'hello' })).status, 201);
+
+  const saved = { allowed: app.config.phone.allowedPrefixes, blocked: app.config.phone.blockedPrefixes };
+  try {
+    // An empty allowed list allows every country. The blocked list still counts.
+    app.config.phone.allowedPrefixes = [];
+    assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+447700900123', body: 'hello' })).status, 201);
+    refused(await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+19005550100', body: 'hello' }));
+    // Prefixes with and without "+" mean the same. More than one allowed prefix.
+    app.config.phone.allowedPrefixes = ['44', '+1212'];
+    app.config.phone.blockedPrefixes = ['4477009001'];
+    assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+447700900200', body: 'hello' })).status, 201);
+    assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+12125550101', body: 'hello' })).status, 201);
+    refused(await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+447700900123', body: 'hello' }));
+    refused(await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+13055550100', body: 'hello' }));
+    refused(await a.api.post(`/api/numbers/${num.id}/calls`, { number: num.plain, to: '+13055550100' }));
+    // The check is for numbers that the user chooses. A text from a blocked number still arrives.
+    assert.equal((await hook('text', { to: num.plain, from: '+19005550100', body: 'from a premium number' })).status, 200);
+    assert.ok((await texts(a, num)).texts.some((t) => t.direction === 'in'));
+  } finally {
+    app.config.phone.allowedPrefixes = saved.allowed;
+    app.config.phone.blockedPrefixes = saved.blocked;
+  }
+});
+
+test('migration: an older database gets the new columns, and old sent texts get a status', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'postern-phone-'));
+  const opts = { dataDir, port: 0, host: '127.0.0.1', logLevel: 'silent', rateLimits: false, mail: { smtpPort: 0, smtpHost: '127.0.0.1', relayUrl: '' }, phone: { provider: 'mock', mockAutoAnswer: false }, pay: { provider: 'off' } };
+  try {
+    const one = await createApp(opts, {});
+    await one.start();
+    const a = await newAccount(one, { credits: 1000 });
+    const s = await a.api.get('/api/numbers/search?country=US&areaCode=604');
+    const made = await a.api.post('/api/numbers', { number: s.data.numbers[0].number });
+    const num = { id: made.data.number.id, plain: made.data.plain };
+    assert.equal((await a.api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+13055550111', body: 'old text' })).status, 201);
+    await one.services.phone.simulateText({ to: num.plain, from: '+13055550111', body: 'old answer' });
+    await one.services.phone.simulateCall({ to: num.plain, from: '+13055550111' });
+    await one.stop();
+
+    // Make the file look like a database from before these columns existed.
+    const raw = new DatabaseSync(join(dataDir, 'accounts.db'));
+    raw.exec('DROP INDEX texts_msg; DROP INDEX calls_call; DROP TABLE text_sends;');
+    raw.exec('ALTER TABLE texts DROP COLUMN status; ALTER TABLE texts DROP COLUMN msg_hmac; ALTER TABLE calls DROP COLUMN call_hmac;');
+    const columns = (table) => raw.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    assert.ok(!columns('texts').includes('status'));
+    assert.ok(!columns('texts').includes('msg_hmac'));
+    assert.ok(!columns('calls').includes('call_hmac'));
+    raw.close();
+
+    const two = await createApp(opts, {});
+    await two.start();
+    try {
+      const cols = (table) => two.db.all(`PRAGMA table_info(${table})`).map((c) => c.name);
+      assert.ok(cols('texts').includes('status'));
+      assert.ok(cols('texts').includes('msg_hmac'));
+      assert.ok(cols('calls').includes('call_hmac'));
+      const api = client(two);
+      api.setCookie(`postern=${a.session.token}`);
+      // The old rows are there. The old sent text counts as sent, the old incoming text has no status.
+      const list = (await api.get(`/api/numbers/${num.id}/texts`)).data.texts;
+      assert.deepEqual(list.map((t) => `${t.direction}:${t.status}`).sort(), ['in:null', 'out:sent']);
+      assert.equal((await api.get(`/api/numbers/${num.id}/calls`)).data.calls.length, 1);
+      // The new functions work on the old database: status reports, and webhook repeats.
+      two.services.phone.mock.queueNextText();
+      const sent = await api.post(`/api/numbers/${num.id}/texts`, { number: num.plain, to: '+13055550111', body: 'new text' });
+      assert.equal(sent.data.text.status, 'queued');
+      await two.services.phone.reportText(two.services.phone.outbox.texts.at(-1).ref, 'delivered');
+      const after = (await api.get(`/api/numbers/${num.id}/texts`)).data.texts;
+      assert.equal(after.find((t) => t.id === sent.data.text.id).status, 'delivered');
+      assert.equal(two.db.get('SELECT COUNT(*) AS n FROM texts WHERE msg_hmac IS NOT NULL').n, 0);
+    } finally {
+      await two.stop();
+    }
+    // A third start changes nothing more.
+    const three = await createApp(opts, {});
+    await three.start();
+    assert.equal(three.db.get('SELECT COUNT(*) AS n FROM texts').n, 3);
+    await three.stop();
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
 });
 
 test('mock provider: a click-to-call ends by itself when auto answer is on', async () => {

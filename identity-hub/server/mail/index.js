@@ -75,4 +75,5 @@ export async function register(app) {
   });
   // Also on demand, for example after a renewal script replaced the files.
   app.services.mail.checkTls = () => (listening ? smtp.checkTls() : false);
+  app.services.mail.tlsStatus = () => smtp.tlsStatus();
 }
