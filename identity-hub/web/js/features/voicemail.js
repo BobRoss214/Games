@@ -8,20 +8,17 @@ import { store } from '../lib/store.js';
 import { api, ApiError } from '../lib/api.js';
 import { registerNumberSetting, registerCallAddon } from '../lib/registry.js';
 import { loadNumbers } from '../lib/data.js';
-import { downloadBlob } from '../lib/mail.js';
-import { money, fullTime } from '../lib/format.js';
-import { button, toggle, callout, runBusy } from '../ui/components.js';
+import { money } from '../lib/format.js';
+import { button, toggle, callout } from '../ui/components.js';
 import { toast } from '../ui/toast.js';
-import { switchOf, setSwitch, loadSwitches, voicemailOf, askVoicemail, loadVoicemailAudio, audioExtension } from './voicemail/calls.js';
-import { openPlayer, playerOf } from './voicemail/player.js';
+import { switchOf, setSwitch, loadSwitches, voicemailOf, askVoicemail, loadVoicemailAudio } from './voicemail/calls.js';
+import { voicemailLine } from './voicemail/line.js';
 
 // The words that the caller hears. The server says exactly this (docs/API.md, "Voicemail").
 export const GREETING = 'The person you called is not available. Please leave a message after the tone.';
 
 const appName = () => { const c = store.get('config'); return (c && c.appName) || 'Postern'; };
 const lengthText = (seconds) => (seconds % 60 === 0 ? `${seconds / 60} ${seconds === 60 ? 'minute' : 'minutes'}` : `${seconds} seconds`);
-// 23 -> "0:23"
-export const clockTime = (seconds) => { const s = Math.max(0, Math.round(Number(seconds) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 // ---------- the Settings tab of a number ----------
 
@@ -116,64 +113,15 @@ registerNumberSetting({
 
 // ---------- the Calls tab ----------
 
-function voicemailLine(call, voicemail) {
-  const live = playerOf(call.id);
-  if (live) return live; // the list painted again while this voicemail plays: keep the same player
-  let audio = null;      // { bytes, contentType } after the first load
-  const status = h('p', { class: 'small muted f-vm-status', role: 'status', hidden: true });
-  const say = (text, error = false) => {
-    status.textContent = text || '';
-    status.hidden = !text;
-    status.classList.toggle('field-error', !!error);
-    status.classList.toggle('muted', !error);
-  };
-  const problem = (err) => {
-    if (err instanceof ApiError && err.status === 404) return 'This voicemail does not exist any more.';
-    return (err && err.message) || 'The voicemail did not load. Try again.';
-  };
-  const get = async () => { if (!audio) audio = await loadVoicemailAudio(call.id, voicemail); return audio; };
-  const slot = h('div', { class: 'f-vm-slot' });
-  const line = h('div', { class: 'f-vm', dataset: { vm: call.id } });
-
-  const play = button('Play', { size: 'sm', attrs: { 'aria-label': `Play the voicemail, ${clockTime(voicemail.seconds)}` }, onClick: (e, btn) => runBusy(btn, async () => {
-    say('Loading the voicemail…');
-    const a = await get();
-    const el = openPlayer(call.id, {
-      bytes: a.bytes, contentType: a.contentType, holder: line, label: `Voicemail of ${fullTime(call.at)}`,
-      onClose: () => { replace(slot); play.hidden = false; },
-      onError: () => say('This browser cannot play this sound. Download it and open it with a different app.', true),
-    });
-    replace(slot, el);
-    play.hidden = true;
-    say('');
-  }, { onError: (err) => { say(problem(err), true); return true; } }) });
-
-  const download = button('Download', { size: 'sm', kind: 'quiet', iconName: 'download', attrs: { 'aria-label': 'Download the voicemail' }, onClick: (e, btn) => runBusy(btn, async () => {
-    if (!audio) say('Loading the voicemail…');
-    const a = await get();
-    const d = new Date(call.at * 1000);
-    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    downloadBlob(a.bytes, `voicemail-${day}.${audioExtension(a.contentType)}`, a.contentType);
-    if (status.textContent.startsWith('Loading')) say('');
-  }, { onError: (err) => { say(problem(err), true); return true; } }) });
-
-  line.append(
-    h('div', { class: 'row row-2 row-wrap' },
-      h('span', { class: 'small strong nowrap' }, `Voicemail · ${clockTime(voicemail.seconds)}`),
-      play, slot, download,
-    ),
-    status,
-  );
-  return line;
-}
+const lineOf = (call, voicemail) => voicemailLine({ key: call.id, seconds: voicemail.seconds, at: call.at, load: () => loadVoicemailAudio(call.id, voicemail) });
 
 registerCallAddon((call, number) => {
   if (call.direction !== 'in') return null;
   const voicemail = voicemailOf(call, number);
-  if (voicemail) return voicemailLine(call, voicemail);
+  if (voicemail) return lineOf(call, voicemail);
   // A call with a voicemail is in the list as a missed call. Other calls need no question.
   if (voicemail === null || call.status !== 'missed') return null;
   const holder = h('span', { hidden: true });
-  askVoicemail(call, number).then((found) => { if (found && holder.isConnected) holder.replaceWith(voicemailLine(call, found)); });
+  askVoicemail(call, number).then((found) => { if (found && holder.isConnected) holder.replaceWith(lineOf(call, found)); });
   return holder;
 });

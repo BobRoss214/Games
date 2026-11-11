@@ -86,7 +86,7 @@ export default async function (t) {
   // ---- 402 offers "Add funds" ----
   const dlg = b.page.getByRole('dialog');
   await b.page.getByRole('button', { name: 'New', exact: true }).click();
-  await dlg.getByRole('button', { name: /^Inbox/ }).click();
+  await dlg.locator('.choice', { hasText: /^Inbox/ }).click();
   await dlg.getByRole('button', { name: /Make inbox/ }).click();
   await b.page.getByRole('heading', { name: 'Add funds to continue' }).waitFor();
   await dlg.getByRole('button', { name: 'Add funds' }).click();

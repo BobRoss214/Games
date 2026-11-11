@@ -15,6 +15,12 @@ export default async function (t) {
   const now = Math.floor(Date.now() / 1000);
   const sql = (text, ...args) => { const db = new DatabaseSync(join(t.server.dataDir, 'accounts.db')); try { db.prepare(text).run(...args); } finally { db.close(); } };
   const reload = () => inApp(page, ({ data }) => data.loadAll());
+  // The numbers of this account as the app shows them: "+1 415 555 0100".
+  const shown = await inApp(page, async ({ store }, ids) => {
+    const { phoneText } = await import('/js/lib/format.js');
+    const one = (id) => phoneText(store.get('numbers').find((n) => n.id === id).number);
+    return { n1: one(ids.n1), n2: one(ids.n2) };
+  }, ids);
   const slot = page.locator('.home-slot[data-section="warnings"]');
   const dayText = (at) => new Date(at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
@@ -36,9 +42,9 @@ export default async function (t) {
   const text = (await renew.textContent()).replace(/\s+/g, ' ');
   assert(text.includes('2 renewals in the next 7 days cost $5.00. Your balance is $3.00.'), 'the total or the balance is wrong: ' + text);
   assert(text.includes(`Inbox Personal: $1.00 on ${dayText(dueBox)}`), 'the inbox is not named with its price and day: ' + text);
-  assert(text.includes(`+1 415 555 0100 (Selling the bike): $4.00 on ${dayText(dueNumber)}`), 'the number is not named with its price and day: ' + text);
+  assert(text.includes(`${shown.n1} (Selling the bike): $4.00 on ${dayText(dueNumber)}`), 'the number is not named with its price and day: ' + text);
   assert(text.includes(`The first one is on ${dayText(dueBox)}.`), 'the day of the first renewal is missing: ' + text);
-  assert(text.indexOf('Inbox Personal') < text.indexOf('+1 415 555 0100'), 'the earliest renewal is not first');
+  assert(text.indexOf('Inbox Personal') < text.indexOf(shown.n1), 'the earliest renewal is not first');
   assert(await slot.locator('[data-warning="paused"]').count() === 0, 'a paused warning shows for active items');
   const above = await page.evaluate(() => document.querySelector('.home-slot[data-section="warnings"]').getBoundingClientRect().bottom <= document.querySelector('.stats').getBoundingClientRect().top);
   assert(above, 'the warning is not above the counts');
@@ -68,9 +74,9 @@ export default async function (t) {
   await paused.getByText('2 things are paused').waitFor();
   const ptext = (await paused.textContent()).replace(/\s+/g, ' ');
   assert(ptext.includes('Inbox Side project is paused. It receives no mail.'), 'the paused inbox is not explained: ' + ptext);
-  assert(ptext.includes('+1 212 555 0100 (Deliveries) is paused. It receives no texts and no calls.'), 'the paused number is not explained: ' + ptext);
+  assert(ptext.includes(`${shown.n2} (Deliveries) is paused. It receives no texts and no calls.`), 'the paused number is not explained: ' + ptext);
   assert(ptext.includes(`It is released on ${dayText(numberPaid + graceDays * DAY)} if the balance stays too low.`), 'the release day is wrong: ' + ptext);
-  assert(!/Inbox Side project[^.]*\.[^.]*\.[^.]*released/.test(ptext.split('+1 212')[0]), 'an inbox is said to be released');
+  assert(!ptext.split('Number ')[0].includes('released'), 'an inbox is said to be released');
   await paused.getByRole('link', { name: 'Add funds' }).waitFor();
   // a paused item is not counted as a renewal
   assert(await slot.locator('[data-warning="renewals"]').count() === 0, 'a paused item is counted as a renewal');

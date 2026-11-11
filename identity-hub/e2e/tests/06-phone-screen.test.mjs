@@ -65,7 +65,7 @@ export default async function (t) {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('heading', { name: 'Home', level: 1 }).waitFor(); await page.locator('.recent-item').first().waitFor(); await page.locator('.identity-card').first().waitFor(); await check('home');
   await page.getByRole('button', { name: 'New', exact: true }).click(); await check('new chooser');
-  await dlg.getByRole('button', { name: /^Alias/ }).click();
+  await dlg.locator('.choice', { hasText: /^Alias/ }).click();
   await dlg.getByRole('button', { name: 'Choose the name myself' }).click(); await check('new alias');
   await dlg.getByRole('button', { name: 'Cancel' }).click();
 

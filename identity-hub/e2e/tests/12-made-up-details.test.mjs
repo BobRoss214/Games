@@ -29,7 +29,7 @@ export default async function (t) {
   const country = dlg.getByLabel('Country for new identifiers');
   assert((await country.evaluate((el) => el.tagName)) === 'SELECT', 'the country picker is not a real control');
   assert((await country.locator('option').allTextContents()).includes('United States'), 'the country list has no United States');
-  await dlg.getByText('These identifiers are made up. Do not use them where the law requires your real name and address').waitFor();
+  await dlg.locator('.persona-honest', { hasText: 'These identifiers are made up. Do not use them where the law requires your real name and address' }).waitFor();
   t.ok('empty state: country picker and the honest line');
 
   // make details

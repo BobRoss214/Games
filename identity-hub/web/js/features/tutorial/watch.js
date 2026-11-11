@@ -64,10 +64,11 @@ export function stopWatch() {
 function announce(step) {
   // The person is on the tutorial screen (again): the screen shows the result itself.
   if (location.pathname === TUTORIAL_PATH) return;
-  const saved = progress.get('value');
-  if (!saved || saved.state !== 'active') return;
-  const proven = proofs(store.get(), extra);
-  saveProgress((old) => (old ? { ...old, ...withProven(old, proven) } : old)).catch(() => { /* the screen saves it with the next step */ });
+  // The person did something: the done steps are saved now (one encrypted write).
+  if (progress.get('value')) {
+    const proven = proofs(store.get(), extra);
+    saveProgress((old) => (old ? { ...old, ...withProven(old, proven) } : old)).catch(() => { /* the screen saves it with the next step */ });
+  }
   toast(fill(step.done, step, store.get('config')), {
     kind: 'ok', timeout: 12000,
     action: { label: 'Back to the tutorial', onClick: () => navigate(TUTORIAL_PATH) },
@@ -76,8 +77,6 @@ function announce(step) {
 
 function check() {
   if (!waiting) return;
-  const saved = progress.get('value');
-  if (!saved || saved.state !== 'active') { stopWatch(); return; }
   if (!(reached ? reached() : proofs(store.get(), extra).has(waiting))) {
     // A sent text is not in the store. Ask for it when something changed.
     if (waiting === 'first-text') refreshExtra({ passkeys: false }).then(() => { if (extra.sentText) check(); });

@@ -15,7 +15,7 @@ async function makeInbox(page, base, label) {
   await page.goto(base + '/');
   const dlg = page.getByRole('dialog');
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await dlg.getByRole('button', { name: /^Inbox/ }).click();
+  await dlg.locator('.choice', { hasText: /^Inbox/ }).click();
   await dlg.getByLabel('Label').fill(label);
   await dlg.getByRole('button', { name: /Make inbox/ }).click();
   await page.getByRole('heading', { name: 'Inbox made' }).waitFor();
@@ -63,7 +63,7 @@ export default async function (t) {
   await makeInbox(page, t.base, 'Personal');
   t.ok('inbox made');
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await dlg.getByRole('button', { name: /^Alias/ }).click();
+  await dlg.locator('.choice', { hasText: /^Alias/ }).click();
   await dlg.getByLabel('Label').fill('Maple Shop');
   await dlg.getByRole('button', { name: 'Make alias' }).click();
   await page.getByRole('heading', { name: 'Alias made' }).waitFor();
@@ -141,7 +141,7 @@ export default async function (t) {
 
   // turn the alias off from the message; the next mail is refused
   await page.locator('.msg-row').filter({ hasText: 'Hello from the second account' }).click();
-  await page.getByRole('button', { name: 'Turn off this alias' }).click();
+  await page.locator('.message-via').getByRole('button', { name: 'Turn off this alias' }).click();
   await page.getByText('Alias turned off. Mail to it is refused.').waitFor();
   await page.locator('.message-via').getByText('Alias, off').waitFor();
   await send('Second try');
@@ -216,8 +216,8 @@ export default async function (t) {
   // delete things
   await page.goto(t.base + '/mail');
   await page.locator('.msg-row').filter({ hasText: 'Hello from the second account' }).click();
-  await page.getByRole('button', { name: 'Delete' }).click();
-  await dlg.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await dlg.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByText('Message deleted').waitFor();
   t.ok('message deleted');
   await page.goto(t.base + '/aliases');

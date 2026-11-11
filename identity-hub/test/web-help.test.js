@@ -337,7 +337,8 @@ test('help: the tutorial works with no credit, in test mode, and with parts turn
 test('help: a name in quotation marks is a real name in the app', () => {
   const app = webSources();
   // Names of screens that are built after this text. Take a name out of this list when its screen exists.
-  const notBuiltYet = ['Help', 'why?'];
+  // The list is empty now: "Help" is in web/js/features/help.js and "Why?" is in web/js/ui/why.js.
+  const notBuiltYet = [];
   const examples = ['Facebook'];
   for (const { where, value } of allTexts()) {
     for (const [, name] of value.matchAll(/"([^"]+)"/g)) {

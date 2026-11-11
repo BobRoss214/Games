@@ -131,3 +131,11 @@
   .f-tutorial-card > .row .btn { flex: 1 1 auto; }
 }
 /* ---- tutorial: end ---- */
+
+/* --- export (web/js/features/export.js): the page that opens an export file --- */
+.f-export-list { overflow: hidden; }
+.f-export-row { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.f-export-list li:last-child > .f-export-row, .f-export-list li:last-child > .thread { border-bottom: 0; }
+.f-export-value { white-space: normal; }
+.f-export-counts { grid-template-columns: max-content max-content; }
+/* --- end export --- */

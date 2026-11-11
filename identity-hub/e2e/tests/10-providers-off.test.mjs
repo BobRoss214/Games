@@ -15,7 +15,7 @@ export default async function (t) {
     assert(!steps.some((x) => /Add funds|Get a number/.test(x)), 'the first steps show areas that are off');
     await page.getByRole('button', { name: 'New', exact: true }).click();
     assert((await page.locator('.choice-title').allTextContents()).join() === 'Alias,Inbox,Identity', 'the New chooser offers a number');
-    await dlg.getByRole('button', { name: /^Inbox/ }).click();
+    await dlg.locator('.choice', { hasText: /^Inbox/ }).click();
     await dlg.getByRole('button', { name: 'Make inbox' }).click();
     await page.getByRole('heading', { name: 'Inbox made' }).waitFor();
     await dlg.getByRole('button', { name: 'Done' }).click();

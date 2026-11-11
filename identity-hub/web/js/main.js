@@ -27,8 +27,12 @@ import { settingsScreen } from './screens/settings.js';
 import { identityScreen } from './screens/identity.js';
 import { noticeUnknownIdentities } from './lib/identities.js';
 import { openTestTools } from './screens/testtools.js';
-// Every feature file registers its parts here (see docs/UI-GUIDE.md).
-import './features/index.js';
+
+// Every feature file registers its parts when this file loads (see docs/UI-GUIDE.md).
+// It loads on its own, so that one broken feature file cannot stop the whole app:
+// the app then starts without the feature parts, and says so.
+let featuresFailed = false;
+const featuresLoaded = import('./features/index.js').catch((err) => { featuresFailed = true; queueMicrotask(() => { throw err; }); });
 
 const root = document.getElementById('app');
 
@@ -187,7 +191,8 @@ function fatal(message, retry) {
 async function start() {
   initTheme();
   try {
-    const config = await api.get('/api/config');
+    // The feature files are in before the sign-in state is known, so that they see every change of it.
+    const [config] = await Promise.all([api.get('/api/config'), featuresLoaded]);
     store.set({ config });
     await boot();
   } catch (err) {
@@ -196,6 +201,7 @@ async function start() {
   }
   startRouter();
   render();
+  if (featuresFailed) toast('Some parts of the app did not load. Load the page again.', { kind: 'error' });
 }
 
 start();

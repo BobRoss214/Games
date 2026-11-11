@@ -31,13 +31,13 @@ export default async function (t) {
   // Home before: an invitation, and every alias and number under "Not in an identity"
   await page.goto(t.base + '/');
   await page.getByRole('heading', { name: 'Identities', exact: true }).waitFor();
-  await page.getByText('An identity is a named group').waitFor();
+  await page.locator('.identity-invite', { hasText: 'An identity is a named group' }).waitFor();
   assert((await page.locator('section[aria-labelledby="loose-title"] .item-row').count()) === 5, 'not all aliases and numbers are under "Not in an identity"');
   t.ok('Home: identities first, then "Not in an identity", then inboxes');
 
   // make an identity from the New chooser
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await dlg.getByRole('button', { name: /^Identity/ }).click();
+  await dlg.locator('.choice', { hasText: /^Identity/ }).click();
   await dlg.getByRole('button', { name: 'Make identity' }).click();
   await dlg.getByText('Give the identity a name.').waitFor();
   await dlg.getByLabel('Name').fill('Facebook');

@@ -145,8 +145,7 @@ export default function screen({ scope }) {
     const missing = missingFor(step, app);
     const skip = () => button('Skip this step', { attrs: { 'data-key': 'skip' }, onClick: () => go(nextIndex(index, app.config), { skip: true }) });
     const parts = [
-      h('p', { class: 'label' }, 'Do it now'),
-      h('p', { class: 'read' }, t(dev && step.doItTest ? step.doItTest : step.doIt)),
+      h('div', { class: 'stack stack-1' }, h('p', { class: 'label' }, 'Do it now'), h('p', { class: 'read' }, t(dev && step.doItTest ? step.doItTest : step.doIt))),
     ];
     let buttons = [];
 
@@ -213,15 +212,14 @@ export default function screen({ scope }) {
           h('span', { class: 'item-icon mono small', 'aria-hidden': 'true' }, st === 'done' ? icon('check', { size: 18 }) : String(i + 1)),
           h('div', { class: 'item-main' },
             h('span', { class: 'item-value' }, h('span', { class: 'sr-only' }, `Step ${i + 1}: `), title),
-            h('div', { class: 'item-sub' },
-              here ? tag('You are here') : null,
-              statusTag(st),
-              st === 'off' ? h('span', { class: 'small' }, fill(step.offNote, step, app.config)) : null,
-            ),
+            st === 'off' ? h('p', { class: 'hint' }, fill(step.offNote, step, app.config)) : null,
           ),
-          h('div', { class: 'item-actions' },
+          // The state in words on the right, so that every line has the same height.
+          h('div', { class: 'item-actions' }, h('div', { class: 'row row-2' },
+            here ? tag('You are here') : null,
+            statusTag(st),
             st === 'off' || here ? null : button('Open', { size: 'sm', attrs: { 'aria-label': `Open step ${i + 1}: ${title}`, 'data-key': `open-${step.id}` }, onClick: () => go(i) }),
-          ),
+          )),
         );
       }))),
     );

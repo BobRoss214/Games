@@ -39,7 +39,9 @@ const startNow = (keepSteps) => saveProgress((old) => (keepSteps && old
   ? { ...old, state: 'active' }
   : { v: 1, step: steps.STEPS[0].id, done: [], skipped: [], state: 'active' }), { keep: keepSteps });
 function start({ again = false } = {}) {
-  startNow(!again).catch(reportError);
+  const saved = progress.get('value');
+  // A tutorial that is active already needs no write: only the way to its screen.
+  if (again || !saved || saved.state !== 'active') startNow(!again).catch(reportError);
   navigate(PATH);
 }
 // "Not now" and "Stop": the card on Home goes away. The steps that were done stay saved.

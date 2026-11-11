@@ -128,7 +128,7 @@ export default async function (t) {
   await page.locator('.bubble-row').filter({ hasText: 'one' }).waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Conversation actions' }).click();
   await page.getByRole('menuitem', { name: 'Delete conversation' }).click();
-  await dlg.getByRole('button', { name: 'Delete' }).click();
+  await dlg.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByText('Conversation deleted').waitFor();
   assert((await page.locator('.thread').count()) === 1, 'the conversation is still in the list');
   await page.getByRole('button', { name: 'New text' }).click();

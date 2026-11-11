@@ -87,7 +87,7 @@ export default async function (t) {
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Inbox or alias?' }).waitFor();
   await note();
-  await page.getByRole('dialog').getByRole('button', { name: /^Alias/ }).click();
+  await page.getByRole('dialog').locator('.choice', { hasText: /^Alias/ }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Inbox or alias?' }).click();
   await page.getByRole('dialog').getByText('An alias is one more address.').waitFor();
   await page.keyboard.press('Escape');

@@ -47,8 +47,11 @@ export default async function (t) {
   assert(await page.locator('.home-slot.is-top[data-section="first-steps"]').evaluate((el) => el.getBoundingClientRect().height) === 0, 'a hidden home block still takes space');
   assert(await page.evaluate(() => window.e2eScreenLoads || 0) === 0, 'the screen file loaded before its path was opened');
   const navLink = page.locator('.sidebar .nav-item', { hasText: 'Test place' });
+  // Other feature files may add places of their own (Help): look at the order of the ones this test knows.
+  const KNOWN = ['Home', 'Mail', 'Aliases', 'Numbers', 'Funds', 'Test place', 'Settings', 'More'];
+  const known = (list) => list.map((x) => x.replace(/\d+/g, '')).filter((x) => KNOWN.includes(x)).join('|');
   const order = await page.locator('.sidebar .nav-item').allTextContents();
-  assert(order.join('|').replace(/\d+/g, '') === 'Home|Mail|Aliases|Numbers|Funds|Test place|Settings', 'the menu order is wrong: ' + order.join('|'));
+  assert(known(order) === 'Home|Mail|Aliases|Numbers|Funds|Test place|Settings', 'the menu order is wrong: ' + order.join('|'));
   await navLink.click();
   await page.getByRole('heading', { name: 'Test place', level: 1 }).waitFor();
   assert(await navLink.getAttribute('aria-current') === 'page', 'the menu item of the feature is not marked');
@@ -175,7 +178,7 @@ export default async function (t) {
   assert(places.join('|') === 'Home|Mail|Aliases|Numbers|More', 'the phone bar is wrong: ' + places.join('|'));
   await bar.getByRole('button', { name: 'More' }).click();
   const more = await p.page.getByRole('menu').getByRole('menuitem').allTextContents();
-  assert(more.join('|') === 'Funds|Test place', 'the More list is wrong: ' + more.join('|'));
+  assert(known(more) === 'Funds|Test place', 'the More list is wrong: ' + more.join('|'));
   const box = await p.page.getByRole('menu').boundingBox();
   assert(box.y >= 0 && box.y + box.height <= 844 - 60 + 1 && box.x >= 0 && box.x + box.width <= 390, 'the More list is off the screen or over the bar: ' + JSON.stringify(box));
   const small = await p.page.getByRole('menu').getByRole('menuitem').evaluateAll((els) => els.filter((el) => el.getBoundingClientRect().height < 44).length);
@@ -196,11 +199,11 @@ export default async function (t) {
   t.ok('phone: four places and "More"; the list opens above the bar, works with the keyboard, marks the open place');
   await p.close();
 
-  // Without a registered menu item the phone bar stays as it was (five places, no "More").
+  // The bar never holds more than five places, whatever the feature files register.
   const q = await t.open({ width: 390, height: 844 });
   await signIn(q.page, t.base, key);
   const plain = (await q.page.locator('.tabbar .tab-link').allTextContents()).map((x) => x.replace(/\d+/g, ''));
-  assert(plain.join('|') === 'Home|Mail|Aliases|Numbers|Funds', 'the phone bar without extra places is wrong: ' + plain.join('|'));
-  t.ok('phone: no "More" when everything fits');
+  assert(plain.length <= 5 && plain.slice(0, 4).join('|') === 'Home|Mail|Aliases|Numbers', 'the phone bar without the test feature is wrong: ' + plain.join('|'));
+  t.ok('phone: never more than five places in the bar');
   await q.close();
 }

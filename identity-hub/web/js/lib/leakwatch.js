@@ -116,10 +116,12 @@ export function startLeakWatch() {
   let timer = 0;
   let checkedFor = null; // the account that had its first check
   const soon = (ms) => { clearTimeout(timer); waiting = true; timer = setTimeout(() => { waiting = false; if (store.get('phase') === 'in' && isUnlocked()) check(); }, ms); };
-  store.subscribe(['aliases', 'phase'], (s) => {
+  const look = (s) => {
     if (s.phase !== 'in') { checkedFor = null; return; }
     const id = s.account && s.account.id;
     if (s.aliases !== null && id && checkedFor !== id) { checkedFor = id; soon(400); }
-  });
+  };
+  store.subscribe(['aliases', 'phase'], look);
+  look(store.get()); // the lists may be loaded already
   bus.on('mail', () => soon(600));
 }

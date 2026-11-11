@@ -7,7 +7,7 @@ export default async function (t) {
   const { page } = d;
   const key = await signUp(page, t.base);
   const ids = await seedAccount(page);
-  const sendersOf = (id) => inApp(page, ({ store }, id) => (store.get('aliases').find((a) => a.id === id).extra.senders) || null, id);
+  const sendersOf = (id) => inApp(page, ({ store }, id) => { const a = (store.get('aliases') || []).find((x) => x.id === id); return (a && a.extra.senders) || null; }, id);
   const mail = (from, subject) => inApp(page, ({ api }, m) => api.post('/api/dev/inbound-mail', { to: m.to, from: m.from, subject: m.subject, text: 'Hello.' }), { to: ids.shopAddress, from, subject });
   const waitSenders = async (id, want) => {
     for (let i = 0; i < 80; i++) { const s = await sendersOf(id); if (JSON.stringify(s) === JSON.stringify(want)) return; await page.waitForTimeout(100); }

@@ -224,7 +224,7 @@ export const WHY = {
     paragraphs: [
       'Random identifiers are a random name and address for sign-up forms. The city, the state and the ZIP code are real. The street and the person are not.',
       'Your browser makes them. Use them when a website asks for a name and an address that it does not need.',
-      'These identifiers are made up. Do not use them where the law requires your real name and address, for example at a bank or on a government form.',
+      'Do not use them where the law requires your real name and address, for example at a bank or on a government form.',
     ],
   },
   'link-phone': {
