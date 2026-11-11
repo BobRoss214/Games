@@ -1,0 +1,59 @@
+# Caddy configuration for Postern.
+#
+# Caddy receives all web traffic on ports 80 and 443. It gets the HTTPS
+# certificate automatically and sends each request to the app container.
+#
+# The address comes from PUBLIC_URL in the .env file (example:
+# https://mail.example.com). Do not put a "/" at the end of PUBLIC_URL.
+#
+# Privacy rules for this file:
+#   1. No access log. Caddy writes an access log only if a site has a `log`
+#      line. This file has none. Do not add one.
+#   2. Caddy's own messages (start, stop, certificates) stay on, but the two
+#      message groups that can contain request data are removed.
+
+{
+	# The admin interface is not necessary. To apply a change, restart Caddy:
+	#   docker compose restart caddy
+	admin off
+
+	log {
+		# http.log                     request errors (they contain the visitor's IP address and the URL)
+		# http.handlers.reverse_proxy  proxy messages
+		exclude http.log http.handlers.reverse_proxy
+	}
+}
+
+{$PUBLIC_URL} {
+	# Do not tell visitors which server program this is.
+	header -Server
+
+	# Each block below sends the request to the app with one X-Forwarded-For
+	# value: the address of the visitor as Caddy sees it. Postern uses this
+	# value only for rate limits and keeps it in memory only. A value that
+	# the visitor sent is replaced, so a visitor cannot give a false address.
+
+	# Live updates (server-sent events). Send each event immediately.
+	# No buffer and no compression on this path.
+	handle /api/events {
+		reverse_proxy app:8080 {
+			flush_interval -1
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# The API. No compression: the replies are small, and many are encrypted.
+	handle /api/* {
+		reverse_proxy app:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# The web app files (HTML, JavaScript, CSS). Compression makes them load faster.
+	handle {
+		encode zstd gzip
+		reverse_proxy app:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+}

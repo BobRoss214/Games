@@ -1,0 +1,140 @@
+# Postern: the full service on one server.
+#
+# Use (run all commands in this folder, deploy/):
+#   cp .env.example .env        then put your values in the .env file
+#   docker compose up -d --build
+#
+# Services:
+#   app    Postern. Web app + API on port 8080 (only Caddy can reach it) and
+#          incoming mail on port 25 of the server.
+#   caddy  HTTPS for the web app. Gets the certificate automatically.
+#   relay  Optional. Sends outgoing mail directly to other mail servers and
+#          signs it with DKIM. It starts only if the .env file has
+#          COMPOSE_PROFILES=relay
+#
+# Data that you must keep is in the volume "postern_data". See backup.sh.
+
+name: postern
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: postern:local
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    # These values are fixed for this deployment. They win over the .env file.
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8080"
+      SMTP_HOST: 0.0.0.0
+      SMTP_PORT: "2525"
+      DATA_DIR: /data
+      # Caddy is in front of the app, so the app reads the visitor address
+      # from X-Forwarded-For. This is safe only because port 8080 is not
+      # published to the internet. Do not add 8080 to "ports".
+      TRUST_PROXY: "true"
+    ports:
+      # Incoming mail. Port 25 of the server goes to port 2525 in the container.
+      - "25:2525"
+    volumes:
+      - data:/data
+      # Optional key and certificate files (DKIM_KEY_FILE, SMTP_TLS_KEY,
+      # SMTP_TLS_CERT). Put them in deploy/keys/ . The app sees them in /keys/ .
+      - ./keys:/keys:ro
+    # The program cannot change its own files. It can write only to /data and /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The app log has no request data, no addresses and no IP addresses.
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      # The Caddyfile uses this value as the site address.
+      PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL in the .env file. Example https://mail.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "3"
+
+  # Optional outgoing mail server (Postfix). It is not reachable from the
+  # internet: it has no "ports". Only the app container sends mail through it:
+  #   SMTP_RELAY_URL=smtp://relay:587/?tls.rejectUnauthorized=false
+  relay:
+    image: boky/postfix:latest
+    profiles:
+      - relay
+    restart: unless-stopped
+    environment:
+      # The relay accepts mail only if the sender address is in one of these domains.
+      # The list uses spaces. MAIL_DOMAINS uses commas. If you have more than one
+      # mail domain, set RELAY_DOMAINS in the .env file.
+      ALLOWED_SENDER_DOMAINS: ${RELAY_DOMAINS:-${MAIL_DOMAINS:-}}
+      # The name that the relay gives to other mail servers. It must be the same
+      # name as the reverse DNS (PTR) record of the server.
+      POSTFIX_myhostname: ${MAIL_HOSTNAME:-}
+      # The relay makes one DKIM key for each domain at the first start.
+      # The DNS name of the key is mail._domainkey.YOUR-DOMAIN
+      DKIM_AUTOGENERATE: "true"
+      DKIM_SELECTOR: mail
+      # Largest message: 25 MB. This is more than the default MAIL_MAX_BYTES after encoding.
+      POSTFIX_message_size_limit: "26214400"
+    volumes:
+      # DKIM keys. Image version 6 and later keeps them in /var/lib/rspamd/dkim .
+      # Older versions keep them in /etc/opendkim/keys .
+      - relay_rspamd:/var/lib/rspamd
+      - relay_opendkim:/etc/opendkim/keys
+      # Mail that waits for a second delivery attempt.
+      - relay_queue:/var/spool/postfix
+    # The Postfix log shows the sender and the recipient of each message.
+    # Thus the log is off. To find a delivery problem, set RELAY_LOG_DRIVER=local
+    # in the .env file for a short time, then set it back to none.
+    logging:
+      driver: ${RELAY_LOG_DRIVER:-none}
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:
+  relay_rspamd:
+  relay_opendkim:
+  relay_queue:
+
+# IPv6 note: with the default network below, Docker changes the address of each
+# IPv6 visitor to one internal address. All IPv6 visitors then share one rate
+# limit. If you publish an AAAA record, remove the "#" from the three lines
+# below. This needs Docker Engine 27 or later and IPv6 on the server.
+# This option was not tested with Postern. Test it before you depend on it.
+#
+# networks:
+#   default:
+#     enable_ipv6: true
