@@ -1394,11 +1394,12 @@ The website https://dontkillmyapp.com collects the steps for each brand. **Check
    ```
    PHONE_PROVIDER=ownphone
    ```
-2. If the SIM card is not from the United States or Canada, also set `PHONE_ALLOWED_PREFIXES` (Part F6). Example for the United Kingdom: `PHONE_ALLOWED_PREFIXES=+44`.
+2. If the SIM card is not from the United States or Canada, also set `PHONE_COUNTRIES` and `PHONE_ALLOWED_PREFIXES` (Part F6). Example for the United Kingdom: `PHONE_COUNTRIES=GB` and `PHONE_ALLOWED_PREFIXES=+44`.
 3. Make sure that Postern uses the new provider. The result must contain `"phone":true` and `"ownPhone":true`.
    ```
    curl -s https://mail.example.com/api/config
    ```
+   The address in this command must be your `PUBLIC_URL`, and it must start with `https://`. The app on the phone refuses each other address.
 4. Give the password of the phone to the terminal. This command shows nothing while you type:
    ```
    read -rs PHONE_PASS
@@ -1430,6 +1431,8 @@ Notes:
 
 - `--sim 1=` is the first SIM card of the phone. For a phone with two SIM cards, add `--sim 2=+15557654321` to the command. **Check this:** the Android settings of the phone show which SIM card is the first one.
 - The tool stores the username, the password and each number in encrypted form. It shows only the last 4 digits of a number.
+- The tool warns you if the country of a SIM card is not in `PHONE_COUNTRIES`. Then do step 2.
+- The address to which the phone reports has a secret token in it. A web server that writes an access log would write this token to a file. The `Caddyfile` of this guide writes no access log. Do not add one.
 - The password is not in the list of commands that the terminal keeps, because you typed it into `read`.
 - If the tool shows `Error:`, read the line. It says what is wrong. Nothing was added.
 - **Check this:** the authors ran this tool on a test computer, not in Docker.
@@ -1454,7 +1457,10 @@ Notes:
 9. In Postern, send a text from the number to the different phone.
 10. Make sure that the text arrives.
 
-**Check:** the page of the number in Postern shows "Phone online". The text of step 9 shows "Sent" or "Delivered" after a short time.
+**Check:** the page of the number in Postern shows "Phone online". The text of step 9 first shows "Waiting for the phone". After a short time it shows "Sent" or "Delivered".
+
+"Online" means: the phone reported to Postern in the last 15 minutes (`OWNPHONE_OFFLINE_MINUTES`). The phone reports each 5 minutes (`OWNPHONE_PING_SECONDS`).
+Postern shows a warning on Home when a phone is offline for more than one hour.
 
 ### I9. More SIM cards, more phones, and how to take one away
 
@@ -1519,10 +1525,15 @@ Read these points before you use call forwarding:
 - **Set a limit in the app.** Open "SETTINGS", "Messages…", "Limits". Set "Period" to "day", and "Messages count" to a number that is normal for one person. **Check this:** the authors did not try this setting.
 - **The phone is a single point of failure.** If the battery is empty, the phone is too hot, an update restarts it, or the network is gone, no text moves.
 - **Texts wait while the phone is offline.** An incoming text stays in the phone network or on the phone. A text from a user waits at the gateway. If the phone does not send it in 1 hour (`OWNPHONE_TEXT_TTL_SECONDS`), it fails and the user gets the credit back.
-- **Postern shows the state.** A number shows "Phone online" or "Phone offline". Home shows a warning after the phone was offline for a long time.
+- **Postern shows the state.** A number shows "Phone online" or "Phone offline". Home shows a warning after the phone was offline for more than one hour.
+- **The gateway refuses some destinations.** It examines each destination number, and it refuses a number that is not a mobile number, for example a landline. The user then sees "The phone did not accept this text." and gets the credit back.
 - **A data-only eSIM does not work.** The SIM card needs a real phone number with texts. Part I2 tells you how to test this.
 - **Old texts for a new holder.** A number from the pool can get texts that are for the person who had it before: codes, reminders, messages from friends. This is true for a user who takes a number that a different user released. It is also true for a SIM card whose number had an earlier owner at the carrier.
-- **The gateway on your server stores texts for a time.** A text from a user is in the gateway database in plain form until the phone has sent it. Then the gateway changes it to a hash. The app also uploads a copy of each incoming text to the gateway. The sources say that this copy is encrypted `[O2]`. **Check this:** the authors could not see who can open it. The gateway deletes its rows after 24 hours (`SMSGATE_KEEP`).
+- **The gateway on your server stores texts for a time.** This is what stays in the gateway database:
+  - A text from a user, in plain form, until the phone has sent it. Then the gateway changes the text and the numbers to a hash.
+  - A copy of each incoming text. The app uploads it to the gateway. The sources say that this copy is encrypted `[O2]`. **Check this:** the authors could not see who can open it.
+  - The gateway deletes these rows after 24 hours (`SMSGATE_KEEP`). Without this setting, it keeps them for 720 hours `[O2]`. **Check this:** the authors could not confirm that 24 hours cause no problem.
+  - The registration of each phone: its username, a form of its password, and the list of its SIM cards with their numbers.
 - **The phone stores texts too.** Each text is in the SMS app of the phone, like on each phone. A person who has the phone can read them. Set a screen lock.
 - **The app and the gateway are software of a different project.** They change often. An update can change a name in this guide, or can stop the connection to Postern. Update one thing at a time, and do Part I8 after each update.
 - **A text is not secret on the phone network.** The carrier of the SIM card sees each text, in the two directions, with the two numbers. Postern cannot hide this. This is the same limit as with Twilio.
@@ -1550,6 +1561,15 @@ The simulated gateway is a test program that answers like the real gateway. It i
 - The second site in the `Caddyfile`.
 - The codes for call forwarding.
 - The battery settings of each brand.
+
+**Not confirmed with the real app and the real gateway.** Postern depends on these points. They come from the source code and from the simulated gateway:
+
+- That the settings which the tool sends to the gateway (the 5 report addresses, the signing key, the "I am alive" time) reach the phone, and how fast.
+- That the phone reports a failed text when the time limit of the text is over. Postern has its own timer for this case, so a text does not wait for all time.
+- The exact form of the phone numbers in the reports of the phone.
+- That the id of the phone at the gateway is the same id that the phone puts in its reports. If it is different, Postern refuses the reports and the phone stays offline.
+- How many requests the gateway permits in a period.
+- Which SIM card of a phone with two SIM cards is number 1 and which is number 2.
 
 Do Part I8 completely before you give a number to a person. If a step of this part does not work as written, the app or the gateway has possibly changed. Read the README of the two projects `[O1][O2]`.
 
@@ -1751,9 +1771,10 @@ docker compose logs --tail 50 app
 | **The page does not update itself. You must load it again to see new mail.** | Caddy is older than version 2.11.7 `[N6]`, or a different proxy is in front of Caddy. | Run `docker compose exec caddy caddy version`. Run `docker compose pull --ignore-buildable`, then `docker compose up -d`. |
 | **Own phone: the app shows "Failed to register device".** | "API URL" is wrong. "Private Token" is not the value of `SMSGATE_PRIVATE_TOKEN`. The DNS record of `sms.example.com` is not active. The gateway does not run. | Do the checks of Part I3. Compare "API URL" with Part I5, step 4. Type the token again. |
 | **Own phone: "Server address" in the app shows `api.sms-gate.app`.** | The app is registered at the public server of the app project, not at your gateway. | Do the 4 steps under the check of Part I5. |
-| **Own phone: Postern shows "Phone offline", or the tool shows `OFFLINE`.** | Android stopped the app. The phone has no internet. The phone is off. The phone cannot reach `https://mail.example.com`. | Open the app and select "Start Service". Do Part I6 again. In the app, open "SETTINGS", "Webhooks…", "Webhook Queue": a failed line shows its "Last error". |
-| **Own phone: a text from a user stays "Sending", then shows "Not delivered".** | The phone is offline. The SIM card has no network or no money. The carrier blocked the text. The limit in the app is reached. | Send a text by hand from the SMS app of the phone. If that fails too, the problem is the SIM card or the carrier. Then look at "SETTINGS", "Messages…", "Limits" in the app. |
-| **Own phone: a text to the SIM card does not show in Postern.** | No user holds the number: Postern does not store a text for a free number. The app has no permission to receive SMS. The phone cannot reach `https://mail.example.com`. | Take the number in Postern first (Part I8, steps 5 and 6). Look at the permissions of the app in the Android settings. Look at "Webhook Queue" in the app. |
+| **Own phone: the phone stays offline.** Postern shows "Phone offline", or the tool shows `OFFLINE`. | "API URL" or "Private Token" in the app is wrong. The battery saving of Android stopped the app. The phone has no internet. The clock of the phone is wrong: Postern refuses a report whose time is more than 5 minutes off. The id of the phone at the gateway is not the id in its reports. | Open the app and select "Start Service". Do Part I6 again. Set the clock of the phone to automatic. Run the tool with `list`. In the app, open "SETTINGS", "Webhooks…", "Webhook Queue": a failed line shows its "Last error". If nothing helps, take the phone out of the pool and add it again (Parts I9 and I7). |
+| **Own phone: texts stay on "Waiting for the phone".** | The phone is offline. The SIM card has no network or no money. The carrier blocked the text. The limit in the app is reached. | Do the row above first. Then send a text by hand from the SMS app of the phone. If that fails too, the problem is the SIM card or the carrier. Look at "SETTINGS", "Messages…", "Limits" in the app. A text that waits longer than 1 hour fails, and the user gets the credit back. |
+| **Own phone: the user sees "The phone did not accept this text."** | The gateway refused the destination. It refuses numbers that are not mobile numbers, for example landlines. | Use a mobile number. The user got the credit back. |
+| **Own phone: a text arrives on the phone but not in Postern.** | The SIM card that got the text is not in the pool. The number of the SIM card in the pool is wrong. No user holds the number: Postern does not store a text for a free number. The app has no permission to receive SMS. | Run the tool with `list --show`, and compare each number with the SIM cards of the phone. Add a missing SIM card with `add-sim`. Take the number in Postern first (Part I8, steps 5 and 6). Look at the permissions of the app in the Android settings. |
 | **Own phone: "Get a number" shows "No number is free now."** | Each SIM card of the pool is in use. | Add a SIM card or a phone (Part I9), or wait until a user releases a number. |
 | **Own phone: the tool shows "This login has more than one phone at the gateway."** | Two phones use one username at the gateway. | The tool lists the phones. Run the command again with `--device-id` and the id of the phone that you add. |
 | **Own phone: `docker compose up` cannot get the gateway program.** | The version name in `docker-compose.yml` does not exist at the registry. | Set `SMSGATE_VERSION=latest` and apply the change. |
