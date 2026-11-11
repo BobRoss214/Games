@@ -52,7 +52,8 @@ export default async function (t) {
   assert(await dot.getAttribute('aria-label') === 'Colour: blue' && await dot.getAttribute('role') === 'img', 'the dot has no name for screen readers');
   assert((await stored()).extra.colour === 'blue', 'the colour is not saved with the identity');
   // the dot is real colour, and different in the dark theme
-  const light = await dot.evaluate((el) => getComputedStyle(el).backgroundColor);
+  // (read when the screen is at rest: the head is painted again after the save)
+  const light = await (await page.waitForFunction(() => { const el = document.querySelector('.page-head .dot[data-colour="blue"]'); const c = el ? getComputedStyle(el).backgroundColor : ''; return c || false; })).jsonValue();
   assert(light === 'rgb(47, 99, 184)', 'the blue dot has a wrong colour: ' + light);
   t.ok('colour: eight named colours, picked with the keyboard, saved encrypted; the dot has a name for screen readers');
 
@@ -107,7 +108,7 @@ export default async function (t) {
   await signIn(p.page, t.base, key);
   const pcard = p.page.locator(`.identity-card[data-identity="${id}"]`);
   await pcard.locator('.dot[data-colour="green"]').waitFor();
-  const darkGreen = await pcard.locator('.dot').evaluate((el) => getComputedStyle(el).backgroundColor);
+  const darkGreen = await (await p.page.waitForFunction(() => { const el = document.querySelector('.identity-card .dot[data-colour="green"]'); const c = el ? getComputedStyle(el).backgroundColor : ''; return c || false; })).jsonValue();
   assert(darkGreen === 'rgb(127, 208, 160)', 'the dot does not change with the dark theme: ' + darkGreen);
   await pcard.click();
   await p.page.locator('.history-list li').first().waitFor();

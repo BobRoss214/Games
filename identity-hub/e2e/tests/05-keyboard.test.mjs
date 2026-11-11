@@ -7,6 +7,8 @@ export default async function (t) {
   const { page } = s;
   const key = await signUp(page, t.base);
   const ids = await seedAccount(page);
+  // A request that was on its way when the session ended gets "401": that is expected here.
+  s.allow(/status of 401 /);
   await signOut(page); // waits until the start page shows: the session is really over
 
   // sign in with the keyboard

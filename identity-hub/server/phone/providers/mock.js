@@ -1,8 +1,8 @@
 // Simulated telephone provider. Everything stays in memory. Tests and development use it.
 //
-// ---- Provider interface (mock.js and twilio.js both keep to it) ----
+// ---- Provider interface (mock.js, twilio.js and ownphone.js keep to it) ----
 //
-//   name                          'mock' | 'twilio'
+//   name                          'mock' | 'twilio' | 'ownphone'
 //   webhookBody                   'json' | 'form': how the provider encodes its webhook requests
 //   capabilities                  { voice, voicemail, asyncText, searchByArea }, all boolean
 //       voice: the provider can make and receive calls. If false, the "voice only" functions
@@ -10,6 +10,11 @@
 //       voicemail: the provider can record a caller (the "voicemail only" functions below).
 //       asyncText: the result of a text can arrive after sendText() has returned.
 //       searchByArea: search() can filter by area code.
+//       pool (own phone only): the numbers are a fixed pool. search() then takes no area code,
+//              its country is optional, and buy() and release() ask the provider for nothing.
+//   ownWebhooks                   true if the provider has its own webhook route and its own
+//                                 signature (own phone, see ../ownphone.js). Then webhookBody,
+//                                 verifyWebhook, the parse… functions and textReply are not needed.
 //
 //   search({ country, areaCode, limit }) → [{ number, locality, region, country, sms, voice }]
 //   buy(number, { textUrl, voiceUrl, statusUrl }) → { ref }

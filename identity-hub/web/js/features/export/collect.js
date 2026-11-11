@@ -198,7 +198,6 @@ export async function buildExport(survey, { lean = false, signal = null, onProgr
   const account = store.get('account');
   if (!keys || !account) throw new Error('The app is locked. Unlock it, then start the export again.');
   const { gentle, pool, check } = makeGentle({ signal, onWait });
-  const config = store.get('config') || {};
   // The header of the file has room for a short name.
   const app = appName().slice(0, 40);
   const day = localDay();

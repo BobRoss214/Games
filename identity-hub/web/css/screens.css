@@ -587,3 +587,7 @@ a.item-value:hover { color: var(--accent); text-decoration: underline; }
 
 /* links of feature files on the start page (registerWelcomeLink) */
 .welcome-links { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); }
+
+/* "own phone": the warning on the screen of a number whose phone is offline for a long time; the Calls tab with one explanation */
+.number-offline { margin-top: var(--s-3); }
+.calls-none { max-width: 62ch; }
