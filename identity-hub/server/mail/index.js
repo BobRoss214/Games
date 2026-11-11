@@ -10,6 +10,8 @@ import { createInbound } from './inbound.js';
 import { createSmtp } from './smtp.js';
 import { createComposer } from './compose.js';
 import { registerRoutes } from './routes.js';
+import { registerBlocks } from './blocks.js';
+import { createRetention } from './retention.js';
 import { registerSend } from './send.js';
 import { registerDev } from './dev.js';
 
@@ -35,7 +37,11 @@ export async function register(app) {
 
   const parts = { data, inbound, compose, outbox };
   registerRoutes(app, parts);
+  registerBlocks(app, parts);
   registerSend(app, parts);
+
+  // Auto-delete of old mail for the mailboxes that have the setting, one time each hour.
+  app.every('mail-retention', 3600, createRetention(app));
   if (config.dev) registerDev(app, parts);
 
   // Monthly renewal. A mailbox that is not paid is suspended: it stays readable,

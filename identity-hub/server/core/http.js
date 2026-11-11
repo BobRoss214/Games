@@ -37,6 +37,7 @@ const MIME = {
 const CSP = [
   "default-src 'none'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
   "font-src 'self'", "connect-src 'self'", "manifest-src 'self'", "frame-src 'self' blob:", "worker-src 'self'",
+  "media-src 'self' blob:",
   "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
 ].join('; ');
 

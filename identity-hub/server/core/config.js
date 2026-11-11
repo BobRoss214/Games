@@ -26,7 +26,8 @@ export function loadConfig(env = process.env, overrides = {}) {
   const production = env.NODE_ENV === 'production';
   const dataDir = resolve(overrides.dataDir || env.DATA_DIR || './data');
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  const publicUrl = (env.PUBLIC_URL || 'http://localhost:8080').replace(/\/+$/, '');
+  // Without PUBLIC_URL (development), the address follows the PORT setting.
+  const publicUrl = (env.PUBLIC_URL || `http://localhost:${int(env.PORT, 8080)}`).replace(/\/+$/, '');
   const url = new URL(publicUrl);
 
   const config = {
@@ -51,6 +52,9 @@ export function loadConfig(env = process.env, overrides = {}) {
 
     mail: {
       domains: list(env.MAIL_DOMAINS, ['postern.test']),
+      // Domains from MAIL_DOMAINS that only one person uses. The web app warns that
+      // aliases on such a domain can be linked to each other.
+      personalDomains: list(env.MAIL_PERSONAL_DOMAINS, []),
       hostname: env.MAIL_HOSTNAME || url.hostname,
       smtpHost: env.SMTP_HOST || (production ? '0.0.0.0' : '127.0.0.1'),
       smtpPort: int(env.SMTP_PORT, production ? 25 : 2525),
@@ -70,6 +74,7 @@ export function loadConfig(env = process.env, overrides = {}) {
       // This protects the operator from expensive destinations. The default blocks premium and
       // high-cost area codes inside +1 (900, 976, and the Caribbean codes).
       allowedPrefixes: list(env.PHONE_ALLOWED_PREFIXES, ['+1']),
+      voicemailMaxSeconds: int(env.VOICEMAIL_MAX_SECONDS, 120),
       blockedPrefixes: list(env.PHONE_BLOCKED_PREFIXES, ['900', '976', '242', '246', '264', '268', '284', '345', '441', '473', '649', '658', '664', '721', '758', '767', '784', '809', '829', '849', '868', '869', '876'].map((c) => '+1' + c)),
       twilio: {
         accountSid: env.TWILIO_ACCOUNT_SID || '',
@@ -104,6 +109,7 @@ export function loadConfig(env = process.env, overrides = {}) {
       numberMonth: int(env.PRICE_NUMBER_MONTH, 400),
       textOut: int(env.PRICE_TEXT_OUT, 3),
       callMinute: int(env.PRICE_CALL_MINUTE, 3),
+      voicemail: int(env.PRICE_VOICEMAIL, 5), // for each recorded voicemail
     },
 
     limits: {

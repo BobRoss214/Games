@@ -17,6 +17,14 @@ const MAX_COPY_PARTS = 51; // the body and up to 50 attachments
 
 const notFound = () => fail(404, 'not_found', 'Not found.');
 
+// Why a recipient on our own domains cannot get the message. The address passed the address check before.
+const RECIPIENT_PROBLEMS = {
+  unknown: (address) => `This address does not exist: ${address}`,
+  blocked: (address) => `This address does not accept mail from your address: ${address}`,
+  suspended: (address) => `This address cannot receive mail now: ${address}`,
+  full: (address) => `This address cannot receive mail now: ${address}`,
+};
+
 // The Sent copy that the browser encrypted. The server cannot read it; it checks sizes only.
 function readCopy(value, maxBytes) {
   if (value === undefined || value === null) return null;
@@ -92,13 +100,14 @@ export function registerSend(app, { data, inbound, compose, outbox }) {
 
     // The browser sends the plain address. The server has only its keyed hash and compares.
     const sender = db.get(
-      `SELECT a.address_hmac AS hmac, a.enabled, a.mailbox_id AS mailboxId, m.status
+      `SELECT a.address_hmac AS hmac, a.enabled, a.expires_at AS expiresAt, a.mailbox_id AS mailboxId, m.status
        FROM addresses a JOIN mailboxes m ON m.id = a.mailbox_id WHERE a.id = ? AND a.account_id = ?`,
       addressId, accountId,
     );
     if (!sender) throw notFound();
     if (!safeEqual(sender.hmac, data.hmac(from.address))) throw fail(400, 'bad_request', 'The value "from" does not match the address.');
-    if (!sender.enabled) throw fail(409, 'conflict', 'This address is turned off. Turn it on to send mail.');
+    // An alias after its end date is the same as an alias that is turned off.
+    if (!data.isOn(sender)) throw fail(409, 'conflict', 'This address is turned off. Turn it on to send mail.');
     if (sender.status !== 'active') throw fail(409, 'conflict', 'This mailbox is suspended. Add funds to send mail.');
     if (copy && !data.hasRoom(sender.mailboxId, copy.size)) throw fail(409, 'limit_reached', 'This mailbox is full. Delete messages first.');
 
@@ -107,11 +116,9 @@ export function registerSend(app, { data, inbound, compose, outbox }) {
     const external = recipients.filter((r) => !ownDomains.has(r.domain)).map((r) => r.address);
     if (external.length > 0 && !canSendOut) throw fail(503, 'no_relay', 'This server cannot send mail to other servers yet.');
     for (const address of local) {
-      const verdict = inbound.check(address);
+      const verdict = inbound.check(address, from.address);
       if (verdict.ok) continue;
-      throw fail(400, 'bad_recipient', verdict.reason === 'unknown'
-        ? `This address does not exist: ${address}`
-        : `This address cannot receive mail now: ${address}`);
+      throw fail(400, 'bad_recipient', RECIPIENT_PROBLEMS[verdict.reason](address));
     }
 
     const raw = await compose({
@@ -143,10 +150,11 @@ export function registerSend(app, { data, inbound, compose, outbox }) {
 
     if (local.length > 0) {
       const result = await inbound.deliver({ from: from.address, to: local, raw });
-      // An address was deleted in the last moment and no other recipient got the message.
+      // An address changed in the last moment and no other recipient got the message.
       if (result.accepted.length === 0 && external.length === 0) {
         undoCount();
-        throw fail(400, 'bad_recipient', `This address does not exist: ${result.rejected[0]}`);
+        const lost = result.rejected[0];
+        throw fail(400, 'bad_recipient', (RECIPIENT_PROBLEMS[result.reasons[lost]] || RECIPIENT_PROBLEMS.unknown)(lost));
       }
     }
 

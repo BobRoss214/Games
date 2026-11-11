@@ -3,6 +3,7 @@
 // copy that only the browser of the account can open.
 import { nowSec } from '../core/db.js';
 import { randomId } from '../core/keys.js';
+import { senderBlockTexts } from './address.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS mailboxes (
@@ -11,7 +12,8 @@ CREATE TABLE IF NOT EXISTS mailboxes (
   enc BLOB,                               -- label and note, encrypted in the browser
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
   paid_until INTEGER NOT NULL,
-  created_day TEXT NOT NULL
+  created_day TEXT NOT NULL,
+  retention_days INTEGER                  -- delete messages older than this; NULL = keep
 ) STRICT;
 CREATE INDEX IF NOT EXISTS mailboxes_account ON mailboxes(account_id);
 CREATE INDEX IF NOT EXISTS mailboxes_due ON mailboxes(paid_until);
@@ -26,7 +28,8 @@ CREATE TABLE IF NOT EXISTS addresses (
   enc BLOB,                               -- label and note, encrypted in the browser
   enabled INTEGER NOT NULL DEFAULT 1,
   received INTEGER NOT NULL DEFAULT 0,
-  created_day TEXT NOT NULL
+  created_day TEXT NOT NULL,
+  expires_at INTEGER                      -- an alias stops working at this time; NULL = no end
 ) STRICT;
 CREATE INDEX IF NOT EXISTS addresses_account ON addresses(account_id);
 CREATE INDEX IF NOT EXISTS addresses_mailbox ON addresses(mailbox_id);
@@ -40,6 +43,19 @@ CREATE TRIGGER IF NOT EXISTS addresses_tombstone BEFORE DELETE ON addresses
 BEGIN
   INSERT OR IGNORE INTO address_tombstones (address_hmac) VALUES (OLD.address_hmac);
 END;
+
+-- Senders that one address refuses. The blocked value is not stored in plain form:
+-- value_hmac is for matching, sealed is a copy that only the account can read.
+CREATE TABLE IF NOT EXISTS address_blocks (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  address_id TEXT NOT NULL REFERENCES addresses(id) ON DELETE CASCADE,
+  value_hmac BLOB NOT NULL,               -- keys.indexHmac('block', kind + ':' + value)
+  sealed BLOB NOT NULL,                   -- { kind, value }, sealed to the account
+  created_day TEXT NOT NULL,
+  UNIQUE (address_id, value_hmac)
+) STRICT;
+CREATE INDEX IF NOT EXISTS address_blocks_account ON address_blocks(account_id);
 
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
@@ -75,9 +91,24 @@ CREATE TABLE IF NOT EXISTS send_counts (
 ) STRICT;
 `;
 
+// Columns that were added after the first version. A database from an older version gets them here.
+// The names are fixed texts of this file, never input.
+const ADDED_COLUMNS = [
+  ['mailboxes', 'retention_days', 'INTEGER'],
+  ['addresses', 'expires_at', 'INTEGER'],
+];
+
+function addMissingColumns(db) {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const present = db.all(`PRAGMA table_info(${table})`).some((c) => c.name === column);
+    if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 export function createMailData(app) {
   const { db, keys, config } = app;
   db.exec(SCHEMA);
+  addMissingColumns(db);
 
   const data = {
     hmac: (address) => keys.indexHmac('addr', address),
@@ -101,10 +132,27 @@ export function createMailData(app) {
     // incoming mail knows only the address.
     route(address) {
       return db.get(
-        `SELECT a.id AS addressId, a.account_id AS accountId, a.mailbox_id AS mailboxId, a.enabled, m.status
+        `SELECT a.id AS addressId, a.account_id AS accountId, a.mailbox_id AS mailboxId, a.enabled, a.expires_at AS expiresAt, m.status
          FROM addresses a JOIN mailboxes m ON m.id = a.mailbox_id WHERE a.address_hmac = ?`,
         data.hmac(address),
       ) || null;
+    },
+
+    // True if an address works: it is turned on and its end date, if it has one, is in the future.
+    // An alias after its end date behaves exactly like an alias that is turned off.
+    isOn(row, now = nowSec()) {
+      return Boolean(row.enabled) && (row.expiresAt === null || row.expiresAt === undefined || row.expiresAt > now);
+    },
+
+    blockHmac: (kind, value) => keys.indexHmac('block', `${kind}:${value}`),
+
+    // True if this address refuses mail from this sender: the sender address is blocked,
+    // or its domain, or a parent domain of its domain.
+    isBlocked(addressId, sender) {
+      for (const text of senderBlockTexts(sender)) {
+        if (db.get('SELECT 1 AS x FROM address_blocks WHERE address_id = ? AND value_hmac = ?', addressId, keys.indexHmac('block', text))) return true;
+      }
+      return false;
     },
 
     // Stores one encrypted message. `env` is the result of sealEnvelope() or the browser copy.

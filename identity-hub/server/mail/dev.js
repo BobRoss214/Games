@@ -21,7 +21,10 @@ export function registerDev(app, { data, inbound, compose, outbox }) {
       subject: fields.subject, text: fields.text, html: fields.html, attachments: fields.attachments, sign: false,
     });
     const result = await inbound.deliver({ from: from.address, to: [to.address], raw });
-    if (result.accepted.length === 0) throw fail(409, 'conflict', 'This address cannot receive mail now.');
+    if (result.accepted.length === 0) {
+      const blocked = result.reasons[to.address] === 'blocked';
+      throw fail(409, 'conflict', blocked ? 'This address blocks this sender.' : 'This address cannot receive mail now.');
+    }
   });
 
   // The messages that this account "sent" to the outside while no relay is configured.

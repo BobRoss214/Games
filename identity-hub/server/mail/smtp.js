@@ -14,6 +14,7 @@ const CLOSE_TIMEOUT_MS = 2_000;
 // The text starts with the enhanced status code (RFC 3463). Nothing from the message goes in a reply.
 const REPLIES = {
   unknown: [550, '5.1.1 This address does not exist'],
+  blocked: [550, '5.7.1 The recipient does not accept mail from this sender'],
   suspended: [450, '4.2.1 This mailbox cannot receive mail now'],
   full: [452, '4.2.2 This mailbox is full'],
   tooLarge: [552, '5.3.4 The message is too large'],
@@ -22,6 +23,9 @@ const REPLIES = {
   tooManyBad: [421, '4.7.0 Too many unknown recipients'],
   tooManyConnections: [421, '4.7.0 Too many connections from your address'],
 };
+
+// The address of MAIL FROM. It is '' for a bounce, which has no sender.
+const envelopeSender = (session) => (session.envelope.mailFrom && session.envelope.mailFrom.address) || '';
 
 function smtpError(kind) {
   const [code, message] = REPLIES[kind] || REPLIES.busy;
@@ -75,7 +79,7 @@ export function createSmtp(app, inbound) {
     onRcptTo(address, session, done) {
       let verdict;
       try {
-        verdict = inbound.check(String(address.address || '').toLowerCase());
+        verdict = inbound.check(String(address.address || '').toLowerCase(), envelopeSender(session));
       } catch (err) {
         log.error('smtp recipient check failed', safeError(err));
         return done(smtpError('busy'));
@@ -111,7 +115,7 @@ export function createSmtp(app, inbound) {
         if (refused) return done(smtpError(refused));
         try {
           const to = session.envelope.rcptTo.map((r) => r.address);
-          const result = await inbound.deliver({ to, raw: Buffer.concat(chunks, held) });
+          const result = await inbound.deliver({ from: envelopeSender(session), to, raw: Buffer.concat(chunks, held) });
           if (result.accepted.length > 0) return done(null, 'OK');
           // Every recipient was lost between RCPT and DATA. Answer with the reason of the first one.
           done(smtpError(result.reasons[result.rejected[0]]));

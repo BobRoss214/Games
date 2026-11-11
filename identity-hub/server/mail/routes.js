@@ -9,6 +9,8 @@ import { chooseAddress, taken } from './address.js';
 const ID = /^[A-Za-z0-9_-]{22}$/;
 const MAX_ENC_BYTES = 2048;
 const MAX_ADDRESS_IDS = 50;
+const MAX_RETENTION_DAYS = 3650;
+const MAX_EXPIRY_SECONDS = 3650 * 86400; // an end date can be 10 years ahead at most
 
 const notFound = () => fail(404, 'not_found', 'Not found.');
 // An id that is not well formed cannot exist. It gets the same answer as an unknown id.
@@ -36,14 +38,16 @@ export function registerRoutes(app, { data }) {
   // ---- mailboxes ----
 
   const MAILBOX_SQL = `
-    SELECT m.id, m.enc, m.status, m.paid_until, m.created_day, a.id AS address_id, a.sealed_address,
+    SELECT m.id, m.enc, m.status, m.paid_until, m.created_day, m.retention_days, a.id AS address_id, a.sealed_address,
       (SELECT COUNT(*) FROM messages x WHERE x.mailbox_id = m.id AND x.direction = 'in' AND x.seen = 0) AS unread,
-      (SELECT COUNT(*) FROM messages x WHERE x.mailbox_id = m.id) AS total
+      (SELECT COUNT(*) FROM messages x WHERE x.mailbox_id = m.id) AS total,
+      (SELECT COUNT(*) FROM address_blocks k WHERE k.address_id = a.id) AS blocks
     FROM mailboxes m JOIN addresses a ON a.mailbox_id = m.id AND a.kind = 'mailbox'
     WHERE m.account_id = ?`;
   const mailboxView = (r) => ({
     id: r.id, addressId: r.address_id, sealedAddress: b64u(r.sealed_address), enc: b64u(r.enc), status: r.status,
     paidUntil: r.paid_until, createdDay: r.created_day, unread: r.unread, total: r.total,
+    retentionDays: r.retention_days ?? null, blocks: r.blocks,
   });
   const getMailbox = (accountId, id) => {
     const row = db.get(`${MAILBOX_SQL} AND m.id = ?`, accountId, idParam(id));
@@ -91,11 +95,15 @@ export function registerRoutes(app, { data }) {
 
   http.patch('/api/mailboxes/:id', { auth: true }, (c) => {
     const row = getMailbox(c.account.id, c.params.id);
-    if (!has(c.body, 'enc')) throw fail(400, 'bad_request', 'The value "enc" is not valid.');
-    const enc = encField(c.body.enc) ?? null; // null removes the label
-    db.run('UPDATE mailboxes SET enc = ? WHERE account_id = ? AND id = ?', enc, c.account.id, row.id);
+    const b = c.body;
+    if (!has(b, 'enc') && !has(b, 'retentionDays')) throw fail(400, 'bad_request', 'Send a value to change.');
+    const next = { enc: row.enc, retention_days: row.retention_days };
+    if (has(b, 'enc')) next.enc = encField(b.enc) ?? null; // null removes the label
+    // null turns the auto-delete off. The job in retention.js does the deleting.
+    if (has(b, 'retentionDays')) next.retention_days = b.retentionDays === null ? null : need.int(b.retentionDays, 'retentionDays', { min: 1, max: MAX_RETENTION_DAYS });
+    db.run('UPDATE mailboxes SET enc = ?, retention_days = ? WHERE account_id = ? AND id = ?', next.enc, next.retention_days, c.account.id, row.id);
     events.publish(c.account.id, 'mailbox');
-    return { mailbox: mailboxView({ ...row, enc }) };
+    return { mailbox: mailboxView({ ...row, ...next }) };
   });
 
   http.del('/api/mailboxes/:id', { auth: true }, (c) => {
@@ -112,18 +120,21 @@ export function registerRoutes(app, { data }) {
 
   // ---- aliases ----
 
+  const ALIAS_SQL = `
+    SELECT a.*, (SELECT COUNT(*) FROM address_blocks k WHERE k.address_id = a.id) AS blocks
+    FROM addresses a WHERE a.account_id = ? AND a.kind = 'alias'`;
   const aliasView = (r) => ({
     id: r.id, mailboxId: r.mailbox_id, sealedAddress: b64u(r.sealed_address), enc: b64u(r.enc), enabled: r.enabled === 1,
-    createdDay: r.created_day, received: r.received,
+    createdDay: r.created_day, received: r.received, expiresAt: r.expires_at ?? null, blocks: r.blocks,
   });
   const getAlias = (accountId, id) => {
-    const row = db.get("SELECT * FROM addresses WHERE account_id = ? AND id = ? AND kind = 'alias'", accountId, idParam(id));
+    const row = db.get(`${ALIAS_SQL} AND a.id = ?`, accountId, idParam(id));
     if (!row) throw notFound();
     return row;
   };
 
   http.get('/api/aliases', { auth: true }, (c) => ({
-    aliases: db.all("SELECT * FROM addresses WHERE account_id = ? AND kind = 'alias' ORDER BY rowid", c.account.id).map(aliasView),
+    aliases: db.all(`${ALIAS_SQL} ORDER BY a.rowid`, c.account.id).map(aliasView),
   }));
 
   http.post('/api/aliases', { auth: true, rate: { max: 120, per: 3600 } }, async (c) => {
@@ -157,15 +168,22 @@ export function registerRoutes(app, { data }) {
     const accountId = c.account.id;
     const row = getAlias(accountId, c.params.id);
     const b = c.body;
-    const next = { enabled: row.enabled, mailbox_id: row.mailbox_id, enc: row.enc };
-    if (!has(b, 'enabled') && !has(b, 'mailboxId') && !has(b, 'enc')) throw fail(400, 'bad_request', 'Send a value to change.');
+    const next = { enabled: row.enabled, mailbox_id: row.mailbox_id, enc: row.enc, expires_at: row.expires_at };
+    if (!['enabled', 'mailboxId', 'enc', 'expiresAt'].some((key) => has(b, key))) throw fail(400, 'bad_request', 'Send a value to change.');
     if (has(b, 'enabled')) next.enabled = need.bool(b.enabled, 'enabled') ? 1 : 0;
     if (has(b, 'enc')) next.enc = encField(b.enc) ?? null;
     if (has(b, 'mailboxId')) {
       next.mailbox_id = need.string(b.mailboxId, 'mailboxId', { min: 22, max: 22, pattern: ID });
       if (!ownsMailbox(accountId, next.mailbox_id)) throw notFound();
     }
-    db.run('UPDATE addresses SET enabled = ?, mailbox_id = ?, enc = ? WHERE account_id = ? AND id = ?', next.enabled, next.mailbox_id, next.enc, accountId, row.id);
+    // The end date: after it the alias behaves like an alias that is turned off. null removes the end date.
+    // The date must be in the future. A new date or null makes an ended alias work again.
+    if (has(b, 'expiresAt')) {
+      const now = nowSec();
+      next.expires_at = b.expiresAt === null ? null : need.int(b.expiresAt, 'expiresAt', { min: now + 1, max: now + MAX_EXPIRY_SECONDS });
+    }
+    db.run('UPDATE addresses SET enabled = ?, mailbox_id = ?, enc = ?, expires_at = ? WHERE account_id = ? AND id = ?',
+      next.enabled, next.mailbox_id, next.enc, next.expires_at, accountId, row.id);
     events.publish(accountId, 'aliases');
     return { alias: aliasView({ ...row, ...next }) };
   });

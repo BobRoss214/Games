@@ -1,4 +1,5 @@
 // Address rules. See docs/API.md section 4.
+import { domainToASCII } from 'node:url';
 import { fail, need } from '../core/http.js';
 import { randomLocalPart } from './words.js';
 
@@ -29,6 +30,48 @@ export function parseAddress(value) {
 }
 
 export const taken = () => fail(409, 'taken', 'This address is taken. Choose a different one.');
+
+// ---- blocked senders ----
+
+// A domain in the ASCII form that mail servers use ("xn--..." for international names), lower case.
+// Returns '' if the text is not a domain.
+function asciiDomain(text) {
+  const domain = domainToASCII(String(text).toLowerCase());
+  return domain.length <= 253 && ANY_DOMAIN.test(domain) ? domain : '';
+}
+
+// Checks the value of a block from a request. Returns the value in its stored form:
+// lower case and ASCII. A domain has at least one dot, no "@", and no dot at the start.
+export function blockValue(kind, value) {
+  const bad = () => fail(400, 'bad_request', 'The value "value" is not valid.');
+  if (typeof value !== 'string' || value.length < 3 || value.length > 254) throw bad();
+  if (kind === 'domain') {
+    const domain = value.includes('@') ? '' : asciiDomain(value);
+    if (!domain) throw bad();
+    return domain;
+  }
+  const at = value.lastIndexOf('@');
+  const parsed = at > 0 ? parseAddress(`${value.slice(0, at)}@${asciiDomain(value.slice(at + 1))}`) : null;
+  if (!parsed) throw bad();
+  return parsed.address;
+}
+
+const MAX_PARENT_DOMAINS = 8;
+
+// The texts that can block a sender: its address, its domain, and the parent domains
+// ("mail.shop.example" is also blocked by a block of "shop.example"). Each text has its kind in front.
+// The sender comes from a stranger, so it is not checked against the strict pattern. It is only compared.
+export function senderBlockTexts(sender) {
+  const address = String(sender || '').toLowerCase();
+  const at = address.lastIndexOf('@');
+  if (at < 1 || address.length > 320) return [];
+  const domain = domainToASCII(address.slice(at + 1)) || address.slice(at + 1);
+  const labels = domain.split('.');
+  const texts = [`address:${address.slice(0, at)}@${domain}`, `domain:${domain}`];
+  // Parent domains with two labels or more, the shortest first. A very long name is not followed to the end.
+  for (let i = labels.length - 2; i >= 1 && texts.length < 2 + MAX_PARENT_DOMAINS; i--) texts.push(`domain:${labels.slice(i).join('.')}`);
+  return texts;
+}
 
 // Makes the address for a new mailbox or alias from the request body.
 // isFree(address) tells if the address was never used. Returns the full address.

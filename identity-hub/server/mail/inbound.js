@@ -77,6 +77,13 @@ export function makeSnippet(text, html) {
   return Array.from(source.replace(/\s+/g, ' ').trim()).slice(0, SNIPPET_CHARS).join('');
 }
 
+// The addresses in the From header and in the Sender header, for the check of blocked senders.
+const MAX_HEADER_SENDERS = 20;
+function headerSenders(mail) {
+  const list = [...people(mail.from), ...people(mail.headers && mail.headers.get('sender'))];
+  return [...new Set(list.map((p) => p.address).filter(Boolean))].slice(0, MAX_HEADER_SENDERS);
+}
+
 // A file name from a stranger: no path, no control characters.
 function safeFilename(name, index) {
   const clean = clip(name, 255).replace(/[\u0000-\u001f\u007f/\\]/g, '_').trim();
@@ -117,12 +124,15 @@ function buildContent(mail) {
 export function createInbound(app, data) {
   const { db, store, events } = app;
 
-  // Tells if an address can get mail now. reason: 'unknown' | 'suspended' | 'full'.
-  // A disabled alias answers like an address that does not exist.
-  function check(address) {
+  // Tells if an address can get mail now. reason: 'unknown' | 'blocked' | 'suspended' | 'full'.
+  // An alias that is turned off, or past its end date, answers like an address that does not exist.
+  // `sender` is the envelope sender, if there is one. The address can have a block for it.
+  function check(address, sender = '') {
     if (typeof address !== 'string' || address.length < 3 || address.length > 254) return { ok: false, reason: 'unknown' };
     const row = data.route(address);
-    if (!row || !row.enabled) return { ok: false, reason: 'unknown' };
+    if (!row || !data.isOn(row)) return { ok: false, reason: 'unknown' };
+    // A block is final, so it is answered before the states that can change (suspended, full).
+    if (sender && data.isBlocked(row.addressId, sender)) return { ok: false, reason: 'blocked' };
     if (row.status !== 'active') return { ok: false, reason: 'suspended' };
     if (!data.hasRoom(row.mailboxId)) return { ok: false, reason: 'full' };
     return { ok: true, addressId: row.addressId, accountId: row.accountId, mailboxId: row.mailboxId };
@@ -133,40 +143,46 @@ export function createInbound(app, data) {
   function storeFor(target, env) {
     return db.tx(() => {
       const now = db.get(
-        `SELECT a.mailbox_id AS mailboxId, a.enabled, m.status FROM addresses a JOIN mailboxes m ON m.id = a.mailbox_id
+        `SELECT a.mailbox_id AS mailboxId, a.enabled, a.expires_at AS expiresAt, m.status FROM addresses a JOIN mailboxes m ON m.id = a.mailbox_id
          WHERE a.id = ? AND a.account_id = ?`,
         target.addressId, target.accountId,
       );
-      if (!now || !now.enabled || now.status !== 'active') return null;
+      if (!now || !data.isOn(now) || now.status !== 'active') return null;
       const id = data.insertMessage({ accountId: target.accountId, mailboxId: now.mailboxId, addressId: target.addressId, direction: 'in', seen: false, env });
       db.run('UPDATE addresses SET received = received + 1 WHERE id = ? AND account_id = ?', target.addressId, target.accountId);
       return { id, mailboxId: now.mailboxId };
     });
   }
 
-  // Delivers one raw message to our own addresses in `to`.
+  // Delivers one raw message to our own addresses in `to`. `from` is the envelope sender ('' for a bounce).
   // Returns { accepted: [address], rejected: [address], reasons: { address: reason } }.
-  async function deliver({ to, raw }) {
+  async function deliver({ from = '', to, raw }) {
     const accepted = [];
     const rejected = [];
     const reasons = {};
     const targets = [];
     const refuse = (address, reason) => { rejected.push(address); reasons[address] = reason; };
+    const envelopeSender = typeof from === 'string' ? from : '';
     for (const item of new Set([].concat(to || []).map((a) => String(a).toLowerCase()))) {
-      const verdict = check(item);
+      const verdict = check(item, envelopeSender);
       if (verdict.ok) targets.push({ address: item, ...verdict });
       else refuse(item, verdict.reason);
     }
     if (targets.length === 0) return { accepted, rejected, reasons };
 
     let content;
+    let writers;
     try {
-      content = buildContent(await simpleParser(Buffer.isBuffer(raw) ? raw : Buffer.from(raw), PARSER_OPTIONS));
+      const mail = await simpleParser(Buffer.isBuffer(raw) ? raw : Buffer.from(raw), PARSER_OPTIONS);
+      content = buildContent(mail);
+      writers = headerSenders(mail);
     } catch {
       // For example: more MIME parts than the parser allows. To try again does not help.
       throw quietError('The message could not be parsed.', 'EPARSE');
     }
     for (const target of targets) {
+      // The From line can name a different sender than the envelope. A block counts for both.
+      if (writers.some((sender) => data.isBlocked(target.addressId, sender))) { refuse(target.address, 'blocked'); continue; }
       const account = store.getAccount(target.accountId);
       if (!account) { refuse(target.address, 'unknown'); continue; }
       // Each recipient gets an own content key. One account cannot open the copy of another account.

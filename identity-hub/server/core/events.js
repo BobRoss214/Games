@@ -24,7 +24,7 @@ export function createEvents() {
       });
       return true;
     },
-    // type: "mail" | "text" | "call" | "balance" | "numbers" | "aliases" | "mailboxes" | "phones"
+    // type: "mail" | "text" | "call" | "balance" | "number" | "aliases" | "mailbox" | "phones"
     publish(accountId, type, data = {}) {
       const set = subs.get(accountId);
       if (!set) return;

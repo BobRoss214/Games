@@ -77,7 +77,7 @@ test('mailbox: random address, charge, sealed address, list, label', async () =>
   assert.equal(res.status, 201);
   const { mailbox, address } = res.data;
   assert.match(address, /^[a-z]+\.[a-z]+\d{3}@postern\.test$/);
-  assert.deepEqual(Object.keys(mailbox).sort(), ['addressId', 'createdDay', 'enc', 'id', 'paidUntil', 'sealedAddress', 'status', 'total', 'unread']);
+  assert.deepEqual(Object.keys(mailbox).sort(), ['addressId', 'blocks', 'createdDay', 'enc', 'id', 'paidUntil', 'retentionDays', 'sealedAddress', 'status', 'total', 'unread']);
   assert.match(mailbox.id, /^[A-Za-z0-9_-]{22}$/);
   assert.match(mailbox.addressId, /^[A-Za-z0-9_-]{22}$/);
   assert.equal(mailbox.status, 'active');
@@ -214,7 +214,7 @@ test('aliases: create, list, change, move, delete', async () => {
   assert.equal(res.status, 201);
   const { alias, address } = res.data;
   assert.match(address, /^[a-z]+\.[a-z]+\d{3}@postern\.test$/);
-  assert.deepEqual(Object.keys(alias).sort(), ['createdDay', 'enabled', 'enc', 'id', 'mailboxId', 'received', 'sealedAddress']);
+  assert.deepEqual(Object.keys(alias).sort(), ['blocks', 'createdDay', 'enabled', 'enc', 'expiresAt', 'id', 'mailboxId', 'received', 'sealedAddress']);
   assert.equal(alias.mailboxId, first.mailbox.id);
   assert.equal(alias.enabled, true);
   assert.equal(alias.received, 0);
