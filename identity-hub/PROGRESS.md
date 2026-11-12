@@ -1,7 +1,7 @@
 # Money section — progress notes
 
 Read this file, `PHASE0_REPORT.md`, `tests/status.json` (from Phase 1) and the git log at the start of each session.
-The full brief from the owner is in the session of 2026-11-12 ("money section"). The short form of its rules is at the end of this file.
+The full brief from the owner is in `docs/MONEY-BRIEF.md`. Read it. The short form of its rules is at the end of this file.
 
 ## Where the work runs
 - 2026-11-12: the session runs in a **cloud workspace** (host `vm`, no screen, no folder of the owner's computer connected).
