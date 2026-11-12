@@ -191,7 +191,7 @@ identity-hub/
 
 - **Server:** Node.js 22, the SQLite database that is built into Node.js, no web framework.
 - **Packages (4):** `@simplewebauthn/server` (passkey checks), `smtp-server` (receive mail), `mailparser` (read mail), `nodemailer` (send mail).
-- **Web app:** no framework, no third-party script, no web font, no tracking.
+- **Web app:** no framework, no third-party script, no web font, no tracking. Dark theme by default; a light theme is in Settings.
 - **Two database files:** `accounts.db` and `payments.db`. The payment file has no account identifiers.
 
 Documents for people who change the code:

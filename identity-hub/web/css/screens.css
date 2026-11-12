@@ -283,7 +283,12 @@ a.item-value:hover { color: var(--accent); text-decoration: underline; }
 .mail-body-bar { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; margin-bottom: var(--s-3); }
 .mail-note { display: inline-flex; align-items: center; gap: 0.375rem; font-size: var(--fs-sm); color: var(--ink-2); }
 .mail-frame-wrap { border: 1px solid var(--line-2); border-radius: var(--r-md); overflow: hidden; background: var(--mail-paper); resize: vertical; height: min(68dvh, 46rem); min-height: 12rem; }
-.mail-frame { display: block; width: 100%; height: 100%; border: 0; background: var(--mail-paper); }
+.mail-frame { display: block; width: 100%; height: 100%; border: 0; background: var(--mail-paper); color-scheme: light; }
+/* An email in the dark theme: one filter on the whole frame turns light paper dark and dark text
+   light, and keeps the hue of each colour. lib/sanitize.js (DARK_PAPER) has the other half.
+   color-scheme stays light, so an email with its own dark styles does not get turned two times. */
+.mail-frame-wrap[data-paper="dark"] { background: var(--surface); }
+.mail-frame-wrap[data-paper="dark"] .mail-frame { filter: invert(0.92) hue-rotate(180deg); }
 .mail-text { margin: 0; font-family: var(--font-sans); font-size: var(--fs-md); line-height: var(--lh-read); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 72ch; }
 .message-atts { margin-top: var(--s-5); padding-top: var(--s-4); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--s-2); }
 .message-atts-title { font-family: var(--font-sans); font-size: var(--fs-sm); font-weight: 600; }

@@ -39,7 +39,7 @@ export const store = createStore({
   passkeyCount: null,   // how many passkeys the account has (null = not loaded yet)
   purchases: [],        // pending private payments (see lib/pay.js)
   prefs: {},            // small encrypted preferences from the vault
-  theme: 'system',
+  theme: 'dark',
   online: true,
 });
 

@@ -35,10 +35,21 @@ function cleanCss(css, note) {
 
 export const cidKey = (v) => String(v || '').trim().replace(/^cid:/i, '').replace(/^<|>$/g, '').toLowerCase();
 
+// An email in the dark theme.
+// The page puts one colour filter on the whole frame (css: .mail-frame-wrap[data-paper="dark"]):
+// invert(0.92) hue-rotate(180deg). Light paper becomes dark and dark text becomes light, and each
+// colour keeps its hue, so text that the sender made readable stays readable.
+// The values here are for inside the frame:
+// - paper and ink: colours that the filter turns into the surface and the text colour of the app.
+//   An email that sets no colours then looks like the rest of the screen.
+// - imageFilter: the opposite of the frame filter, so that a picture shows with its real colours.
+const DARK_PAPER = { paper: '#f2faf6', ink: '#080300', imageFilter: 'invert(1) contrast(1.1905) hue-rotate(180deg)' };
+
 // html: string from the decrypted message.
 // inlineImages: Map from content id to a data: URL (made from decrypted attachments).
+// dark: the frame shows with dark colours (see DARK_PAPER below).
 // Returns { srcdoc, blockedRemote, wantedCids: [..] }.
-export function sanitizeEmail(html, inlineImages = new Map()) {
+export function sanitizeEmail(html, inlineImages = new Map(), { dark = false } = {}) {
   const note = { blocked: false };
   const wanted = new Set();
   // <base> is taken out of the text first. The parser would refuse it anyway (the page
@@ -118,9 +129,10 @@ export function sanitizeEmail(html, inlineImages = new Map()) {
   charset.setAttribute('charset', 'utf-8');
   const base = doc.createElement('style');
   base.textContent = [
-    'html{color-scheme:light;background:#fff}',
-    'body{margin:16px;font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1b1d1a;background:#fff;overflow-wrap:anywhere}',
+    `html{color-scheme:light;background:${dark ? DARK_PAPER.paper : '#fff'}}`,
+    `body{margin:16px;font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:${dark ? DARK_PAPER.ink : '#1b1d1a'};background:${dark ? DARK_PAPER.paper : '#fff'};overflow-wrap:anywhere}`,
     'img{max-width:100%;height:auto}',
+    dark ? `img{filter:${DARK_PAPER.imageFilter}}` : '',
     'span[data-blocked-image]{display:inline-block;border:1px dashed #b9b2a0;border-radius:3px;font:12px/1.4 system-ui,sans-serif;color:#666960;padding:2px 6px;margin:2px 0}',
     'table{max-width:100%}',
     'pre{white-space:pre-wrap}',

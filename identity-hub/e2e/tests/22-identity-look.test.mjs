@@ -51,10 +51,10 @@ export default async function (t) {
   await dot.waitFor();
   assert(await dot.getAttribute('aria-label') === 'Colour: blue' && await dot.getAttribute('role') === 'img', 'the dot has no name for screen readers');
   assert((await stored()).extra.colour === 'blue', 'the colour is not saved with the identity');
-  // the dot is real colour, and different in the dark theme
+  // the dot is real colour (here in the dark theme, the default), and different in the light theme
   // (read when the screen is at rest: the head is painted again after the save)
-  const light = await (await page.waitForFunction(() => { const el = document.querySelector('.page-head .dot[data-colour="blue"]'); const c = el ? getComputedStyle(el).backgroundColor : ''; return c || false; })).jsonValue();
-  assert(light === 'rgb(47, 99, 184)', 'the blue dot has a wrong colour: ' + light);
+  const darkBlue = await (await page.waitForFunction(() => { const el = document.querySelector('.page-head .dot[data-colour="blue"]'); const c = el ? getComputedStyle(el).backgroundColor : ''; return c || false; })).jsonValue();
+  assert(darkBlue === 'rgb(140, 180, 245)', 'the blue dot has a wrong colour: ' + darkBlue);
   t.ok('colour: eight named colours, picked with the keyboard, saved encrypted; the dot has a name for screen readers');
 
   // ---- the dot and the door on Home, and the dot on the row of a member ----
@@ -103,19 +103,19 @@ export default async function (t) {
   t.ok('burned: bricked-up door with the word "Burned" on the screen and on the card; "No colour" removes the dot');
   await d.close();
 
-  // ---- dark theme and phone ----
-  const p = await t.open({ width: 360, height: 640, dark: true });
+  // ---- light theme and phone ----
+  const p = await t.open({ width: 360, height: 640, theme: 'light' });
   await signIn(p.page, t.base, key);
   const pcard = p.page.locator(`.identity-card[data-identity="${id}"]`);
   await pcard.locator('.dot[data-colour="green"]').waitFor();
-  const darkGreen = await (await p.page.waitForFunction(() => { const el = document.querySelector('.identity-card .dot[data-colour="green"]'); const c = el ? getComputedStyle(el).backgroundColor : ''; return c || false; })).jsonValue();
-  assert(darkGreen === 'rgb(127, 208, 160)', 'the dot does not change with the dark theme: ' + darkGreen);
+  const lightGreen = await (await p.page.waitForFunction(() => { const el = document.querySelector('.identity-card .dot[data-colour="green"]'); const c = el ? getComputedStyle(el).backgroundColor : ''; return c || false; })).jsonValue();
+  assert(lightGreen === 'rgb(46, 125, 79)', 'the dot does not change with the light theme: ' + lightGreen);
   await pcard.click();
   await p.page.locator('.history-list li').first().waitFor();
   const wide = await p.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert(wide <= 0, 'the identity screen scrolls sideways on a phone');
   const small = await p.page.locator('.colour-option label').evaluateAll((els) => els.filter((el) => el.getBoundingClientRect().height < 44).length);
   assert(small === 0, 'a colour choice is too small for a finger');
-  t.ok('dark theme: the dot has its dark colour; phone (360px): the screen fits and the colour choices are large enough');
+  t.ok('light theme: the dot has its light colour; phone (360px): the screen fits and the colour choices are large enough');
   await p.close();
 }

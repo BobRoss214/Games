@@ -328,6 +328,15 @@ export const WHY = {
       'A link in a message can still tell the sender that you selected it.',
     ],
   },
+  'mail-colours': {
+    title: 'Why do the colours of an email look different?',
+    paragraphs: [
+      'Most senders make their emails for a white page. In the dark theme, {app} changes the colours of an email. White paper becomes dark, and dark text becomes light.',
+      'A red button stays red and a blue link stays blue, but lighter or darker. Pictures can look a little dull.',
+      'Select "Original colours" above the email to see it as the sender made it, on white paper. "Plain text" shows only the words.',
+      'You can change the theme in Settings. The app starts in the dark theme.',
+    ],
+  },
   'delivery-status': {
     title: 'What do the words under a sent text mean?',
     paragraphs: [
@@ -536,7 +545,7 @@ export const WHY = {
 // Each key of WHY is in one group. The Help page shows the groups in this order.
 export const WHY_GROUPS = [
   { title: 'Basics', keys: ['recovery-key', 'passkey', 'inbox-vs-alias', 'balance', 'payments', 'test-mode', 'quick-jump'] },
-  { title: 'Mail', keys: ['alias-off', 'end-date', 'first-mail-only', 'block-sender', 'refused-mail', 'newsletter', 'remote-images', 'code-helper', 'own-domain', 'my-stats'] },
+  { title: 'Mail', keys: ['alias-off', 'end-date', 'first-mail-only', 'block-sender', 'refused-mail', 'newsletter', 'remote-images', 'mail-colours', 'code-helper', 'own-domain', 'my-stats'] },
   { title: 'Numbers', keys: ['link-phone', 'phone-by-call', 'forwarding', 'delivery-status', 'voicemail', 'own-phone', 'own-phone-calls'] },
   { title: 'Identities', keys: ['identity', 'identity-look', 'made-up-details', 'username-password', 'burn'] },
   { title: 'Safety', keys: ['recovery-test', 'possibly-leaked', 'who-leaked-me', 'deleting', 'auto-delete', 'export', 'home-warnings'] },

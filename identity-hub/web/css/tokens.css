@@ -1,51 +1,53 @@
 /* Design tokens. Every colour, space, radius and type size in the app comes from here.
-   Light theme = warm paper and ink. Dark theme = green-tinted near-black with paper text.
+   Dark theme = green-tinted near-black with paper text. It is the default.
+   Light theme = warm paper and ink. A person selects it in Settings ("Light"), or selects
+   "System" and has a light system theme.
    All text pairs pass WCAG AA (checked: body 15:1, secondary 7.7:1, tertiary 5:1, accent 6.8:1). */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
   /* surfaces */
-  --bg: #F6F3EC;
-  --surface: #FCFAF6;
-  --sunken: #EEEAE0;
-  --overlay: rgba(27, 29, 26, 0.42);
+  --bg: #0F1412;
+  --surface: #151C19;
+  --sunken: #1B2420;
+  --overlay: rgba(4, 7, 6, 0.66);
 
   /* ink */
-  --ink: #1B1D1A;
-  --ink-2: #4A4D46;
-  --ink-3: #666960;
+  --ink: #ECE8DC;
+  --ink-2: #BDBBAE;
+  --ink-3: #989C90;
 
   /* lines */
-  --line: #DCD6C7;
-  --line-2: #C9C2B0;
-  --line-input: #8E8978;
+  --line: #26302B;
+  --line-2: #34413A;
+  --line-input: #66736B;
 
-  /* accent: one deep green */
-  --accent: #1F5E4B;
-  --accent-strong: #174A3B;
-  --accent-wash: #E2EBE4;
-  --on-accent: #F8F6F0;
+  /* accent: one green */
+  --accent: #86C9AE;
+  --accent-strong: #A2D9C2;
+  --accent-wash: #1A2B25;
+  --on-accent: #0F1412;
 
   /* states */
-  --warn: #734600;
-  --warn-wash: #F5E8C8;
-  --warn-line: #D5B569;
-  --danger: #A12D2A;
-  --danger-strong: #86211F;
-  --danger-wash: #F7E3DF;
-  --on-danger: #FFF8F5;
+  --warn: #E5B55C;
+  --warn-wash: #2B2413;
+  --warn-line: #6B5521;
+  --danger: #F08A80;
+  --danger-strong: #F6A69E;
+  --danger-wash: #2E1917;
+  --on-danger: #0F1412;
 
   /* colour dots for identities: eight named colours, each 3:1 or more on every surface */
-  --dot-red: #B3362F;
-  --dot-orange: #B5591A;
-  --dot-gold: #8A6D00;
-  --dot-green: #2E7D4F;
-  --dot-teal: #1E7C86;
-  --dot-blue: #2F63B8;
-  --dot-purple: #7A4BB0;
-  --dot-pink: #B63C78;
+  --dot-red: #F08A80;
+  --dot-orange: #F0A565;
+  --dot-gold: #E0C050;
+  --dot-green: #7FD0A0;
+  --dot-teal: #6FCBD4;
+  --dot-blue: #8CB4F5;
+  --dot-purple: #C3A0F0;
+  --dot-pink: #F090BC;
 
-  /* email paper inside the message frame stays white in both themes */
+  /* email paper inside the message frame: white, for "Original colours" and for the light theme */
   --mail-paper: #FFFFFF;
 
   /* type */
@@ -93,77 +95,79 @@
   --t-fast: 120ms;
   --t-med: 180ms;
 
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* Light theme: the same list two times, because a selector cannot be shared between a
+   media query and a plain rule. Keep the two lists the same. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F6F3EC;
+  --surface: #FCFAF6;
+  --sunken: #EEEAE0;
+  --overlay: rgba(27, 29, 26, 0.42);
+  --ink: #1B1D1A;
+  --ink-2: #4A4D46;
+  --ink-3: #666960;
+  --line: #DCD6C7;
+  --line-2: #C9C2B0;
+  --line-input: #8E8978;
+  --accent: #1F5E4B;
+  --accent-strong: #174A3B;
+  --accent-wash: #E2EBE4;
+  --on-accent: #F8F6F0;
+  --warn: #734600;
+  --warn-wash: #F5E8C8;
+  --warn-line: #D5B569;
+  --danger: #A12D2A;
+  --danger-strong: #86211F;
+  --danger-wash: #F7E3DF;
+  --on-danger: #FFF8F5;
+  --dot-red: #B3362F;
+  --dot-orange: #B5591A;
+  --dot-gold: #8A6D00;
+  --dot-green: #2E7D4F;
+  --dot-teal: #1E7C86;
+  --dot-blue: #2F63B8;
+  --dot-purple: #7A4BB0;
+  --dot-pink: #B63C78;
   --shadow-pop: 0 1px 2px rgba(27, 29, 26, 0.06), 0 8px 24px rgba(27, 29, 26, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg: #0F1412;
-    --surface: #151C19;
-    --sunken: #1B2420;
-    --overlay: rgba(4, 7, 6, 0.66);
-    --ink: #ECE8DC;
-    --ink-2: #BDBBAE;
-    --ink-3: #989C90;
-    --line: #26302B;
-    --line-2: #34413A;
-    --line-input: #66736B;
-    --accent: #86C9AE;
-    --accent-strong: #A2D9C2;
-    --accent-wash: #1A2B25;
-    --on-accent: #0F1412;
-    --warn: #E5B55C;
-    --warn-wash: #2B2413;
-    --warn-line: #6B5521;
-    --danger: #F08A80;
-    --danger-strong: #F6A69E;
-    --danger-wash: #2E1917;
-    --on-danger: #0F1412;
-    --dot-red: #F08A80;
-    --dot-orange: #F0A565;
-    --dot-gold: #E0C050;
-    --dot-green: #7FD0A0;
-    --dot-teal: #6FCBD4;
-    --dot-blue: #8CB4F5;
-    --dot-purple: #C3A0F0;
-    --dot-pink: #F090BC;
-    --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+    --bg: #F6F3EC;
+    --surface: #FCFAF6;
+    --sunken: #EEEAE0;
+    --overlay: rgba(27, 29, 26, 0.42);
+    --ink: #1B1D1A;
+    --ink-2: #4A4D46;
+    --ink-3: #666960;
+    --line: #DCD6C7;
+    --line-2: #C9C2B0;
+    --line-input: #8E8978;
+    --accent: #1F5E4B;
+    --accent-strong: #174A3B;
+    --accent-wash: #E2EBE4;
+    --on-accent: #F8F6F0;
+    --warn: #734600;
+    --warn-wash: #F5E8C8;
+    --warn-line: #D5B569;
+    --danger: #A12D2A;
+    --danger-strong: #86211F;
+    --danger-wash: #F7E3DF;
+    --on-danger: #FFF8F5;
+    --dot-red: #B3362F;
+    --dot-orange: #B5591A;
+    --dot-gold: #8A6D00;
+    --dot-green: #2E7D4F;
+    --dot-teal: #1E7C86;
+    --dot-blue: #2F63B8;
+    --dot-purple: #7A4BB0;
+    --dot-pink: #B63C78;
+    --shadow-pop: 0 1px 2px rgba(27, 29, 26, 0.06), 0 8px 24px rgba(27, 29, 26, 0.08);
   }
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0F1412;
-  --surface: #151C19;
-  --sunken: #1B2420;
-  --overlay: rgba(4, 7, 6, 0.66);
-  --ink: #ECE8DC;
-  --ink-2: #BDBBAE;
-  --ink-3: #989C90;
-  --line: #26302B;
-  --line-2: #34413A;
-  --line-input: #66736B;
-  --accent: #86C9AE;
-  --accent-strong: #A2D9C2;
-  --accent-wash: #1A2B25;
-  --on-accent: #0F1412;
-  --warn: #E5B55C;
-  --warn-wash: #2B2413;
-  --warn-line: #6B5521;
-  --danger: #F08A80;
-  --danger-strong: #F6A69E;
-  --danger-wash: #2E1917;
-  --on-danger: #0F1412;
-  --dot-red: #F08A80;
-  --dot-orange: #F0A565;
-  --dot-gold: #E0C050;
-  --dot-green: #7FD0A0;
-  --dot-teal: #6FCBD4;
-  --dot-blue: #8CB4F5;
-  --dot-purple: #C3A0F0;
-  --dot-pink: #F090BC;
-  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 
 @media (max-width: 720px) {

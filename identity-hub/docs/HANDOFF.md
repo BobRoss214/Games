@@ -3,11 +3,15 @@
 Read this file first in a new session. It is the working memory of the build.
 
 ## State: the build is COMPLETE (fifth work period)
-- Last full run by the lead: `npm test` 301 pass; `npm run test:e2e` 36 files, 358 checks pass.
+- Last full run by the lead: `npm test` 304 pass; `npm run test:e2e` 36 files, 360 checks pass.
 - Every feature in the list below is built, including the "own phone" provider (server, operator tool `server/tools/ownphone.js`, screens, setup guide Part I, Docker profile `ownphone`).
 - NEVER tested with the real thing (first real contact can need small corrections): Twilio, BTCPay Server, the "own phone" app + its private server + a real SIM, a Docker build, mail delivery to large mail companies, browsers other than Chromium, a real phone screen, a screen reader.
 - If the user reports an error from a real service: ask for the exact error text, correct the adapter (server/phone/providers/twilio.js, ownphone.js, server/pay/providers/btcpay.js) and its simulated server in the tests so that both match the real behaviour.
 - Open ideas, not requested: per-account mail domains (decided: not built), SPF/DKIM check of incoming mail, a licence file, an outside security review.
+- Sixth work period (after the build): preview mode for a try-out (`DEV_PREVIEW=1`, never in production), and **dark is the default theme**
+  (user words: "Make sure there's a dark theme for the whole website and make it the default"). Choices in Settings: Dark, Light, System.
+  An email with HTML shows with dark colours in the dark theme (one CSS filter on the frame; "Original colours" shows it on white paper).
+  Known limit: strong colours in pictures inside such an email look dull until the person selects "Original colours".
 - LAST: the "own phone" provider (see the second half of this file).
 - Never tested: real Twilio, real BTCPay, Docker build, a real phone.
 - RENAME by the user (later than the notes below): the feature "made-up details" is now called "Random identifiers generator"; its values are "random identifiers". Internal names (`persona`, key `made-up-details`) stay. Where the notes below say "made-up details", read the new name.

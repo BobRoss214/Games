@@ -21,6 +21,8 @@ const WHY_KEYS = [
   'username-password', 'identity-look', 'home-warnings', 'recovery-test',
   // The "own phone" provider: a number is a SIM card in a phone of the operator.
   'own-phone', 'own-phone-calls',
+  // The dark theme is the default: an email shows with dark colours (Help only, no button).
+  'mail-colours',
 ];
 const GROUP_TITLES = ['Basics', 'Mail', 'Numbers', 'Identities', 'Safety'];
 const STEP_IDS = [

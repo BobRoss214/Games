@@ -169,8 +169,14 @@ Warm paper, ink, one deep green. Calm and dense. It must not look like a differe
 - **No new colours. No new font sizes. No new CSS file. No `style` attribute for looks.**
   If a feature truly needs a style that does not exist, ask the owner. The owner adds it to `web/css/features.css`
   in a block for your feature, with classes named `f-<feature id>-…`. (`style` is fine for a computed value, such as the width of a bar.)
-- Tokens (`css/tokens.css`), light and dark by themselves: surfaces `--bg`, `--surface`, `--sunken`; text `--ink`, `--ink-2`, `--ink-3`;
+- Tokens (`css/tokens.css`), dark and light by themselves: surfaces `--bg`, `--surface`, `--sunken`; text `--ink`, `--ink-2`, `--ink-3`;
   lines `--line`, `--line-2`; `--accent`, `--accent-wash`; states `--warn`, `--warn-wash`, `--danger`, `--danger-wash`.
+- **Theme: dark is the default** (the owner's rule). `:root` holds the dark values. "Light" and "System" are choices in Settings
+  (`data-theme="light"` / `"system"` on `<html>`, set by `js/theme-boot.js` before the first paint and by `lib/theme.js`).
+  Use the tokens and a screen is correct in the two themes with no more work. **Look at each new screen in dark first.**
+  A part that draws its own colours asks `isDark()` from `lib/theme.js` and listens for the window event `postern:theme`.
+- An email with HTML shows through `htmlMailView()` in `ui/mailbody.js` (the Mail screen and the export viewer use it). In the dark
+  theme the frame gets one colour filter (`.mail-frame-wrap[data-paper="dark"]`) and the person can select "Original colours".
 - Space scale: `--s-1` 4px, `--s-2` 8, `--s-3` 12, `--s-4` 16, `--s-5` 24, `--s-6` 32, `--s-7` 48. Corners: `--r-md` 6px, `--r-lg` 8px.
 - Type: headings are serif (`h1`–`h3` get it by themselves). Interface text is sans, 15px. **Addresses, numbers, amounts, codes
   and keys are mono**: class `mono`. Sizes: `small` (13px), `tiny` (12px). Tones: `muted`, `faint`, `strong`.
@@ -264,7 +270,7 @@ The page policy is `script-src 'self'`: no inline script, no `onclick=` attribut
 
 1. Text from the server or from decrypted data goes into the page with `h()` or `textContent`. Never `innerHTML`, never `insertAdjacentHTML`.
 2. Decrypted data, keys, addresses and numbers never go into a URL, `localStorage`, `sessionStorage`, a cookie, `console.log` or an error report.
-   URLs hold route names and random ids only. `localStorage` holds the theme and nothing else.
+   URLs hold route names and random ids only. `localStorage` holds the theme and nothing else (and nothing at all with the default, dark).
 3. What must outlive the tab is saved **encrypted** with the helpers in part 2. The server gets only what `docs/API.md` lists.
 4. No request to another site. No `fetch` to a URL that came from a message. A link to an outside site is a normal
    `<a target="_blank" rel="noopener noreferrer">`; say where it goes.

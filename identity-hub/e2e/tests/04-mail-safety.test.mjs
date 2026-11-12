@@ -94,4 +94,30 @@ export default async function (t) {
   assert(/> Only HTML here\./.test(quoted) && /> Second line\./.test(quoted), 'the reply does not quote the text of an HTML-only message');
   await dlg.getByRole('button', { name: 'Discard' }).click();
   t.ok('HTML-only mail: plain view and reply quote come from the HTML');
+
+  // ---- an email in the dark theme (the default): dark colours, and a way back to the look of the sender ----
+  const view = () => page.evaluate(() => {
+    const wrap = document.querySelector('.mail-frame-wrap');
+    const f = wrap && wrap.querySelector('iframe');
+    return { paper: wrap ? wrap.dataset.paper : '', filter: f ? getComputedStyle(f).filter : '', scheme: f ? getComputedStyle(f).colorScheme : '', src: f ? f.getAttribute('srcdoc') : '', choices: [...document.querySelectorAll('.mail-view-switch label')].map((l) => l.textContent).join('|') };
+  });
+  await page.getByText('Formatted', { exact: true }).click();
+  await page.locator('iframe.mail-frame').waitFor();
+  let v = await view();
+  assert(v.choices === 'Formatted|Original colours|Plain text', 'the dark theme does not offer "Original colours": ' + v.choices);
+  assert(v.paper === 'dark' && /invert\(0\.92\)/.test(v.filter) && /hue-rotate\(180deg\)/.test(v.filter), 'an email does not show with dark colours in the dark theme: ' + v.filter);
+  assert(v.scheme === 'light', 'the frame can tell the email that the theme is dark (its own dark styles would be turned two times)');
+  assert(/img\{filter:invert\(1\)/.test(v.src), 'pictures in the email are not turned back to their real colours');
+  await page.getByText('Original colours', { exact: true }).click();
+  v = await view();
+  assert(v.paper === 'light' && v.filter === 'none' && !/img\{filter/.test(v.src), '"Original colours" does not show the email as the sender made it');
+  t.ok('dark theme: an email shows with dark colours; "Original colours" shows it on white paper');
+  // the light theme: the email as it is, and no extra choice (the open email is painted again)
+  await page.evaluate("import('/js/lib/theme.js').then((m) => m.setTheme('light'))");
+  await page.waitForFunction(() => !/Original colours/.test(document.querySelector('.mail-view-switch').textContent));
+  v = await view();
+  assert(v.choices === 'Formatted|Plain text' && v.paper === 'light' && v.filter === 'none' && !/img\{filter/.test(v.src), 'the light theme changes the colours of an email');
+  await page.evaluate("import('/js/lib/theme.js').then((m) => m.setTheme('dark'))");
+  await page.waitForFunction(() => document.querySelector('.mail-frame-wrap').dataset.paper === 'dark');
+  t.ok('light theme: an email shows as the sender made it; a change of theme paints the open email again');
 }

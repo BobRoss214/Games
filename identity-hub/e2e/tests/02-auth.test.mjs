@@ -1,5 +1,5 @@
 // Sign-in edge cases: passkey without PRF, passkey with PRF and no stored key, the lock
-// screen in a new tab, wrong keys, the Lock button, an ended session, other sessions, theme.
+// screen in a new tab, wrong keys, the Lock button, an ended session, other sessions, theme (dark by default).
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { signUp, signOut, signIn, assert } from '../lib.mjs';
@@ -93,18 +93,37 @@ export default async function (t) {
   await b.page.getByRole('heading', { name: 'Funds', level: 1 }).waitFor();
   t.ok('a low balance offers "Add funds"');
 
-  // ---- theme: only the theme is in localStorage ----
+  // ---- theme: dark is the default; only the theme is in localStorage ----
+  // The browser of this test has a light system theme. The default must not follow it.
+  const DARK = 'rgb(15, 20, 18)';
+  const LIGHT = 'rgb(246, 243, 236)';
+  const look = () => b.page.evaluate(() => ({ attr: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor, bar: document.querySelector('meta[name="theme-color"]').content, ls: Object.keys(localStorage) }));
   await b.page.goto(t.base + '/settings');
-  await b.page.getByText('Dark', { exact: true }).click();
-  const theme = await b.page.evaluate(() => ({ attr: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor, ls: Object.keys(localStorage) }));
-  assert(theme.attr === 'dark' && theme.bg === 'rgb(15, 20, 18)', 'the dark theme did not apply');
+  await b.page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor();
+  let theme = await look();
+  assert(theme.attr === 'dark' && theme.bg === DARK && theme.bar === '#0F1412', 'the app does not start in the dark theme: ' + JSON.stringify(theme));
+  assert(theme.ls.length === 0, 'localStorage is not empty with the default theme: ' + theme.ls.join());
+  assert(await b.page.getByRole('radio', { name: 'Dark' }).isChecked(), 'Settings does not show "Dark" as the theme in use');
+  await b.page.getByText('Light', { exact: true }).click();
+  theme = await look();
+  assert(theme.attr === 'light' && theme.bg === LIGHT && theme.bar === '#F6F3EC', 'the light theme did not apply: ' + JSON.stringify(theme));
   assert(theme.ls.join() === 'postern.theme', 'localStorage holds more than the theme: ' + theme.ls.join());
   await b.page.reload();
   await b.page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor();
-  assert((await b.page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'the theme was lost after a reload');
+  theme = await look();
+  assert(theme.attr === 'light' && theme.bg === LIGHT, 'the theme was lost after a reload');
+  // "System" follows the device: light here, then dark when the device changes
   await b.page.getByText('System', { exact: true }).click();
-  assert((await b.page.evaluate(() => localStorage.length)) === 0, 'localStorage is not empty with the system theme');
-  t.ok('theme: applies, survives a reload, is the only thing in localStorage');
+  theme = await look();
+  assert(theme.attr === 'system' && theme.bg === LIGHT && theme.ls.join() === 'postern.theme', '"System" does not follow a light device: ' + JSON.stringify(theme));
+  await b.page.emulateMedia({ colorScheme: 'dark' });
+  await b.page.waitForFunction((dark) => getComputedStyle(document.body).backgroundColor === dark && document.querySelector('meta[name="theme-color"]').content === '#0F1412', DARK);
+  await b.page.emulateMedia({ colorScheme: 'light' });
+  await b.page.waitForFunction((light) => getComputedStyle(document.body).backgroundColor === light, LIGHT);
+  await b.page.getByText('Dark', { exact: true }).click();
+  theme = await look();
+  assert(theme.attr === 'dark' && theme.bg === DARK && theme.ls.length === 0, 'back to "Dark": the theme or the storage is wrong: ' + JSON.stringify(theme));
+  t.ok('theme: dark by default (also on a light device), "Light" and "System" work, survives a reload, is the only thing in localStorage');
 
   // ---- sessions: another browser signs this one out; the next request goes to sign-in ----
   const c = await t.open();

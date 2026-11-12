@@ -76,9 +76,13 @@ export function makeContext({ browser, server, name }) {
     ok(_what) { t.checks++; },
     // Opens a new browser window with its own storage (like a different person or device).
     // passkeys: add a virtual passkey device. prf: false = a device without the PRF extension.
-    async open({ width = 1280, height = 800, dark = false, passkeys = true, prf = true } = {}) {
+    // The app starts in its dark theme. theme: 'light' or 'system' = the person chose this theme
+    // before (it is in the storage of the browser when the app starts).
+    // dark: the system theme of the device. The app follows it only with the theme "System".
+    async open({ width = 1280, height = 800, dark = false, theme = '', passkeys = true, prf = true } = {}) {
       const phone = width < 721;
       const context = await browser.newContext({ viewport: { width, height }, colorScheme: dark ? 'dark' : 'light', acceptDownloads: true, hasTouch: phone, isMobile: phone });
+      if (theme) await context.addInitScript((value) => { try { localStorage.setItem('postern.theme', value); } catch { /* a frame with no storage */ } }, theme);
       await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: server.url });
       const page = await context.newPage();
       const s = { context, page, errors: [], allowed: [...ALWAYS_ALLOWED] };

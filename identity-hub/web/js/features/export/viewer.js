@@ -11,11 +11,12 @@ import { h, replace, uid, debounce } from '../../lib/dom.js';
 import { store } from '../../lib/store.js';
 import { getKeys, isUnlocked } from '../../lib/session.js';
 import { downloadBlob, personText, personShort } from '../../lib/mail.js';
-import { sanitizeEmail, inlineImageUrl, cidKey, htmlToText, INLINE_IMAGE_MAX } from '../../lib/sanitize.js';
+import { inlineImageUrl, cidKey, htmlToText, INLINE_IMAGE_MAX } from '../../lib/sanitize.js';
+import { htmlMailView } from '../../ui/mailbody.js';
 import { threadsOf } from '../../lib/phone.js';
 import { isPersona, fullName, addressLines } from '../../lib/persona/index.js';
 import { bytesText, dayText, fullTime, shortTime, phoneText, plural, duration } from '../../lib/format.js';
-import { button, callout, tabs, chips, segmented, pageHeader, emptyState, tag, runBusy } from '../../ui/components.js';
+import { button, callout, tabs, chips, pageHeader, emptyState, tag, runBusy } from '../../ui/components.js';
 import { icon } from '../../ui/icons.js';
 import { recoveryInput } from '../../screens/signin.js';
 import { readExportHeader, openExport, EXPORT_ERRORS } from '../../lib/exportfile.js';
@@ -268,27 +269,12 @@ export default function openExportScreen({ scope }) {
         const text = body.text || (body.html ? htmlToText(body.html) : '');
         const plain = () => h('pre', { class: 'mail-text' }, text || h('span', { class: 'faint' }, 'This message has no text.'));
         if (!body.html) { wrap.append(plain()); return wrap; }
-        let mode = 'html';
         const inline = new Map();
-        const slot = h('div', { class: 'mail-body-slot' });
         const note = h('p', { class: 'mail-note', hidden: true }, icon('eyeOff', { size: 14 }), h('span', null, 'Remote images are blocked to stop tracking.'));
-        const paint = () => {
-          if (mode === 'text') { note.hidden = true; replace(slot, plain()); return null; }
-          const clean = sanitizeEmail(body.html, inline);
-          note.hidden = !clean.blockedRemote;
-          // The frame has no scripts and no access to this page. Links open in a new tab.
-          const frame = h('iframe', { class: 'mail-frame', sandbox: 'allow-popups allow-popups-to-escape-sandbox', referrerpolicy: 'no-referrer', title: 'Message text', srcdoc: clean.srcdoc });
-          replace(slot, h('div', { class: 'mail-frame-wrap' }, frame));
-          return clean;
-        };
-        const first = paint();
-        wrap.append(
-          h('div', { class: 'mail-body-bar' },
-            segmented({ label: 'Show the message as', value: mode, options: [{ value: 'html', label: 'Formatted' }, { value: 'text', label: 'Plain text' }], onChange: (v) => { mode = v; paint(); } }),
-            note,
-          ),
-          slot,
-        );
+        // The same switch and frame as on the Mail screen (ui/mailbody.js).
+        const view = htmlMailView({ html: body.html, inline, plain, onPaint: (clean) => { note.hidden = !(clean && clean.blockedRemote); } });
+        const first = view.first;
+        wrap.append(h('div', { class: 'mail-body-bar' }, view.control, note), view.slot);
         // Pictures inside the message ("cid:") come from the attachments in the file.
         const wanted = (first && first.wantedCids) || [];
         const jobs = [];
@@ -297,7 +283,7 @@ export default function openExportScreen({ scope }) {
           if (!key || !wanted.includes(key) || !a.blob || a.blob.n > INLINE_IMAGE_MAX) continue;
           jobs.push(opened.readBlob(a.blob).then((bytes) => { const url = inlineImageUrl(bytes, a.contentType); if (url) inline.set(key, url); }).catch(() => {}));
         }
-        if (jobs.length) Promise.all(jobs).then(() => { if (wrap.isConnected && inline.size && mode === 'html') paint(); });
+        if (jobs.length) Promise.all(jobs).then(() => { if (wrap.isConnected && inline.size && view.mode() !== 'text') view.repaint(); });
         return wrap;
       }
 
