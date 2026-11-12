@@ -10,7 +10,8 @@ The full brief from the owner is in the session of 2026-11-12 ("money section").
   sideshift.us, docs.sideshift.ai, trocador.app (plus package registries).
 
 ## Phase state
-- [ ] Phase 0 — check before the build. IN PROGRESS: Bitrefill and SideShift documents are being read; the report `PHASE0_REPORT.md` is not written yet.
+- [x] Phase 0 — check before the build. Report: `PHASE0_REPORT.md`. **Stopped: waiting for the owner's answers** to the four decisions in section 10 of the report.
+  Result in one line: Bitrefill direct payment is possible on paper; SideShift cannot be used (Monero off, sideshift.ai not for US residents, sideshift.us has no API); Trocador not read; so Level 2, one-click from XMR and Flow B have no proven swap service.
 - [ ] Phase 1 — skeleton, `run.sh`, `test.sh`, clickable shell with sample data (first preview)
 - [ ] Phase 2 — storage and lock, backup and restore
 - [ ] Phase 3 — Bitrefill: catalog, invoice, polling, Flow A (send to address)
@@ -41,7 +42,11 @@ The full brief from the owner is in the session of 2026-11-12 ("money section").
 - [ ] Swap services: one real quote for each pair in use (no shift is created without the owner).
 
 ## Open problems
-- See `PHASE0_REPORT.md`.
+- No swap service proven. Do NOT build Phases 4 and 5 (Monero wallet, swaps) before the owner decides (report, section 10, decision 1).
+- "Part A" of the brief (five manual jobs, `.env` lines) was not in the message. Asked the owner.
+- Bitrefill REST documents: no invoice expiry, no limit numbers, no "needs ID" field, no idempotency key. See report section 2.
+- A subagent for the Trocador documents was refused by the permission system (the site has a browser check). One plain request was made by the lead; no further tries from the cloud.
+- One automatic test of the hub failed one time in eight runs on 2026-11-12 (name not caught). Watch for it.
 
 ## Short form of the owner's rules
 - Single user, local only (127.0.0.1), privacy first, no KYC ever, one Bitrefill account, no limit dodging, no VPN country tricks.
